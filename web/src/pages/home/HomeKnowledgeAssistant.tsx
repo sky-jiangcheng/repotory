@@ -67,12 +67,28 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
     }
   }, [])
 
-  // Auto-scroll chat stream as messages change or stream
+  // Auto-scroll chat stream as messages change or stream. Gated on a non-empty
+  // conversation: on mount (empty welcome state) scrollHeight can still exceed
+  // clientHeight by a few px, and blindly pinning to the bottom cropped the
+  // welcome icon at the top of the stream.
   useEffect(() => {
-    if (chatStreamRef.current) {
+    if (chatStreamRef.current && messages.length > 0) {
       chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight
     }
   }, [messages])
+
+  // Seconds since the current ask started — the typing dots alone give zero
+  // feedback and a local model's first token can take minutes.
+  const [askElapsed, setAskElapsed] = useState(0)
+  useEffect(() => {
+    if (!asking) {
+      setAskElapsed(0)
+      return
+    }
+    const t0 = Date.now()
+    const iv = setInterval(() => setAskElapsed(Math.floor((Date.now() - t0) / 1000)), 1000)
+    return () => clearInterval(iv)
+  }, [asking])
 
   // Stop active streaming request
   const handleStop = () => {
@@ -436,7 +452,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
       </div>
 
       {/* Chat Messages Stream */}
-      <div className={s.chatStream} ref={chatStreamRef}>
+      <div className={`${s.chatStream} ${messages.length === 0 ? s.streamEmpty : ''}`} ref={chatStreamRef}>
         {messages.length === 0 ? (
           <div className={s.emptyState}>
             <div className={s.welcomeIconArea}>
@@ -505,6 +521,11 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
                         <span className={s.typingDot} />
                         <span className={s.typingDot} />
                         <span className={s.typingDot} />
+                        {askElapsed > 0 && (
+                          <span className={s.typingElapsed}>
+                            {t('home.thinking', { defaultValue: '思考中' })} · {askElapsed}s
+                          </span>
+                        )}
                       </div>
                     )}
 

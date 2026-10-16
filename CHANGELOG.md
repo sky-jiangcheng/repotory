@@ -8,6 +8,12 @@
 
 ### 修复
 
+- **首页知识助手卡片滚动时，头部（标题/检索范围/清空）被滚动边界拦腰切断**：`mainContent` 是独立滚动容器，页面一滚卡片头部就在导航下沿被硬切——用户实测截到的正是这个状态。现改为 sticky 停靠：滚动时头部钉在导航正下方（与导航同底色无缝衔接），聊天内容从其背后滚过；容器 `overflow: hidden` → `clip`（保留圆角裁切且不再阻断 sticky；不支持 clip 的 WKWebView/Safari 15 回退为原静态头部，不劣于现状）。头部停靠位用负 `top` 抵消 `mainContent` 的 padding，保持与导航贴平。
+- **欢迎区灯泡图标被裁两处叠加**：①挂载时自动滚动效应在无消息时也会把流区滚到底部，欢迎屏顶部被切；②空状态 `margin: auto` 居中在内容高于流区时顶部不可达（越窄的窗口裁得越多）。现自动滚动仅在有消息时触发；空状态改 `justify-content: safe center`（老引擎退化为顶部对齐，内容始终可达）并收紧垂直间距。
+- **AI 问答等待零反馈**：本地大模型（如 LM Studio 27B）首 token 可达分钟级，流式期间只有三个跳点没有任何进度信息。打字指示器现显示「思考中 · Ns」计时（停止按钮不变）；端到端 SSE 链路已实测完整返回。
+
+### 变更
+
 - **CI `docs-mirror` job 的 `setup-node` SHA 钉成 38 位短 SHA，首个运行即在 Set up job 被 GitHub 拒绝**：该 job 随 v2.5.0 的 bump 提交进入 `ci.yml`，v2.5.0 发布当天的 CI run 是它的第一次运行——结果从未真正跑到镜像比对，就在解析 action 时报「the provided ref is the shortened version of a commit SHA」。修复为与其余 5 处引用一致的完整 40 位 SHA（与 release.yml / pages.yml 同值）。
 
 ## [2.5.0] - 2026-10-16

@@ -1,5 +1,10 @@
 /* HomeKnowledgeAssistant.module.css — Styling for the Home AI Knowledge Assistant */
 
+/* overflow: clip keeps the card's rounded-corner clipping without creating a
+   scroll container — that is what lets .header stick to the main scroller's
+   top edge (dock below the navbar) instead of being sliced mid-text when the
+   page scrolls. overflow: hidden stays first as the fallback: engines without
+   clip (WKWebView on macOS 12 / Safari 15) keep today's static-header look. */
 .container {
   display: flex;
   flex-direction: column;
@@ -8,6 +13,7 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+  overflow: clip;
   min-height: 520px;
   flex: 1;
 }
@@ -22,6 +28,21 @@
   border-bottom: 1px solid var(--border-subtle);
   gap: 16px;
   flex-wrap: wrap;
+  /* Dock below the navbar when the page scrolls: same bg as the bar, so the
+     seam is invisible; at scroll-top the card's corner clipping (above) still
+     rounds this header, no radius of its own needed. The negative top cancels
+     .mainContent's padding so the docked header sits flush against the navbar
+     instead of leaving a content-filled sliver above it — keep the two values
+     in sync with App.module.css (.mainContent padding / ≤768px override). */
+  position: sticky;
+  top: -32px;
+  z-index: 5;
+}
+
+@media (max-width: 768px) {
+  .header {
+    top: -20px;
+  }
 }
 
 .headerLeft {
@@ -139,15 +160,23 @@
   max-height: 580px;
 }
 
+/* Empty welcome state: center via `safe center` instead of the old
+   `margin: auto` on the child — when the stream is shorter than the welcome
+   block (narrow/short windows), margin:auto clips the unreachable top half,
+   while `safe` falls back to start-alignment and keeps everything reachable. */
+.streamEmpty {
+  justify-content: safe center;
+}
+
 /* Empty State */
 .emptyState {
-  margin: auto;
+  margin: 0;
   max-width: 640px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 24px 12px;
+  padding: 14px 12px 10px;
 }
 
 .welcomeIconArea {
@@ -159,7 +188,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
@@ -171,7 +200,7 @@
 }
 
 .welcomeDesc {
-  margin: 0 0 24px;
+  margin: 0 0 16px;
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.6;
@@ -332,6 +361,13 @@
   align-items: center;
   gap: 4px;
   padding: 4px 0;
+}
+
+.typingElapsed {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .typingDot {
