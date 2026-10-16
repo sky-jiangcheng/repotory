@@ -63,6 +63,12 @@ export default function Home() {
     .concat(projects.filter(p => !p.is_starred))
     .slice(0, 3)
 
+  // Honest scale hint: `projects` counts every row in the table — knowledge-
+  // import landing projects and scan remnants included — while the dashboard's
+  // repo list only shows projects that actually carry git repositories. State
+  // both numbers so the two pages cannot read as contradictory.
+  const withRepos = projects.filter(p => (p.repo_count || 0) > 0).length
+
   return (
     <div className={s.page}>
       <h1 className="visually-hidden">{t('home.title', { defaultValue: '首页' })}</h1>
@@ -128,7 +134,11 @@ export default function Home() {
               <span>{t('home.quickProjectsTitle', { defaultValue: '重点项目速览' })}</span>
             </h2>
             <span className={s.statusSectionHint}>
-              {projects.length > 0 ? `${projects.length} 个本地项目` : ''}
+              {projects.length > 0
+                ? withRepos === projects.length
+                  ? `${projects.length} 个项目`
+                  : `${projects.length} 个项目 · ${withRepos} 个含仓库`
+                : ''}
             </span>
           </div>
 
