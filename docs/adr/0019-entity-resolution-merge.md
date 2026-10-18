@@ -1,6 +1,6 @@
 # ADR-0019: 实体消歧与概念合并——治「概念分裂」，合并永远由人触发
 
-- 状态：Proposed（**已落码，待真库演练后升 Accepted**。结构候选发现（四类信号 + blocking）、合并事务、模型二判→`[lint] merge` 待办、审核页「合并建议」区均已实现并有契约测试；晋升条件 1-4 已满足，条件 5（真库副本端到端演练 + 人审采纳）代码与 UI 就位、演练需用户亲自跑，故仍 Proposed。「向量相似度」那一路仍待 ADR-0018 lane 2 的 `page_embeddings`，缺席不阻塞其余。实现期得到的事实见末尾「实现修正」节）
+- 状态：Accepted（**真库副本端到端演练 + 人审采纳已完成（2026-10-18）**。结构候选发现（四类信号 + blocking）、合并事务、模型二判→`[lint] merge` 待办、审核页「合并建议」区均有契约测试；晋升条件 1-5 全部满足——条件 5 在真库副本（VACUUM INTO 副本、不碰 live）上按序演练：候选发现 5 条（各 ≥2 独立信号）、人审否决全部假阳性并手动采纳一条真重复（墓碑 + 边重指向 + 保留页一字不变）。「向量相似度」那一路仍待 ADR-0018 lane 2 的 `page_embeddings`，缺席不阻塞其余。演练发现见末尾「实现修正」节）
 - 日期：2026-10-10
 - 关联：[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（决策 4「编译只新建」）、[ADR-0015](0015-w3-minimal-compile-loop.md)（决策 3 白纸黑字把「概念分裂 → 人合并」列为接受的代价；`reject≠delete`；编译器永不改批准页）、[ADR-0016](0016-async-batch-jobs.md)（判等若耗时要并入 lint 的 job 内核，不新开 kind）、[ADR-0018](0018-knowledge-graph-foundation.md)（lane 1 的受控 relation 词表是合并要重指向的边；lane 2 的页向量是本 ADR 的可选信号）；TODO **M7** 后续首条；起点 schema v21
 - 配套：`outputs/process-logs/Repotory-知识图谱实施计划-2026-10-09.md` 的 Phase 3

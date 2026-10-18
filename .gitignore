@@ -12,6 +12,8 @@
 /repotory
 /repotory-mcp
 /repotory-server
+/repotory-wiki-rehearse
+/repotory-wiki-export
 /git-dashboard
 /mcp
 
@@ -83,3 +85,10 @@ assets/releases/
 .mcp.json
 .cursor/
 .vscode/mcp.json
+
+# 本地 MCP 冒烟脚本（spawn 本机构建的 repotory-mcp，含机器本地路径，纯复查用）
+scratch-ui-test/
+
+# 本地 wiki 真库演练工作区（cmd/wiki-rehearse 的一次性副本指针，含机器本地 /tmp 路径）
+# 证据 jsonl/json 按需 git add；演练工作区本身不入库。
+v25-rehearse/

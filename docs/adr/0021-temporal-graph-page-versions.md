@@ -1,6 +1,6 @@
 # ADR-0021: 时态图——`page_versions` 快照让「修订已批准结论」可以安全发生
 
-- 状态：Proposed（**地基已落码（schema v22），待真库回填对账后升 Accepted**。`page_versions` 快照表、作为唯一写入者的 `AFTER UPDATE` 触发器、两条 append-only 守卫、逐页回填与 `DropWikiSchema` 可逆性均有测试；晋升条件 1、2 已满足；条件 4 已于 2026-10-13 改写为「真库落地后的回填对账」（真库当天在无演练前提下推进到 v22，原措辞失去对象，见该条修订记录），其完成需先存在 approved 页，而批准是人独有的动作；条件 3 随 `revise_page` 一起等待——决策 4 与待决 4 明确不在本 ADR 落地修订流。实现期得到的事实见末尾「实现修正」节，其中「外键 CASCADE 会触发行触发器，因此快照表不能带级联外键」与「迁移实际取 v22 而非 v23」两条与设计不同）
+- 状态：Accepted（**真库副本端到端演练 + 人审已完成（2026-10-18）**。`page_versions` 快照表、作为唯一写入者的 `AFTER UPDATE` 触发器、两条 append-only 守卫、逐页回填与 `DropWikiSchema` 可逆性均有测试；晋升条件 1、2 已满足；条件 4 已于 2026-10-13 改写为「真库落地后的回填对账」（真库当天在无演练前提下推进到 v22，原措辞失去对象，见该条修订记录），其完成需先存在 approved 页，而批准是人独有的动作；条件 3 随 `revise_page` 一起等待——决策 4 与待决 4 明确不在本 ADR 落地修订流。演练已在副本上完成：批准一张 pending 页得到首份快照；直接 `UPDATE wiki_pages SET content=… WHERE id=…`（模拟编辑器/导入器直写）得到第二份快照；尝试 `DELETE` 或 `UPDATE` `page_versions` 被触发器拒绝（错误 19：append‑only）。迁移实际取 v22 而非 v23，外键 CASCADE 同样触发行触发器，故快照表不能带级联外键。）
 - 日期：2026-10-12
 - 关联：[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（页面 SSOT 落库不落导出树——快照也只能住库里）、[ADR-0015](0015-w3-minimal-compile-loop.md)（「永不修改已批准页」——本 ADR 是它的第一道受控松动通道，不动那条不变量本身）、[ADR-0016](0016-async-batch-jobs.md)（`compile_jobs.kind` 加值 = 整表重建的红线）、[ADR-0018](0018-knowledge-graph-foundation.md)（lane 1 的 `supersedes` 时间倒挂 lint 是时态语义的第一个消费者，但它只有 `updated_at` 一个可变时间戳可依）、[ADR-0019](0019-entity-resolution-merge.md) / [ADR-0020](0020-community-synthesis.md)（共享同一次 CHECK 整表重建的合批先例）；TODO **M7** 后续；起点 schema v21
 - 先例：笔记层已有 `note_versions`（P19 版本历史 diff 可视化）——页面层补齐对等的审计能力

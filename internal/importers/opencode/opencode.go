@@ -71,11 +71,29 @@ type sessionFile struct {
 	Directory string `json:"directory"`
 	Title     string `json:"title"`
 	Slug      string `json:"slug"`
-	Summary   string `json:"summary"`
+	Summary   summaryField `json:"summary"`
 	Time      struct {
 		Created int64 `json:"created"`
 		Updated int64 `json:"updated"`
 	} `json:"time"`
+}
+
+// summaryField tolerates summary's two observed shapes: a one-line string in
+// older exports and an object ({"additions":..,"deletions":..,"files":..}) in
+// current ones. A strict string field made json.Unmarshal reject every real
+// session file, so the whole source silently imported 0 notes (rehearsal
+// finding, 2026-10-18). Object/null/anything-not-a-string decodes to empty;
+// the title/slug fallback chain still yields a usable note.
+type summaryField string
+
+func (f *summaryField) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = summaryField(s)
+		return nil
+	}
+	*f = ""
+	return nil
 }
 
 // Import walks the OpenCode session storage and returns one note per session.
@@ -115,7 +133,7 @@ func (i *Importer) docFor(path string, projects []db.Project, repos []db.Reposit
 	if title == "" {
 		title = strings.TrimSpace(s.Slug)
 	}
-	summary := strings.TrimSpace(s.Summary)
+	summary := strings.TrimSpace(string(s.Summary))
 	if title == "" && summary == "" {
 		return plugin.ImportDoc{}, false // nothing usable
 	}
