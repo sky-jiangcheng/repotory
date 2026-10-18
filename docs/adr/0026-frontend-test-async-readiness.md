@@ -1,6 +1,6 @@
 # ADR-0026: 前端测试的异步落地契约——「等数据」这件事写在哪一层
 
-状态：**Proposed**（2026-10-18）。方向与子决策均已由用户拍定（A2 + A1 + C，B 否掉，helper 覆盖面取 4 文件；见「决策」）。**A2 + A1 与探针夹具已落码（2026-10-19 凌晨，跨了拍板当日的午夜）**，晋升条件 1、2、3、5、6 已达；**条件 4（C）未做，故本 ADR 维持 Proposed**。落码未触碰任何生产代码。
+状态：**Accepted（2026-10-19 经用户批准晋升）**（方向与子决策于 2026-10-18 由用户拍定：A2 + A1 + C，B 否掉，helper 覆盖面取 4 文件；见「决策」）。**A2 + A1 与探针夹具、C（`eslint-plugin-testing-library`，含 69 条既有违例的逐条处置）均于 2026-10-19 落地**；晋升条件 1-6 逐条核验成立，记录见「实现修正」末条。本 ADR 全程未触碰任何生产代码。
 
 ## 背景
 
@@ -104,4 +104,9 @@ C 的新增依赖理由（晋升条件 4 要求写实，此处即回答 CONTRIBU
 - **探针必须打进 per-test 覆盖值**：只给 `beforeEach` 的默认值套 `lagged()` 时，三个暴露用例反而绕开了探针——它们自己 `mockResolvedValue` 了非空数据。把覆盖值一并套上，探针才真的测到它们。这也是「B 无效」的又一次印证：数据存在与否从来不是变量。
 - **晋升条件 2 是实测不是类比**：把新写的首页范围下拉测试退回「等 combobox」，`REPO_TEST_LAG_MS=300` 下报 `expected '0' to be '7'`——与 Review 当初同一个失败签名，跨页面复现。
 - **覆盖面按决策落地**：`Review`/`Home`/`Dashboard`/`Search` 已接 `renderReady`；`AiTab`/`NotFound`/`App.smoke` 按「决策」保持不接，边界已写入 `CONTRIBUTING.md`「前端测试的异步落地（ADR-0026）」一节与 helper 注释两处（条件 3、6 达标）。
-- **条件 4 未完成**：C（`eslint-plugin-testing-library`）按约定应单独一次改动引入，本次未做——这是本 ADR 维持 Proposed 的唯一原因。
+- **条件 4 已达成（2026-10-19）**：`eslint-plugin-testing-library@7.16.2` 作为 devDependency 接入。安装是纯增量（lock 只 +219 行、零无关改动）；`npm audit` 报的 10 项全在 mermaid/chevrotain/katex 那条既有构建树上，与新插件无关。注意 v7 **没有** `flat/recommended`，只有按框架拆的 `flat/*`，本项目取 `flat/dom` + `flat/react`。
+- **C 翻出的既有账：69 条**，逐条处置——16 条是 glob 过宽造成的误报（见下条），已靠收窄范围消除；真修 5 条：`prefer-find-by`（Dashboard 的 `waitFor` + `getByText` 改 `findByText`）、`no-unnecessary-act` ×2（两处空 `act(async () => {})` flush 改成含 await 的写法）、`no-node-access` 里确实能用可访问查询表达的 2 处（NotFound 按 class 扫链接 → `getAllByRole('link')`；Home 新测试的 `option.closest('select')` → role 查询）；显式登记不采 1 类 12 条（`render-result-naming-convention`，理由写在 `eslint.config.js` 内联注释）；per-file / per-line 登记 16 条（BrandMark 装饰性 SVG 11、Search 断言 class 派生 2、App.smoke 判缺席 1，理由逐处写在对应注释上）。收尾后 `npm run lint` 零问题。
+- **插件的检测靠函数名前缀**：`render-result-naming-convention` 把纯逻辑测试里的 `const result = renderMarkdown(...)` 当成 RTL 的 render——`src/utils/markdown.test.ts` 一个 testing-library 引用都没有，却中了 16 条。所以范围收成 `**/*.test.tsx` + `src/hooks/*.test.ts` + `src/test/**/*.tsx` 的精确清单；代价是将来若有非 hooks 目录的 `.test.ts` 用上 RTL 得记得登记，这条维护账写在配置注释里，不藏在 glob 里。
+- **规则是上下文敏感的**：同一个 `heading.closest('section')` 写在使用例里会报 `no-node-access`，挪进 helper 函数后**完全不报**（我为它加过两条 disable 注释，反被 eslint 报成 unused override）。这是「C 只能当形态守卫、不能当时序保证」最直接的一条证据。
+- **计划外收获**：`no-manual-cleanup` 把 vitest 的 `test.globals` 逼到 `true`——手写 `afterEach(cleanup)` 共 **7** 处随之删除（本 ADR 起草时我只在「方案 C 的互补价值」里写过「若引入 setupFiles 可顺带收掉 4 处」，实况是 7 处、且路径是 globals 而非 setupFiles）。对应的注释「vitest globals are off, so testing-library's auto-cleanup never registers」描述的机制已不存在，一并删掉。自动 cleanup 是否真生效由两条钉住：`Review.test.tsx` 连续 12 次 render 无重复匹配，以及 `AiTab` 那句 `queryByRole(...)` 缺席断言。
+- **晋升记录（2026-10-19）**：条件 1-6 逐条核验均成立（1 探针 300/700ms 档 145 例全绿、2 首页下拉首例交互测试并有对照复现、3+6 约定已同时写入 `CONTRIBUTING.md` 与 helper 注释、4 插件接入且 69 条既有违例逐条处置、5 顺序 5-6 轮 + 并发 6-8 路 + lint/build/tsc 全绿），经用户 2026-10-19 批准晋升 **Accepted**。产品运行时始终未被触碰，故无真机演练类前置门槛。

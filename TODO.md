@@ -47,9 +47,6 @@
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
 当前密度：approved 页 6、边 5（其中 3 条连接 approved 页，均未达标）
 - [ ] **JetBrains 插件**：缓议，待真实需求信号（issue/star）+ 补 ADR 后立项
-- [ ] **[ADR-0026](docs/adr/0026-frontend-test-async-readiness.md) 前端测试的异步落地契约 —— **A2 + A1 已落码，只剩晋升条件 4（C）**：2026-10-18 用户拍板三层 **A2（通用 `settle()` 地板）+ A1（per-test readiness 谓词）+ C（`eslint-plugin-testing-library` 后置守卫）**，并**以测量否证方案 B**（默认非空 mock 改的是数据「是否存在」而非「何时落地」，探针下红掉的 3 个用例本就喂了非空数据；且直接破 `Home`/`Search`/`useKnowledgePage` 三处空态用例）。触发事实：`8d81714` 就地修掉 select flake 后复核发现，三条加载 promise 各延迟 300ms 的探针下 `Review.test.tsx` **12 例红 3、且均非 select 类**——真竞态类是「`findBy*` 等无条件挂载的锚点 + 随后同步读 effect 状态」。**子决策已定（2026-10-18）**：共享 helper 只覆盖 4 个同形状文件（`Review`/`Home`/`Dashboard`/`Search`），`AiTab`/`NotFound`/`App.smoke` 显式不纳入（真实 i18n 与无 router 两种口径不塞进同一 helper），边界须同时写进 `CONTRIBUTING.md` 与 helper 注释。落码验收 = 探针固化成夹具后 `Review.test.tsx` **12/12**（现状 9/12）+ 给 `HomeKnowledgeAssistant.tsx:426-438` 检索范围下拉补第一例交互测试（它同形、已在测试里挂载、是下一个原生继承者）。红线：**`settle()` 在 `vi.useFakeTimers()` 下永不 resolve，会死锁到 waitFor 超时**，此前提须写进 helper 注释。
-  - **已落码（2026-10-19 凌晨，晋升条件 1/2/3/5/6 达成）**：`web/src/test/renderReady.tsx` 承载 `renderReady`/`settle()`/`lagged()`，上述 4 个文件接入；`Review.test.tsx` 三处列表/空态断言改为等「就是数据的那个元素」；补 `HomeKnowledgeAssistant` 检索范围下拉的首例交互测试——把它退回「等 combobox」，探针下报 `expected '0' to be '7'`，与 Review 当初同一签名（跨页复现，条件 2 是实测非类比）。验收探针 `REPO_TEST_LAG_MS=300` 与 700 两档 **145 例全绿**（修复前同一探针打红 3 例；上界约 900ms，受 `findBy*` 默认 1000ms 超时限制）；另 6 轮顺序无延迟 + 3 轮顺序带延迟 + 8 路并发（LAG=300 且争抢 CPU）全部 exit 0；tsc / lint 干净。约定已写入 `CONTRIBUTING.md`「前端测试的异步落地（ADR-0026）」一节与 helper 注释两处。落码得到的与设计不同的事实记在 ADR「实现修正」节（含 `lagged()` 须配 `mockImplementation`、探针必须打进 per-test 覆盖值两条）。
-  - **唯一待办 = 晋升条件 4**：引入 `eslint-plugin-testing-library` 作 C。单独一次改动；devDependency 理由已写在 ADR「决策」节；须处置 `npm run lint` 在现存 21 个测试文件上的**既有**形态违例（修完或显式登记，不许静默关规则）。边界已钉死：**只拦形态，拦不住本 ADR 这一类**。C 完成后 ADR-0026 方可谈晋升 Accepted。
 
 ---
 

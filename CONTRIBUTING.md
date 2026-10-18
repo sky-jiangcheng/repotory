@@ -51,6 +51,9 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 - **等数据要等对东西**：锚点选错（仍然等静态标题）helper 救不回来。参照 `Review.test.tsx` 的 `pickProject()`，以及「先 `await` 目标 `option` 再改值」的写法。
 - **验收探针**：`cd web && REPO_TEST_LAG_MS=300 npx vitest run` 会让 `Review`/`Home` 的加载 promise 延后落地、把竞态窗口重开，必须全绿；不设该变量时 `lagged()` 是 no-op。
 - **别用「`beforeEach` 默认给非空 mock 列表」治这个病**——2026-10-18 已实测否证：踩中的用例本就喂了非空数据（问题在**何时**落地，不是**是否**存在），且该法直接破 `Home`/`Search`/`useKnowledgePage` 三处空态用例。详见 [ADR-0026](docs/adr/0026-frontend-test-async-readiness.md)。
+- **不要再手写 `afterEach(cleanup)`**：vitest 的 `test.globals` 已置 `true`，testing-library 的自动卸载随之注册（此前 7 处手写 cleanup 是 globals 关着时的复制品，2026-10-19 已清空）。
+- **`eslint-plugin-testing-library` 是形态守卫，不是时序保证**：它接在 `web/eslint.config.js`（v7 已无 `flat/recommended`，取 `flat/dom` + `flat/react`），只作用于**真正用 testing-library 的文件**——清单是显式的 `testingLibraryFiles`，因为默认 glob 会把纯逻辑测试里的 `const result = renderMarkdown(...)` 误判成 RTL 的 `render`。**新增一个非 `hooks/` 目录的 `.test.ts` 若引入 RTL，要把它登记进那份清单**，否则规则对它完全不生效。实测过：同一句 `heading.closest('section')` 写在使用例里被报 `no-node-access`，挪进 helper 函数后不报——规则看上下文，别把它当成上面那类竞态的兜底。
+- **有一条规则是有意不采的**：`render-result-naming-convention` 显式设为 `off`，理由（纯命名、不承载正确性、已证会误报）写在配置注释里。**不要「顺手把它打开」**——那 12 处 `a`/`b`/`c`/`d` 表达的是共享同一 cacheKey 的多个消费者。
 
 ## 范围冻结（重要）
 
