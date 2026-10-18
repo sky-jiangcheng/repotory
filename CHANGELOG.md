@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **审核页项目筛选测试的装配竞态（CI 偶发红、本地恒绿）**：`Review.test.tsx` 三处用例在 `<select>` 首次渲染时就取到 combobox 并直接改值，而 option 列表来自 `projects`，要等 `getProjects()` 的 promise 在 effect 回调里落地才渲染。踩空这个窗口时，jsdom 对无匹配 option 的受控 select 赋值交给 change 处理器的是空值，`Number('')` 为 0，`projectFilter` 停在 0 并被 React 写回节点，项目门控按钮保持禁用——失败表现为远离根因的 `expected true to be false` 超时，且绿红随 runner 负载漂移。改为 `pickProject()` helper：先等目标 option 出现再改值，随后断言值确实落地，使复发时失败钉在 select 而非下游超时。以延迟 300ms 的 `getProjects()` 做 A/B：旧写法确定性复现故障、新写法同条件下确定性通过。纯测试稳定性修复，`Review.tsx` 生产逻辑未改。
+
 ## [2.6.0] - 2026-10-18
 
 ### 新增
