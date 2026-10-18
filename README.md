@@ -1,25 +1,64 @@
 <p align="center">
-  <img src="build/icon.svg" width="88" alt="Repotory" />
+  <img src="build/icon.svg" width="96" alt="Repotory" />
 </p>
 
-# Repotory: Local Git Knowledge Base
+<h1 align="center">Repotory</h1>
 
-**The local-first memory layer for AI coding agents.** Your agents (Claude Code, Cursor, OpenCode...) read code brilliantly and forget everything the moment the session ends — why a decision was made, what gotcha was discovered, what to do next. Repotory keeps that knowledge on your machine, searchable, and hands it back to *any* agent in one tool call.
+<p align="center">
+  <b>The local-first memory layer for AI coding agents.</b><br/>
+  Your agents read code brilliantly and forget everything the moment the session ends —<br/>
+  why a decision was made, what gotcha was discovered, what to do next.<br/>
+  Repotory keeps that knowledge on your machine, searchable and versioned,<br/>
+  and hands it back to <i>any</i> agent in one tool call.
+</p>
 
-English | [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="https://github.com/sky-jiangcheng/repotory/releases"><img src="https://img.shields.io/github/v/release/sky-jiangcheng/repotory?color=6366f1" alt="Release" /></a>
+  <a href="https://github.com/sky-jiangcheng/repotory/actions/workflows/release.yml"><img src="https://github.com/sky-jiangcheng/repotory/actions/workflows/release.yml/badge.svg" alt="Build and Release" /></a>
+  <a href="https://github.com/sky-jiangcheng/repotory/actions/workflows/ci.yml"><img src="https://github.com/sky-jiangcheng/repotory/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/sky-jiangcheng/repotory/actions/workflows/install-smoke.yml"><img src="https://github.com/sky-jiangcheng/repotory/actions/workflows/install-smoke.yml/badge.svg" alt="Install smoke test" /></a>
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go 1.26+" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19" />
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/sky-jiangcheng/repotory?color=22c55e" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows%20%7C%20Linux-111827" alt="macOS | Windows | Linux" />
+</p>
+
+<p align="center">
+  English | <a href="README.zh-CN.md">简体中文</a> · <a href="https://sky-jiangcheng.github.io/repotory/">Documentation</a>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/home.png" alt="Repotory home workbench — memory ring, knowledge-base assistant, featured projects" width="100%" />
+</p>
+
+<p align="center">
+  <sub>A single-file Wails v2 desktop app (Go + React, embedded SQLite, zero CGO) for macOS / Windows / Linux —<br/>
+  plus an independently distributed MCP server so any AI agent reads the same local database.</sub>
+</p>
+
+---
+
+## Why Repotory?
+
+- **Memory across agents, not inside them.** Claude Code writes a handoff; Cursor reads it tomorrow. Nothing is trapped in one tool's private memory format.
+- **Local-first, no cloud, no account.** One SQLite file on your disk. Works fully offline. Nothing leaves the machine unless you explicitly configure an outbound endpoint.
+- **Human-gated knowledge.** The LLM wiki compiler drafts pages as *pending*; you approve, reject or merge them in the review queue. Machine-written knowledge never enters search behind your back.
 
 ## Table of Contents
 
+- [The loop](#the-loop)
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [VS Code Extension (preview)](#vs-code-extension-preview)
 - [Building from Source](#building-from-source)
-- [Project Grouping](#project-grouping)
 - [Project Layout](#project-layout)
 - [Naming Layers](#naming-layers)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
+
+## The loop
 
 The whole product is one loop — three tool calls at session boundaries, and every agent that comes after you reuses what the last one left behind:
 
@@ -37,12 +76,7 @@ flowchart TB
     class HAND rec
 ```
 
-The dashed edge is the point: handoffs are stored in local SQLite, not in any agent's private memory, so the loop closes across agents — Claude Code writes the handoff, Cursor reads it. The rest of this README is the same loop seen from the inside: how discovery and grouping work, where your data lives, and how the pieces are layered.
-
-[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)](https://www.typescriptlang.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+The dashed edge is the point: handoffs are stored in local SQLite, not in any agent's private memory, so the loop closes across agents — Claude Code writes the handoff, Cursor reads it.
 
 Both paths meet at one local knowledge base — the human side (desktop app, VS Code extension), the agent side (MCP tools, llms.txt), one service layer underneath, and `repotory-init` wiring the agent side in one command:
 
@@ -71,12 +105,21 @@ flowchart TB
     DSH --> SVC
 ```
 
-> A single-file Wails v2 desktop app (Go + React, embedded SQLite, zero CGO) for **macOS / Windows / Linux**.
-> Works offline with no cloud dependency; AI reads the same local database through the independently distributed [`repotory-mcp`](#set-up-the-ai-execution-interface-repotory-mcp) MCP server.
-> Switch agents without losing context: a handoff written by Claude Code is read directly by Cursor.
+> **Why Repotory?** Coding agents don't retain *the judgment you've accumulated across these repos*: why something was designed this way, what gotcha you hit last time, what the next todo is. Repotory sinks all of that into a local, searchable memory layer that any agent can read and write — `repotory_context` injects it at session start, `repotory_handoff` captures it at session end, and everything in between is retrieved on demand.
 > For positioning priorities, feature tiers and the scope freeze, see [ADR-0006](docs/en/adr/0006-scope-freeze.md) and the [positioning brief](docs/positioning-brief.md) (Chinese).
 
-**Why Repotory?** Coding agents are great at reading code but don't retain *the judgment you've accumulated across these repos*: why something was designed this way, what gotcha you hit last time, what the next todo is. Each agent keeps a private memory format, so switching tools means starting from zero. Repotory sinks all of that into a local, searchable memory layer that any agent can read and write — `repotory_context` injects it at session start, `repotory_handoff` captures it at session end, and everything in between is retrieved on demand.
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/knowledge.png" alt="Knowledge base — 107 notes across imported agent memory and hand-written knowledge" /></td>
+    <td width="50%"><img src="assets/screenshots/project.png" alt="Project detail — tech stack, activity, notes and history for one repository" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Knowledge base</b> — notes from imports, handoffs and your own writing, one searchable stream</sub></td>
+    <td align="center"><sub><b>Project detail</b> — mining, activity and accumulated knowledge per repository</sub></td>
+  </tr>
+</table>
 
 ## Features
 
@@ -87,15 +130,11 @@ flowchart TB
 | Feature | Description |
 |---------|-------------|
 | Markdown notes | Title / tags / categories (knowledge · journal · ideas · other) / pinning / cross-project moves; drafts autosave |
-| Block editor | Type `/` to open the block panel and insert structured blocks — callouts, tabs, collapsibles, code, Mermaid, math, tables… drag to reorder; the output is still plain Markdown (**Experimental**: complex blocks on hold, see ADR-0006) |
+| Block editor | Type `/` to open the block panel and insert structured blocks — callouts, tabs, collapsibles, code, Mermaid, math, tables… drag to reorder; the output is still plain Markdown (**Experimental**: complex blocks on hold) |
 | Rich rendering | highlight.js code highlighting, Mermaid diagrams, KaTeX math, GFM callouts and task lists |
 | FTS5 full-text search | trigram + bm25 relevance ranking, snippet highlighting, covering notes and todos; short CJK queries automatically fall back to LIKE |
 | Version history | Auto snapshot on every save; line-level diff of any version against the current one, one-click restore |
-| Global search | ⌘/Ctrl+K command palette + dashboard federated search (repos / notes / todos) |
-
-### Repository Mining (Core)
-
-The project detail page auto-extracts: README summary, tech stack list (20+ manifest formats recognized), language LOC shares, dependency lists (npm / go.mod including block require / cargo), top contributors, activity stats, and the recent commit stream; results are cached in `repo_meta` to avoid rescanning.
+| Global search | ⌘/Ctrl+K command palette + a dedicated search page (federated: repos / notes / todos) |
 
 ### AI-Ready Interfaces (Core)
 
@@ -107,16 +146,42 @@ The project detail page auto-extracts: README summary, tech stack list (20+ mani
 | `repotory_handoff` | Structured handoff at session end: summary / changes / decisions / gotchas / next_steps rendered into a unified template and stored; the next session (any agent) reads it automatically |
 | llms.txt | `GenerateLLMsTxt` emits an LLM-oriented knowledge base overview in Markdown |
 | Note export | Export any note as `.md` with YAML frontmatter |
-| Knowledge importers | Bring other agents' memory in: **Claude** memory files auto-imported on startup; **Codex** / **OpenCode** sessions and **OpenClaw** / **Hermes** (Nous) global memory as **opt-in, manually-triggered** sources (allowlist-scoped; global-memory sources attach to a project you pick in Settings). Idempotent upsert. |
-| Session auto-capture (M1) | On-demand capture of a project's latest Claude Code session transcript into a handoff note; a `repotory-capture` CLI covers the B-end SessionEnd-hook automation. **Off by default** (`claude_session_capture`), privacy-gated. |
-| Semantic search (M3) | Optional hybrid FTS5 + vector recall (RRF-fused) with a **pluggable vector store**: local **sqlite-vec** (default, pure-Go/zero-CGO) or remote **Qdrant** / **Weaviate** (auto-falls-back to local if unreachable). **Off by default**, gated behind an A/B eval (`cmd/abeval`). See [ADR-0012](docs/adr/0012-semantic-search.md) / [ADR-0013](docs/adr/0013-vector-database-selection.md). |
-| Portable memory export | `ExportMemoryJSON` emits the knowledge base as [Open Memory Protocol](https://github.com/SMJAI/open-memory-protocol)-style memory objects (provisional; OMP is pre-1.0). |
-| Claude memory import | One-click idempotent import of `~/.claude/projects/*/memory/*.md` as knowledge notes (**Support**) |
+| Knowledge importers | Bring other agents' memory in: **Claude**, **Codex**, **OpenCode**, **CodeBuddy** (+ CodeBuddy memory), **Cursor**, **OpenClaw**, **Hermes** — curated memory files auto-imported on startup where applicable; transcript sources are **opt-in, manually-triggered** (allowlist-scoped). Idempotent upsert: re-running updates, never duplicates |
+| Session auto-capture (M1) | On-demand capture of a project's latest Claude Code session transcript into a handoff note; a `repotory-capture` CLI covers the B-end SessionEnd-hook automation. **Off by default** (`claude_session_capture`), privacy-gated |
+| Portable memory export | `ExportMemoryJSON` emits the knowledge base as [Open Memory Protocol](https://github.com/SMJAI/open-memory-protocol)-style memory objects (provisional; OMP is pre-1.0) |
 | Data integrity audit | `repotory_integrity`, 6 read-only checks: FTS index drift, orphan rows, schema shape vs version stamp, scan coverage, knowledge-cache freshness, version-snapshot orphans. Index drift makes search **silently miss results** with no other mechanism to catch it — this is the only way to detect it |
+
+### Knowledge Graph & LLM Wiki (Support — human-gated)
+
+Compiled knowledge pages with a controlled relation vocabulary, and a review queue where the human stays the gate:
+
+| Feature | Description |
+|---------|-------------|
+| LLM wiki compiler | Compiles notes into structured wiki pages (entity / concept / synthesis …) as **pending** drafts; the compiler never edits an approved page ([ADR-0015](docs/en/adr/0015-w3-minimal-compile-loop.md)) |
+| Review queue | Approve / reject / delete pending pages; rejected pages stay as tombstones (`reject ≠ delete`) |
+| Page versions | Every page change is snapshotted by a database trigger into an append-only `page_versions` table; line-level diff and restore ([ADR-0021](docs/en/adr/0021-temporal-graph-page-versions.md)) |
+| Merge suggestions | Structural candidate discovery (shared sources / slug shape / title overlap / existing links — at least two independent signals); the model adds a second opinion, and **only a human can adopt a merge**. Merges leave tombstones and re-point edges ([ADR-0019](docs/en/adr/0019-entity-resolution-merge.md)) |
+| Community summaries | Label Propagation over the approved graph drafts synthesis pages per topic; **opt-in gate** (`wiki_community_summary`), hard budgets, auditable outbound bytes ([ADR-0020](docs/en/adr/0020-community-synthesis.md)) |
+| Graph-aware evidence | `evidencePages` expands retrieval one hop along the whitelisted relation vocabulary with pure-Go PPR re-ranking; **off by default** (`wiki_graph_search`), zero regression when off ([ADR-0018](docs/en/adr/0018-knowledge-graph-foundation.md)) |
+| Semantic search (M3) | Optional hybrid FTS5 + vector recall (RRF-fused) with a **pluggable vector store**: local **sqlite-vec** (default, pure-Go/zero-CGO) or remote **Qdrant** / **Weaviate** (auto-falls-back to local if unreachable). **Off by default**, gated behind an A/B eval (`cmd/abeval`) ([ADR-0012](docs/en/adr/0012-semantic-search.md), [ADR-0013](docs/adr/0013-vector-database-selection.md)) |
+
+### Built-in Backups (Core)
+
+Because a local-first database that lives on exactly one disk is one bad sector away from a bad day:
+
+| Feature | Description |
+|---------|-------------|
+| Daily local snapshots | The app snapshots the database once per day (first open of the day) via `VACUUM INTO`, into `<data dir>/backups/`; keeps 14 daily copies, 0600, **on by default with zero configuration** ([ADR-0025](docs/en/adr/0025-backup-recovery.md)) |
+| Restore = copy one file back | A snapshot is a complete standalone SQLite file; recovery is swapping the file. Rehearsed end-to-end on a real database |
+| Off-machine (opt-in, planned) | Litestream-style WAL streaming or snapshot upload to S3-compatible storage — shaped in ADR-0025 L2, not implemented yet. Red line: a live database never sits inside a cloud-sync folder |
+
+### Repository Mining (Core)
+
+The project detail page auto-extracts: README summary, tech stack list (20+ manifest formats recognized), language LOC shares, dependency lists (npm / go.mod including block require / cargo), top contributors, activity stats, and the recent commit stream; results are cached in `repo_meta` to avoid rescanning.
 
 ### Dashboard & Stats (Support)
 
-> The dashboard and stats serve the legibility of the core loop and are not the product's front door; the frontend default page is the knowledge base, with nav order knowledge base → dashboard → settings (see [ADR-0006](docs/adr/0006-scope-freeze.md), Chinese).
+> Home is the fused workbench ([ADR-0024](docs/en/adr/0024-home-workbench-merge-search-page.md)): assistant, memory ring, featured projects and today's stats on one page; `/search` is a dedicated page; nav order home → dashboard → search → knowledge → review → settings.
 
 | Feature | Description |
 |---------|-------------|
@@ -127,14 +192,15 @@ The project detail page auto-extracts: README summary, tech stack list (20+ mani
 | Smart project grouping | Auto-detects monorepos vs single repos; manual split/merge runs in a single transaction (notes and todos move with the project) |
 | Workday check | Custom daily code target with alerts when unmet |
 | Status bar | Live latest-commit display (repo / branch / time, 30s cache) |
+| Theme switcher | Light / dark / follow-system, persisted across restarts |
 
 ### Other
 
 | Feature | Description |
 |---------|-------------|
-| Plugin system | In-process Go scripts via yaegi + knowledge source importers ([knowledge sources](docs/en/plugins/overview.md); **Experimental**, platform infrastructure work paused) |
 | i18n | One-click Chinese / English switch (react-i18next, zh-CN + en) |
 | Single-file cross-platform | A single Go binary, no runtime dependencies |
+| Offline by design | No account, no telemetry; outbound traffic only when you explicitly configure an endpoint |
 
 ## Quick Start
 
@@ -143,8 +209,6 @@ The project detail page auto-extracts: README summary, tech stack list (20+ mani
 Get the latest build for your platform from [Releases](https://github.com/sky-jiangcheng/repotory/releases).
 
 **Option 1: direct download**
-
-Download the archive for your platform from Releases and run it:
 
 | Platform | Assets |
 |----------|--------|
@@ -160,12 +224,16 @@ Download the archive for your platform from Releases and run it:
 | Linux | same | `/usr/local/bin/repotory` + `/usr/local/bin/repotory-mcp` |
 | Windows | `iwr -useb https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.ps1 \| iex` | `%LOCALAPPDATA%\Repotory` (added to user PATH automatically) |
 
-macOS also ships via Homebrew (add the tap first — see [`packaging/`](packaging/README.md)):
+**Option 3: package managers**
 
 ```bash
-brew tap sky-jiangcheng/repo
-brew install --cask sky-jiangcheng/repo/repotory
+# macOS (desktop app)
+brew tap sky-jiangcheng/repo && brew install --cask sky-jiangcheng/repo/repotory
+# Windows (desktop app)
+scoop bucket add repo https://github.com/sky-jiangcheng/scoop-repo && scoop install repo/repotory
 ```
+
+Manifests live in [`packaging/`](packaging/README.md) — versions derive from `wails.json`, `sha256` values come from the actual release assets (by design: a checksum mismatch must fail the install).
 
 Launch opens a desktop window directly (a Wails app — no browser needed):
 
@@ -223,14 +291,7 @@ Any time in between you can just ask:
 
 > "What local projects do I have? What did I note down about auth?"
 
-The agent chains `repotory_projects_list` → `repotory_notes_search` → `repotory_notes_read`; new conclusions go back with `repotory_notes_create`. You can also export any note as `.md` with YAML frontmatter, or generate an LLM-oriented `llms.txt` overview. The full tool list and workflows live in [SKILL.md](SKILL.md).
-
-The manifests are in [`packaging/`](packaging/README.md); versions derive from `wails.json` and `sha256` values come from the actual release assets (Homebrew / Scoop refuse to install on checksum mismatch — by design). Published taps:
-
-- **Homebrew**: [sky-jiangcheng/homebrew-repo](https://github.com/sky-jiangcheng/homebrew-repo)
-- **Scoop**: [sky-jiangcheng/scoop-repo](https://github.com/sky-jiangcheng/scoop-repo)
-
-> Same for the desktop app: `brew install --cask sky-jiangcheng/repo/repotory` (macOS), `scoop install repo/repotory` (Windows). Linux desktop ships as a tarball only.
+The agent chains `repotory_projects_list` → `repotory_notes_search` → `repotory_notes_read`; new conclusions go back with `repotory_notes_create`. The full tool list and workflows live in [SKILL.md](SKILL.md).
 
 ### Data Directory
 
@@ -240,7 +301,7 @@ Configuration and the database live in the per-user app data directory (schema m
 - **Windows**: `%APPDATA%/repotory/repotory.db`
 - **Linux**: `~/.config/repotory/repotory.db`
 
-Log paths: see [Troubleshooting](docs/en/troubleshooting.md).
+Daily snapshots live next to it in `backups/`. Log paths: see [Troubleshooting](docs/en/troubleshooting.md).
 
 ## VS Code Extension (preview)
 
@@ -250,19 +311,19 @@ The extension (VS Code / Cursor / Windsurf — one VSIX covers all three) is a *
 git clone https://github.com/sky-jiangcheng/repotory.git
 cd repotory/ide/vscode
 npm install
-npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.0.0.vsix
+npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.6.0.vsix
 ```
 
 Then install the produced `.vsix`:
 
 - **UI**: Extensions view → `⋯` menu → **Install from VSIX…**
-- **CLI**: `code --install-extension repotory-vscode-2.0.0.vsix` (use `cursor` / `windsurf` for the forks)
+- **CLI**: `code --install-extension repotory-vscode-2.6.0.vsix` (use `cursor` / `windsurf` for the forks)
 
 The extension is a thin client: commands call `repotory-mcp` over stdio (install it first — brew / scoop / [Releases](https://github.com/sky-jiangcheng/repotory/releases)), and all answers come from the same `internal/service` layer as the desktop app. Capability details in [`ide/vscode/README.md`](ide/vscode/README.md).
 
 ## Building from Source
 
-Requirements: **Go 1.25+**, **Node.js 20+** (frontend build), optional [Wails CLI](https://wails.io) v2.13+.
+Requirements: **Go 1.26+**, **Node.js 20+** (frontend build), optional [Wails CLI](https://wails.io) v2.13+.
 
 ```bash
 # Frontend deps & build (web/dist is go:embed-ed into the binary)
@@ -278,7 +339,7 @@ go build -o repotory-mcp ./cmd/mcp/
 ./scripts/build.sh
 ```
 
-Dev mode: `wails dev` (frontend hot reload + Wails binding injection).
+Dev mode: `wails dev` (frontend hot reload + Wails binding injection). Browser-mode dev stack: `bash scripts/dev.sh` (headless API on :18765 + Vite on :5173).
 
 Tests & checks:
 
@@ -286,17 +347,8 @@ Tests & checks:
 go test ./...            # full Go test suite (service/db/knowledge/scanner/diff…)
 cd web && npm test       # vitest
 cd web && npm run build  # strict tsc check + production build
+cd web && npm run lint   # eslint
 ```
-
-## Project Grouping
-
-| Scenario | Grouping rule |
-|----------|---------------|
-| Single-repo project | Parent directory contains exactly one repo → the parent directory is the project |
-| Monorepo | Parent directory contains multiple child repos → grouped as one project |
-| Nested repos | The parent itself is a Git repo and subdirectories also contain repos → split into separate projects |
-
-On the project detail page you can manually **merge up** / **split down** to adjust grouping (single transaction; notes and todos move along).
 
 ## Project Layout
 
@@ -309,13 +361,17 @@ internal/
   domain/                # Row types shared across layers
   db/                    # SQLite: schema/migrations + domain-split queries (projects/notes/…)
   core/git/              # Git provider abstraction (local CLI implementation)
-  core/plugin/           # Plugin SPI + yaegi runtime
+  core/plugin/           # Knowledge-importer SPI (source registration, probe, import runs)
+  importers/             # Per-source readers: claude / codex / opencode / codebuddy / cursor / openclaw / hermes
+  graph/                 # Pure-Go Label Propagation + PPR for the knowledge graph
+  integrity/             # Read-only data-integrity checks behind repotory_integrity
   stats/ knowledge/      # git log stats, repository mining
   scanner/ grouper/      # filesystem scanning, project grouping
   platform/              # OS differences: data dirs, log paths, default scan roots
   version/ diff/         # single version source, note line-level diff
 cmd/
   mcp/                   # MCP stdio server (AI execution interface + agent-score self-check tools)
+  server/                # Headless HTTP API (browser mode, CI smoke)
 web/src/
   api/                   # types + transport (Wails/HTTP dual-mode) + endpoints
   hooks/                 # useApiData (cache) / useDebouncedCallback / useScanPolling…
@@ -347,7 +403,7 @@ English pages are the default; the [Chinese manual](https://sky-jiangcheng.githu
 | [Getting Started](docs/en/getting-started.md) | Install, first-run setup, scanning |
 | [Data & Backup](docs/en/data-management.md) | Backup, migrating machines, reset & uninstall |
 | [Features](docs/en/features/knowledge.md) | Knowledge base / dashboard / project detail / settings / command palette |
-| [Knowledge Sources](docs/en/plugins/overview.md) | Plugin SPI, events, knowledge source importers |
+| [Knowledge Sources](docs/en/plugins/overview.md) | Built-in importers, events, per-source behaviour |
 | [AI Integration](docs/en/features/ai-integration.md) | CLI, MCP, llms.txt |
 | [API Reference](docs/en/api/reference.md) | Wails binding surface contract + OpenAPI |
 | [Architecture](docs/en/architecture.md) | Layering, data flows, key decisions |
@@ -361,7 +417,7 @@ English pages are the default; the [Chinese manual](https://sky-jiangcheng.githu
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) (Chinese) for the dev environment and commit conventions. Quick start:
 
-Requirements: **Go 1.25+**, **Node.js 20+**, Git.
+Requirements: **Go 1.26+**, **Node.js 20+**, Git.
 
 ```bash
 cd web && npm install && npm run build && cd ..  # frontend build
