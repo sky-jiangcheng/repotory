@@ -45,7 +45,7 @@
 - [ ] **图密度欠账（lane 2 兑现前置，承接上方 lane 2 草案 ①）**：目标 **approved 页 ≥ 15、边 ≥ 20**（当前 **6 页 / 5 边**，其中 3 条连接 approved 页）；达标后才谈得上复跑 evidence 门（`cmd/abeval -mode evidence`）。
   - **进展 2026-10-18**：两轮限时编译 + 人审（批 2 拒 1）4→6 页、1→5 边；结构性瓶颈——日志类笔记出页率 ~0.2 页/条（BookStore 50 / investment-dashboard 5 全为 log），knowledge 类 1→2 页 + 3 边。
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
-当前密度：approved 页 7、边 2（均未达标）
+当前密度：approved 页 6、边 5（其中 3 条连接 approved 页，均未达标）
 - [ ] **JetBrains 插件**：缓议，待真实需求信号（issue/star）+ 补 ADR 后立项
 
 ---
