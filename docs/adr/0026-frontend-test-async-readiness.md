@@ -1,6 +1,6 @@
 # ADR-0026: 前端测试的异步落地契约——「等数据」这件事写在哪一层
 
-状态：**Proposed**（2026-10-18）。方向已由用户拍定（A2 + A1 + C，B 否掉，见「决策」），**尚未落码**；剩余一处 ⚑ 见「代价」的「未决子问题」条与晋升条件 6。落笔本 ADR 未改动任何生产代码。
+状态：**Proposed**（2026-10-18）。方向与子决策均已由用户拍定（A2 + A1 + C，B 否掉，helper 覆盖面取 4 文件；见「决策」）。**A2 + A1 与探针夹具已落码（2026-10-19 凌晨，跨了拍板当日的午夜）**，晋升条件 1、2、3、5、6 已达；**条件 4（C）未做，故本 ADR 维持 Proposed**。落码未触碰任何生产代码。
 
 ## 背景
 
@@ -72,6 +72,7 @@ A2 作为地板（一次性、不改 mock 默认、不破空态），A1 作为�
 - **A2（通用 `settle()`）作地板**：`render` 后跨过一次宏任务边界，令所有立即 resolve 的 mock 链路落地。它不动任何 mock 默认值，因此不破空态用例——这是它相对 B 的决定性优势。
 - **A1（per-test readiness 谓词）作补充**：用在 `settle()` 排不到的地方，即真等计时器的链路，以及「锚点首帧就在、必须等数据那一帧」的情形。已落地的 `pickProject` 属后者，保留原位不回改。
 - **C（`eslint-plugin-testing-library`）作后置守卫**：排在 A 落地之后单独引入。其边界在本 ADR 里写死——它只管**形态**（未 await 的 `findBy*`、`getBy`/`waitFor` 误用），**不承诺**拦住本 ADR 这一类。把这句话写死，是为了阻止后来者误信「lint 已经兜住了」。
+- **共享 helper 的覆盖范围（2026-10-18 用户拍定）**：`renderReady` / `settle()` **只服务那 4 个形状相同的文件**（`Review`/`Home`/`Dashboard`/`Search`，同为 `MemoryRouter` + mock i18n），`AiTab`、`NotFound`、`App.smoke` 显式不纳入。理由不是省事：`AiTab` 的下拉已被 `{models.length > 0 && …}` gate 住、结构安全，`NotFound` 与 `App.smoke` 用真实 i18n 且只测外壳；把两种 i18n 口径塞进同一个 helper 会把「断 key 还是断译文」的隐性错配固化进 API。边界须写进 `CONTRIBUTING.md`，否则将来给 `NotFound`/`AiTab` 写交互测试的人会以为有兜底。
 - **B 的否决依据是测量，不是偏好**：探针下红掉的 3 个用例本就喂了非空数据，B 改的是「数据是否存在」而非「数据何时落地」；它还够不到 `App.smoke` 的 Proxy seeding，并会直接破 3 个空态用例。
 
 C 的新增依赖理由（晋升条件 4 要求写实，此处即回答 CONTRIBUTING 的「新增依赖有明确理由」）：本仓库前端测试的正确性目前完全依赖人记住「异步查询要不要等」，而 `web/eslint.config.js:18-20` 只挂了 `react-hooks` 一条守卫；探针证明这种记忆会漏（同一文件 3 处，修掉 1 处后其余仍在）。插件是 devDependency，不进产品运行时、不触零 CGO 边界、不改产品依赖面。
@@ -81,7 +82,7 @@ C 的新增依赖理由（晋升条件 4 要求写实，此处即回答 CONTRIBU
 ## 代价
 
 - **落地面**：需要新增一个共享测试模块承载 `settle()`，并改动 4 个组件测试文件（`Review`/`Home`/`Dashboard`/`Search`）；生产代码 0 行。
-- **本次决策带出的未决子问题 ⚑**：共享 helper 覆盖不到全部 8 个组件测试文件，因为渲染包裹本就不统一——`NotFound` 与 `App.smoke` 用真实 i18n，其余六个 mock 掉它，`AiTab` 还根本不带 router。要么 helper 接受 provider 策略作参数，要么只覆盖那 4 个同形状文件、其余显式不纳。这个岔路本 ADR 未定，落地前须先拍。
+- **覆盖面只有 8 个组件测试文件中的 4 个**（2026-10-18 已就此拍定，见「决策」）：`AiTab`/`NotFound`/`App.smoke` 因渲染包裹不统一（无 router、真实 i18n）被显式排除在外。这不是遗留缺口而是有意边界，但**边界不留痕就等于给那 3 个文件承诺了一个不存在的兜底**——故写入晋升条件 6。
 - **`settle()` 有一个会死锁的前提**：它靠真实 `setTimeout(0)` 跨宏任务边界，因此在 `vi.useFakeTimers()` 下**永不 resolve**，测试会挂到 `waitFor` 超时。现状安全——fake timers 只出现在 4 个 `renderHook` 测试（`useDebouncedCallback`、`useConfirmClick`、`useScanPolling`、`useApiData`），不经过 `render`。但这条前提必须写进 helper 的注释，否则第一个把它带进假计时器场景的人得到的是一场无法理解的挂死。
 - 「首帧无数据」自此在组件测试里不可直接观测：将来要测骨架屏必须显式绕开 `settle()`（当前无此类断言，已核）。
 - **C 落地时会翻出既有账**：插件一旦挂上，可能一次性报出现存测试里的形态违例。「零新增 error」不等于「零既有 error」，届时要么连带修完，要么显式登记 override，不允许静默关掉规则。
@@ -94,4 +95,13 @@ C 的新增依赖理由（晋升条件 4 要求写实，此处即回答 CONTRIBU
 3. `CONTRIBUTING.md` 增补一条前端测试约定：`settle()` 是默认地板、`settle()` 在 fake timers 下不可用、以及**为何不用 B 的测量结论**（这段必须留，否则同一个 B 方案会在下一次 flake 时又被提出来）。`docs/**` 与 `docs/en/**` 同步，`node scripts/check-docs-mirror.mjs` 与 `node scripts/build-docs.mjs` 全绿。
 4. C 的新增 devDependency 理由见「决策」节，已写实；尚缺的是实测半边——`npm run lint` 在现存 21 个测试文件上**零新增 error**，既有违例须逐个处置或显式登记。
 5. `cd web && npm test`（含多轮与并发争抢）+ `npm run build` 绿。
-6. ⚑ 上文「未决子问题」的 i18n/provider 策略由用户拍定后方可落码。
+6. 「helper 只覆盖 4 个文件」这条边界须在 `CONTRIBUTING.md` 与 helper 注释**两处**写明不覆盖哪些、为什么——`AiTab`/`NotFound`/`App.smoke` 不在保护范围内，将来给它们写交互测试的人不得假定有 `settle()` 兜底。
+
+## 实现修正（2026-10-19 落码时得到的与设计不同的事实）
+
+- **探针有强度上界**：`findBy*` 默认 1000ms 超时，所以 `REPO_TEST_LAG_MS` 只能设在 ~900ms 以下（实测 300ms 与 700ms 两档全绿，145 例）。这意味着夹具是「把窗口重开」而不是「任意强度加压」——用它验收足够，别拿它的绿来宣称时序鲁棒性无上限。
+- **`lagged()` 必须配 `mockImplementation`**：`mockResolvedValue(lagged(x))` 运行期靠 thenable 解包能跑，但 `tsconfig.json` 把 `src` 全量纳入 tsc 门，7 处直接报 `TS2345`——那个位置类型上要的是已解析值。写 ADR 时没预料到。
+- **探针必须打进 per-test 覆盖值**：只给 `beforeEach` 的默认值套 `lagged()` 时，三个暴露用例反而绕开了探针——它们自己 `mockResolvedValue` 了非空数据。把覆盖值一并套上，探针才真的测到它们。这也是「B 无效」的又一次印证：数据存在与否从来不是变量。
+- **晋升条件 2 是实测不是类比**：把新写的首页范围下拉测试退回「等 combobox」，`REPO_TEST_LAG_MS=300` 下报 `expected '0' to be '7'`——与 Review 当初同一个失败签名，跨页面复现。
+- **覆盖面按决策落地**：`Review`/`Home`/`Dashboard`/`Search` 已接 `renderReady`；`AiTab`/`NotFound`/`App.smoke` 按「决策」保持不接，边界已写入 `CONTRIBUTING.md`「前端测试的异步落地（ADR-0026）」一节与 helper 注释两处（条件 3、6 达标）。
+- **条件 4 未完成**：C（`eslint-plugin-testing-library`）按约定应单独一次改动引入，本次未做——这是本 ADR 维持 Proposed 的唯一原因。
