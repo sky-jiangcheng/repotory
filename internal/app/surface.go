@@ -120,6 +120,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"GenerateLLMsTxt":      {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
 	"ExportNoteAsMarkdown": {SurfaceDesktopOnly, "", "writes to a path chosen in a native save dialog; an agent should not pick where user files land"},
 	"ExportMemoryJSON":     {SurfaceDesktopOnly, "", "file save; OMP export is provisional (ADR-0011)"},
+	"RunBackupNow":         {SurfaceDesktopOnly, "", "writes a local snapshot file; the hourly ticker already covers the cadence (ADR-0025 L1)"},
 
 	// ---- knowledge sources / memory -----------------------------------------
 	"GetKnowledgeSources":        {SurfaceDesktopOnly, "", "plugins settings tab"},

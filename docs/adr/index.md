@@ -31,6 +31,7 @@ order: 24
 | [0022](0022-agent-memory-discovery-sync.md) | 自动发现与定时同步 agent 记忆——来源类型用户可见（M8） | Proposed（方案待评审；CodeBuddy 接线可先行） |
 | [0023](0023-note-ownership-knowledge-organize.md) | 笔记归属与知识库整理——导入不再静默丢知识，漂着的知识有落点、可归口 | Accepted（**真库副本端到端演练 + 人审已完成（2026-10-18）**。schema v24、导入落点、清理豁免、点笔记直达、知识库整理 UI + 3 个桌面专属 RPC 全部实现，`go test ./...` / `-race` / web build/test/lint / build-docs 全绿。晋升 Accepted 已达——条件 5 的真库副本演练（由用户亲自跑）在副本（VACUUM INTO 副本、不碰 live）上完成：opencode 导入产出 31 条笔记（全部会话文件解析），未匹配目录落于 import_placeholder 项目（如 CodeStat ×10），匹配目录更新现有项目；整理区可列出并执行 ReassignLandingNotes 迁移。演练发现并修复了一真实 bug：opencode 导入器的 Summary 字段类型漂移（旧版为字符串，新版为对象 {"additions":…, "deletions":…, "files":…}）导致 json.Unmarshal 整条记录失败，全部会话被静默拒绝（0 导入）——修改为 tolerant summaryField（接受 string 或任意非 string，视为空），补真实形态回归用例。另记 WalkDir 不跟随 symlink 的获悉：演练需先实体拷贝 session 目录到假 HOME。落码得到的与设计不同的事实见文末「实现修正」节） |
 | [0024](0024-home-workbench-merge-search-page.md) | 首页工作台化——首页与仪表盘合并、全局搜索独立成页、热门推荐 | **Accepted（2026-10-16）**：`/` 单栏融合 Dashboard、`/dashboard` 重定向、导航以「搜索」替「仪表盘」、`/search` 空闲态展示热门项目/热门标签；修订 0017 §4 的两栏并排措辞，「仪表盘不移出首屏」原则不变 |
+| [0025](0025-backup-recovery.md) | 备份与恢复——产品自带的每日本地快照，云端推送 opt-in | Proposed（**2026-10-18 L1 已落码**：每日 VACUUM INTO 快照（活连接含 WAL、日期即幂等键、启动即拍+每小时重试）+ 14 份轮转 + backup_enabled/backup_retain 门；纯本地零外发默认开；红线：活库永不进云盘同步文件夹（10-14 FUSE 嫌疑教训）；L2 云推送（litestream/S3）与 Docker 档定型未实现；Accepted 差真机恢复演练 + 三日连续快照 + 一次轮转观察） |
 
 ## 约定
 

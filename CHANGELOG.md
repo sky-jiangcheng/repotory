@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **内置每日本地数据库快照（[ADR-0025](docs/adr/0025-backup-recovery.md) L1，默认开）**：应用启动即拍 + 每小时重试，当天首份成功后同日全部 no-op；快照以 `VACUUM INTO` 在活连接上产出（含 WAL、写入中状态一致），落 `<数据目录>/backups/repotory-YYYY-MM-DD.db`、权限 0600；轮转默认保留 14 份、只清理 `repotory-*.db` 前缀。纯本地零外发、无需任何配置；`backup_enabled=0` 可关（手动/定时同一条明确拒绝），`backup_retain` 调轮转深度；`RunBackupNow` 绑定已注册（设置页按钮未接，脚本可调）。源自 10-14 事故教训与「没人再买移动硬盘」的现实——现代解法（MySQL 系）是数据库自产快照 + 日志归档上对象存储，SQLite 的对应物（Litestream）留作 L2 opt-in，本版先落地零操作的本地层。
+
 ### 修复
 
 - **CodeBuddy 会话导入器对本机真实数据静默 0 导入（三处布局漂移，2026-10-18 重导演练发现）**：①登录态 profile 把 history 藏在 `Data/<uid>/<IDE>/<inner>/history` 一层之下，`sessionRoots` 只扫浅层——浅层的 12 个会话全是空索引，真数据（15 会话/1.6 万消息文件）全在深层；②消息正文藏在转义的 `message` 字符串（内层 JSON 的 `content[].text`）里，导入器只读顶层 `content`，即使扫到也提成空文本；③首条提问以 `<user_info>`/`<git_status>`/`<project_context>` 等信封链开头，固定标签剥离后会泄漏进标题（如「CodeBuddy · <git_status> · 088c8c98」）。现改为：深层根一并扫描；`message` 内层 JSON 解码取 text 块（`<answer>` 是回复本体标记，取内文而非剥离）；前置信封链通用剥离；多 fork 会话取消息文件最多的一份（hex 文件名序与时间无关，「第一个可解析」可能选中早期残片）。附 codebuddy 包首批测试（此前零测试）。重导实测：15 会话全部找回（此前 0），重跑幂等（created=0/updated=15）。

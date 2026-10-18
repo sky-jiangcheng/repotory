@@ -309,6 +309,11 @@ func (a *App) ExportNoteAsMarkdown(noteID int64) string { return a.svc.ExportNot
 // JSON array (ADR-0013 interop seam; provisional, OMP is pre-v1). limit<=0 = all.
 func (a *App) ExportMemoryJSON(limit int64) string { return a.svc.ExportMemoryJSON(int(limit)) }
 
+// RunBackupNow produces today's local database snapshot immediately (VACUUM
+// INTO, ADR-0025 L1) and rotates old ones. The hourly ticker calls the same
+// path; this binding exists for a settings-page button and scripted runs.
+func (a *App) RunBackupNow() (string, error) { return a.svc.RunBackupNow() }
+
 // --- Plugins / knowledge sources ----------------------------------------------
 
 // GetKnowledgeSources returns registered knowledge importers with their state.

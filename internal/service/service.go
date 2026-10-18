@@ -30,6 +30,11 @@ type Service struct {
 	rt    *pluginruntime.Runtime
 	guser string // git user.name used to split "mine" vs "all" stats
 
+	// backupDir overrides where local snapshots land (ADR-0025 L1). Empty at
+	// runtime — RunBackupNow derives it from the platform data dir — and set
+	// only by tests so they never write into the real user data directory.
+	backupDir string
+
 	// onImportEvent, when set, is invoked with the import.completed payload
 	// after every knowledge import so the UI layer can forward it to the
 	// frontend (Wails events, CLI output, ...).
@@ -201,6 +206,11 @@ func (s *Service) Startup() {
 		// through TriggerImport, so the runtime's importMu serializes them).
 		// The first round is one full interval away, never at launch.
 		s.startKnowledgeSyncTicker()
+
+		// Local database snapshots (ADR-0025 L1): one VACUUM INTO snapshot per
+		// day, produced at first open and retried hourly (no-ops once today's
+		// file exists). Purely local — no outbound traffic, no privacy gate.
+		s.startBackupTicker()
 
 		// Auto-import knowledge sources on startup (issue #36) — but only on an
 		// explicit opt-in. Tracked via bgGo so Shutdown waits for it instead of
