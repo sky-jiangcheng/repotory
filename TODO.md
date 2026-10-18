@@ -14,11 +14,11 @@
 
 ## 当前待办
 
-### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **代码已全部落码（2026-10-14）**，仅剩 Phase 0 硬门
+### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **代码已全部落码（2026-10-14）；Phase 0 两门已于 2026-10-15 过门，lane 2 晋升现挂 [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 条件 10 的强化门槛**
 
 - [x] `page_embeddings`（vec0，仅 approved 页）：物理独立于 `note_embeddings` + `page_embed_dirty` 触发器队列 + `memsrc` 无关的专用 `db.Page*` 助手；门控挂既有 `semantic_search` 之后；`vectorStore()` memo 失效路径对页面配置同样生效。回归：`pagevec_test.go` / `page_embed_dirty_test.go` / `page_embed_drain_test.go`
 - [x] `evidencePages` 读图：`WITH RECURSIVE` 沿白名单（`ref`/`part-of`/`documents`，不沿 `contradicts`）1 跳扩召回 + 纯 Go PPR 替 bm25 定序；notes 与 pages 按类型分列交织；新门 `wiki_graph_search` 默认关，关时零行为回退（`TestEvidencePages_GraphOffIsFTSPure` 钉住逐条一致）
-- [x] **Phase 0（唯一硬门）—— 两门均已 GATE PASS（2026-10-15，随 v2.2.0 发布）**：真实标注 query 集 + `abeval` delta 全部量出。脚手架：`cmd/queryset`（`-seed` 导出带行号工作表 / `-emit` 解析回 `queries.jsonl`）。**M3 门**：`.annotation-prep/notes.labeled.tsv`（51 条人工 query，覆盖 51 个 note id）→ k=3/5/10/20/50 全区间 PASS，k=10 时 lexical 0.608 / hybrid 0.735 / delta **+0.127**。**M7 lane 2 evidence 门**：`.annotation-prep/evidence-cases.jsonl`（16 条人工 query，标注 `page` 类型 id）→ k=2..20 全区间为正，k=10 时 FTS 0.719 / graph 0.812 / delta **+0.094**，逐案诊断确认 4 例增益全部形如「命中 page6 → 沿边带出 page7」、无一例回退。embedding 走 LM Studio `localhost:1234`（`text-embedding-nomic-embed-text-v1.5`, dim=768），跑门脚本 `.annotation-prep/run-gate.sh` / `run-evidence-gate.sh`（复制真库注入配置，不动 live、不改用户 `semantic_search`），逐案诊断 `cmd/abevaldiag`（两模式）。过程中修了 `internal/db/search.go` 的 CJK 词法不可达（`escapeFTSOR` 单段中文整句零召回 + LIKE 整句单子串匹配）与 `updated_at=''` 触发 `julianday` NULL 导致整条查询归零——修前 delta +0.338 里约六成是「CJK 词法坏了」的假信号，修后 +0.127 才是语义检索的真实增益。另修 `abevaldiag` 两臂开关时序（写在闭包外致两臂同值、delta 恒 0）。**两门的强度限定**：M3 的 delta 真实但幅度小；evidence 门的 delta 是在稀疏图（7 页 2 边）上的下限，不能外推为「图感知普遍优于 FTS」——要真正兑现 lane 2，需先让编译产出更多页与边再复跑。**门已过，剩下的都是决策**（M3 默认上线 / lane 2 晋升条件），见「用户动作」
+- [x] **Phase 0（当时的唯一硬门）—— 两门均已 GATE PASS（2026-10-15，随 v2.2.0 发布）**：真实标注 query 集 + `abeval` delta 全部量出。脚手架：`cmd/queryset`（`-seed` 导出带行号工作表 / `-emit` 解析回 `queries.jsonl`）。**M3 门**：`.annotation-prep/notes.labeled.tsv`（51 条人工 query，覆盖 51 个 note id）→ k=3/5/10/20/50 全区间 PASS，k=10 时 lexical 0.608 / hybrid 0.735 / delta **+0.127**。**M7 lane 2 evidence 门**：`.annotation-prep/evidence-cases.jsonl`（16 条人工 query，标注 `page` 类型 id）→ k=2..20 全区间为正，k=10 时 FTS 0.719 / graph 0.812 / delta **+0.094**，逐案诊断确认 4 例增益全部形如「命中 page6 → 沿边带出 page7」、无一例回退。embedding 走 LM Studio `localhost:1234`（`text-embedding-nomic-embed-text-v1.5`, dim=768），跑门脚本 `.annotation-prep/run-gate.sh` / `run-evidence-gate.sh`（复制真库注入配置，不动 live、不改用户 `semantic_search`），逐案诊断 `cmd/abevaldiag`（两模式）。过程中修了 `internal/db/search.go` 的 CJK 词法不可达（`escapeFTSOR` 单段中文整句零召回 + LIKE 整句单子串匹配）与 `updated_at=''` 触发 `julianday` NULL 导致整条查询归零——修前 delta +0.338 里约六成是「CJK 词法坏了」的假信号，修后 +0.127 才是语义检索的真实增益。另修 `abevaldiag` 两臂开关时序（写在闭包外致两臂同值、delta 恒 0）。**两门的强度限定**：M3 的 delta 真实但幅度小；evidence 门的 delta 是在稀疏图（7 页 2 边）上的下限，不能外推为「图感知普遍优于 FTS」——要真正兑现 lane 2，需先让编译产出更多页与边再复跑。**门已过**；当时悬着的两项决策也都有了结论——M3 默认值经 2026-10-18 拍板**保持默认关**（授权面理由与前向约束见 [ADR-0012](docs/adr/0012-semantic-search.md) 末节），lane 2 晋升门槛同日**强化为条件 10**（[ADR-0018](docs/adr/0018-knowledge-graph-foundation.md)）。所以现在欠的不是决策而是**密度兑现**，见「用户动作」的图密度欠账条
 
 
 ### 后续路线（草案已成文，按序触发，各自待批准）
@@ -38,10 +38,9 @@
 - [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**部分进展 2026-10-18**：wails build 通过、真机启动进程存活无崩溃；交互清单待用户按序核验）
 - [ ] **Hermes sessions 真机核验**：sessions 导入已落码（schema 由 TencentDB-Agent-Memory 的 shipped importer 确证，见 ADR-0011 实现修正节），差一次真机 `~/.hermes/state.db` 跑通 + 设置页点源验证。（2026-10-16 核查：本机 `~/.hermes/state.db` 尚不存在，需先产生 Hermes 会话数据再跑通）
 - [ ] **OMP 导入向**（等 OMP v1 稳定）；Bleve（需先做「是否替代 FTS5」架构决策）、Pinecone/Milvus（需凭据）按 `vectordb` registry 既有流程待接
-- [ ] **图密度欠账（lane 2 兑现前置，承接上方 lane 2 草案 ①）**：目标 **approved 页 ≥ 15、边 ≥ 20**（当前 **6 页 / 5 边**，其中 3 条连接 approved 页）；达标后才谈得上复跑 evidence 门（`cmd/abeval -mode evidence`）。
+- [ ] **图密度欠账（lane 2 兑现前置，即 [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 条件 10 的门槛 ①）**：目标 **approved 页 ≥ 15、边 ≥ 20**（当前 **6 页 / 5 边**，其中 3 条连接 approved 页）；达标后才谈得上复跑 evidence 门（`cmd/abeval -mode evidence`）。
   - **进展 2026-10-18**：两轮限时编译 + 人审（批 2 拒 1）4→6 页、1→5 边；结构性瓶颈——日志类笔记出页率 ~0.2 页/条（BookStore 50 / investment-dashboard 5 全为 log），knowledge 类 1→2 页 + 3 边。
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
-当前密度：approved 页 6、边 5（其中 3 条连接 approved 页，均未达标）
 - [ ] **JetBrains 插件**：缓议，待真实需求信号（issue/star）+ 补 ADR 后立项
 
 ---
