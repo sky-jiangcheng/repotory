@@ -47,6 +47,7 @@
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
 当前密度：approved 页 6、边 5（其中 3 条连接 approved 页，均未达标）
 - [ ] **JetBrains 插件**：缓议，待真实需求信号（issue/star）+ 补 ADR 后立项
+- [ ] **[ADR-0026](docs/adr/0026-frontend-test-async-readiness.md) 前端测试的异步落地契约 —— 方向已定，待落码**：2026-10-18 用户拍板三层 **A2（通用 `settle()` 地板）+ A1（per-test readiness 谓词）+ C（`eslint-plugin-testing-library` 后置守卫）**，并**以测量否证方案 B**（默认非空 mock 改的是数据「是否存在」而非「何时落地」，探针下红掉的 3 个用例本就喂了非空数据；且直接破 `Home`/`Search`/`useKnowledgePage` 三处空态用例）。触发事实：`8d81714` 就地修掉 select flake 后复核发现，三条加载 promise 各延迟 300ms 的探针下 `Review.test.tsx` **12 例红 3、且均非 select 类**——真竞态类是「`findBy*` 等无条件挂载的锚点 + 随后同步读 effect 状态」。**剩余阻塞（待用户拍）**：共享 helper 覆盖不到 8 个组件测试文件（`NotFound`/`App.smoke` 用真实 i18n、`AiTab` 无 router），provider 策略须先定。落码验收 = 探针固化成夹具后 `Review.test.tsx` **12/12**（现状 9/12）+ 给 `HomeKnowledgeAssistant.tsx:426-438` 检索范围下拉补第一例交互测试（它同形、已在测试里挂载、是下一个原生继承者）。红线：**`settle()` 在 `vi.useFakeTimers()` 下永不 resolve，会死锁到 waitFor 超时**，此前提须写进 helper 注释。
 
 ---
 
