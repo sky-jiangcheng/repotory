@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-18
+
 ### 新增
 
 - **内置每日本地数据库快照（[ADR-0025](docs/adr/0025-backup-recovery.md) L1，默认开）**：应用启动即拍 + 每小时重试，当天首份成功后同日全部 no-op；快照以 `VACUUM INTO` 在活连接上产出（含 WAL、写入中状态一致），落 `<数据目录>/backups/repotory-YYYY-MM-DD.db`、权限 0600；轮转默认保留 14 份、只清理 `repotory-*.db` 前缀。纯本地零外发、无需任何配置；`backup_enabled=0` 可关（手动/定时同一条明确拒绝），`backup_retain` 调轮转深度；`RunBackupNow` 绑定已注册（设置页按钮未接，脚本可调）。源自 10-14 事故教训与「没人再买移动硬盘」的现实——现代解法（MySQL 系）是数据库自产快照 + 日志归档上对象存储，SQLite 的对应物（Litestream）留作 L2 opt-in，本版先落地零操作的本地层。
