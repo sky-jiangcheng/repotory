@@ -1,6 +1,6 @@
 # ADR-0012: 语义检索评估——向量召回补 FTS5 字面盲区，守住零 CGO（M3）
 
-- 状态：Accepted-in-principle（向量侧零 CGO 已实测、hybrid RRF 核心已落地；**C 已默认落地**；A 定为 OpenAI 兼容协议，嵌入器 + 向量存储 + 配置/密钥脱敏 + **后端全库重算 & FTS×vec RRF 融合均已落地、端到端测试通过、仍默认关**；设置 UI 已提供开关与重建，真实标注 A/B 门仍未过；放弃 B）
+- 状态：Accepted-in-principle（向量侧零 CGO 已实测、hybrid RRF 核心已落地；**C 已默认落地**；A 定为 OpenAI 兼容协议，嵌入器 + 向量存储 + 配置/密钥脱敏 + **后端全库重算 & FTS×vec RRF 融合均已落地、端到端测试通过、仍默认关**；设置 UI 已提供开关与重建；**真实标注 A/B 门已过（2026-10-15 Phase 0），默认值经 2026-10-18 拍板仍保持关**，度量、理由与前向约束见末尾「门过、默认值与修订」节；放弃 B）
 - 日期：2026-10-02
 - 关联：[ADR-0003](0003-fts5-search.md)（FTS5 trigram 全文检索）、[ADR-0006](0006-scope-freeze.md)、[ADR-0007](0007-session-memory-protocol.md)、TODO 会话记忆路线 M3
 
@@ -59,3 +59,11 @@
 **已落地基座（未接搜索热路径，待门）**：`internal/search/hybrid.RemoteEmbedder` 实现 `Embedder`（OpenAI 兼容 POST、按 `index` 乱序回填、HTTP/维度错误宽松失败、bearer 可选），带 httptest 单测。**向量存储层已落地**：`internal/db/vecindex.go`——`EnsureVectorIndex(dim)`（建/按 dim 变更重建 `note_embeddings` vec0，dim 记在自管的 `note_embeddings_meta`，不依赖 sqlite-vec 内部 schema）、`PutNoteEmbedding/DeleteNoteEmbedding/KnnNoteIDs/ClearVectorIndex/DropVectorIndex`；vec 扩展经 `_ modernc.org/sqlite/vec` 链入 `db`（零 CGO、已全仓 `CGO_ENABLED=0` 构建验证；不用 RegisterPageCache 故无冲突）。**配置 + 密钥安全已落地**：新增 `semantic_search`/`embedding_base_url`/`embedding_model`/`embedding_dim`/`embedding_api_key` 配置键，**`embedding_api_key` 在 `GetConfig` 中掩码为 `********`**（不回传前端，后端经 `db.GetConfig` 读真值），有单测。`FuseRRF`/`vecprobe` 亦就绪。
 
 **A 后端接线已完成并端到端验证（仍默认关）**：`internal/service/search_semantic.go`——`RebuildEmbeddings()`（全库分批重算、dim 可自探、读真值 api-key）+ `fuseSemantic()`（FTS 命中 + `KnnNoteIDs` 命中经 `FuseRRF` 融合；`semantic_search=1` 且 vec 索引就绪且端点配好才走，任一失败/关闭**优雅退回纯词法**，绝不减结果）；`App.RebuildEmbeddings` desktop binding。httptest 桩端点端到端测试证明：词法零命中的查询经向量召回补出笔记、关掉即回到纯词法。**A/B 评测门已就绪**：`internal/search/abeval`（Recall@k / NDCG@k，binary relevance，`Compare` 出 hybrid−lexical delta + 单测）+ `cmd/abeval`（对活库跑：每条标注 query 各跑 lexical(semantic off)/hybrid(semantic on)，打印指标与 `GATE PASS/FAIL`，`-min-recall` 定阈值；无 embedding 端点时 hybrid 退化为 lexical、门自然不过）。**仍缺（A 面向普通用户默认上线前）**：一份真实标注 query 集以及它证明的检索增益；增量 embed 已落地。设置页已提供开关与重建，用于知情进阶用户，但真实标注门未过前不改变默认关。
+
+## 门过、默认值与修订（2026-10-15 度量 / 2026-10-18 拍板 / 2026-10-19 回写）
+
+- **Phase 0 两门均 GATE PASS（2026-10-15，随 v2.2.0 发布）**。M3 门：`.annotation-prep/notes.labeled.tsv`（51 条人工 query，覆盖 51 个 note id），k=3/5/10/20/50 全区间 PASS，k=10 时 lexical 0.608 / hybrid 0.735 / delta **+0.127**，过「hybrid 减 lexical 的 recall@10 >= 0.05」这条默认上线门（门定义见 `docs/features/ai-integration.md` 的检索真实标注工作流节）。
+- **强度限定（不可省）**：delta 真实但幅度小；修 CJK 词法之前量到的 +0.338 里约六成是「单段中文整句零召回」的假信号，+0.127 才是语义检索的真实增益。**门过不等于收益大**。
+- **默认值决策（2026-10-18 用户拍板）：保持默认关**。理由不是技术，是授权面——默认开意味着笔记文本会被送往所配置的 embedding 端点，这属于必须由用户显式给出的隐私授权；默认关是零风险底线。设置页已提供开关与全库重建，代码侧与门侧都再无阻塞项（门已过），所以这是一次**零改码、零 CHANGELOG、零文档同步**的决策。
+- **前向约束（若将来切换默认开）**：只翻转新装/未配置库，存量用户不静默变更；届时按 `docs/features/ai-integration.md` 的迁移口径执行，并在设置页与文档显著披露外发面。
+- **修订记录（2026-10-19）**：本 ADR 状态行原写「真实标注 A/B 门仍未过」。该措辞写于 Phase 0 之前，2026-10-15 两门已过，故更正为实况——**决策内容未变（A 路仍默认关），变的是对门状态的陈述**。同批回写：上面那条 10-18 决策此前只活在 `TODO.md` 的一行清单里，现入本 ADR，TODO 那行随之移除。

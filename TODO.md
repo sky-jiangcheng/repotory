@@ -38,8 +38,6 @@
 - [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**部分进展 2026-10-18**：wails build 通过、真机启动进程存活无崩溃；交互清单待用户按序核验）
 - [ ] **Hermes sessions 真机核验**：sessions 导入已落码（schema 由 TencentDB-Agent-Memory 的 shipped importer 确证，见 ADR-0011 实现修正节），差一次真机 `~/.hermes/state.db` 跑通 + 设置页点源验证。（2026-10-16 核查：本机 `~/.hermes/state.db` 尚不存在，需先产生 Hermes 会话数据再跑通）
 - [ ] **OMP 导入向**（等 OMP v1 稳定）；Bleve（需先做「是否替代 FTS5」架构决策）、Pinecone/Milvus（需凭据）按 `vectordb` registry 既有流程待接
-- [x] **M3 语义检索默认值（已决策 2026-10-18）：保持默认关**。理由：默认开涉及文本外发 embedding 端点的隐私授权，默认关是零风险底线；用户可在设置页手动开（代码已支持、门已 GATE PASS）。**零改码、零 CHANGELOG、零文档同步**。若未来切换默认开，执行上方草案中「草案」节的迁移口径（仅翻转新装/未配置库，存量用户不静默变更）。
-- [x] **ADR-0018 lane 2 晋升限定（已决策 2026-10-18）：采纳草案条款原文**。即：evidence delta 是 7 页 2 边稀疏图的**下限**，晋升 Accepted 前置条件为 ①图密度 ≥ 20 条边且 ≥ 15 个 approved 页；②该密度下复跑 `cmd/abeval -mode evidence` delta 仍 > +0.05 且 k=2..20 全区间为正、无一例回退；③逐案诊断（`cmd/abevaldiag -mode evidence`）确认增益仍形如「命中种子页→沿白名单边带出邻接页」。未达 ①②③ 前 lane 2 维持 Proposed、`wiki_graph_search` 维持默认关。
 - [ ] **图密度欠账（lane 2 兑现前置，承接上方 lane 2 草案 ①）**：目标 **approved 页 ≥ 15、边 ≥ 20**（当前 **6 页 / 5 边**，其中 3 条连接 approved 页）；达标后才谈得上复跑 evidence 门（`cmd/abeval -mode evidence`）。
   - **进展 2026-10-18**：两轮限时编译 + 人审（批 2 拒 1）4→6 页、1→5 边；结构性瓶颈——日志类笔记出页率 ~0.2 页/条（BookStore 50 / investment-dashboard 5 全为 log），knowledge 类 1→2 页 + 3 边。
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
