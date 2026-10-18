@@ -81,6 +81,39 @@ const (
 // session that loses it is skipped rather than attributed.
 var workspaceFolderRe = regexp.MustCompile(`(?m)^Workspace Folder:\s*(\S+)`)
 
+// workspaceFoldersRe also matches the plural form the current client writes
+// ("Workspace Folders: /a, /b") and stops before the list separator. It is
+// deliberately unanchored: inside a message file the text lives in an escaped
+// JSON string, where the line break is a literal "\n" two-char sequence, so a
+// ^ anchor would never match.
+var workspaceFoldersRe = regexp.MustCompile(`Workspace Folders?:\s*([^\s,\\"]+)`)
+
+// leadingTagOpenRe matches an opening <tag> at the string start. Message bodies
+// chain several boilerplate envelopes (<user_info>, <rules>, <git_status>,
+// <project_context>, …) before the actual prompt — the fixed tag list kept
+// leaking (titles like "CodeBuddy · <git_status> · 088c8c98" in the 2026-10-18
+// rehearsal), so strip the whole leading chain instead. RE2 has no
+// backreferences, so the closing tag is located by name in code.
+var leadingTagOpenRe = regexp.MustCompile(`\A\s*<([a-zA-Z_]+)>`)
+
+// stripEnvelopes removes the leading envelope chain and trims the remainder.
+// An unclosed envelope is left alone: stripping half of it would fabricate text.
+func stripEnvelopes(s string) string {
+	for {
+		m := leadingTagOpenRe.FindStringSubmatch(s)
+		if m == nil {
+			break
+		}
+		closeTag := "</" + m[1] + ">"
+		i := strings.Index(s, closeTag)
+		if i < 0 {
+			break
+		}
+		s = s[i+len(closeTag):]
+	}
+	return strings.TrimSpace(s)
+}
+
 // Importer implements plugin.KnowledgeImporter for both CodeBuddy halves.
 type Importer struct {
 	db *sql.DB
@@ -161,8 +194,10 @@ func (i *MemoryImporter) Probe() plugin.ProbeResult {
 }
 
 // sessionRoots returns the CodeBuddy history roots that exist: one per
-// <uid|default>/<IDE> profile under CodeBuddyExtension/Data. Missing roots are a
-// successful no-op (CodeBuddy not installed), never an error.
+// <uid|default>/<IDE> profile under CodeBuddyExtension/Data, plus the nested
+// <IDE>/<inner>/history roots that logged-in profiles use (inner is a uid or a
+// base64 workspace name). Missing roots are a successful no-op (CodeBuddy not
+// installed), never an error.
 func sessionRoots(home string) []string {
 	base := filepath.Join(home, "Library", "Application Support", "CodeBuddyExtension", "Data")
 	entries, err := os.ReadDir(base)
@@ -185,6 +220,23 @@ func sessionRoots(home string) []string {
 			h := filepath.Join(base, uid.Name(), ide.Name(), "history")
 			if st, err := os.Stat(h); err == nil && st.IsDir() {
 				out = append(out, h)
+			}
+			// 深层布局：登录态 profile 把 history 藏在 <IDE>/<inner>/history 一层
+			// 之下（inner 是 uid 或 base64 工作区名）。2026-10-18 重导演练发现：
+			// 浅层根下的会话全是空索引，真数据（176 会话/1.6 万消息文件）都在
+			// 深层根——漏扫这一层会让整个源静默 0 导入。
+			inners, err := os.ReadDir(filepath.Join(base, uid.Name(), ide.Name()))
+			if err != nil {
+				continue
+			}
+			for _, inner := range inners {
+				if !inner.IsDir() {
+					continue
+				}
+				hd := filepath.Join(base, uid.Name(), ide.Name(), inner.Name(), "history")
+				if st, err := os.Stat(hd); err == nil && st.IsDir() {
+					out = append(out, hd)
+				}
 			}
 		}
 	}
@@ -280,10 +332,14 @@ func (i *Importer) docFor(dir string, projects []db.Project, repos []db.Reposito
 
 // parseSession reads <session>/<sub>/index.json and its messages/ files, returning
 // the session id, workspace folder, earliest startedAt, first user text and last
-// assistant text. One subdir wins per session dir: the first that parses — a
-// half-written fork of the same conversation cannot double-count it.
+// assistant text. One subdir wins per session dir, so a half-written fork of the
+// same conversation cannot double-count it. Current clients fork a session into
+// many subdirs (60+ seen in the 2026-10-18 rehearsal) with hex names whose order
+// says nothing about recency, so "first that parses" could pick an early
+// fragment — the fork with the most message files wins instead.
 func parseSession(dir string) (parsed, bool) {
 	var out parsed
+	best := -1
 
 	subs, err := os.ReadDir(dir)
 	if err != nil {
@@ -293,16 +349,36 @@ func parseSession(dir string) (parsed, bool) {
 		if !sub.IsDir() {
 			continue
 		}
-		idxPath := filepath.Join(dir, sub.Name(), "index.json")
+		subDir := filepath.Join(dir, sub.Name())
+		idxPath := filepath.Join(subDir, "index.json")
 		raw, err := memsrc.ReadCapped(idxPath, maxMessageFileBytes)
 		if err != nil {
 			continue // unreadable variant of the session: try the next subdir
 		}
-		if one, ok := parseIndex(raw, filepath.Join(dir, sub.Name(), "messages")); ok {
-			return one, true
+		if one, ok := parseIndex(raw, filepath.Join(subDir, "messages")); ok {
+			if n := countMessageFiles(subDir); n > best {
+				best = n
+				out = one
+			}
 		}
 	}
-	return out, false
+	return out, best >= 0
+}
+
+// countMessageFiles counts the retained message files of one fork — the size
+// proxy that makes "the fullest fork wins" deterministic.
+func countMessageFiles(subDir string) int {
+	entries, err := os.ReadDir(filepath.Join(subDir, "messages"))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			n++
+		}
+	}
+	return n
 }
 
 // parseIndex extracts the session id, workspace folder and earliest startedAt from
@@ -340,8 +416,13 @@ func parseIndex(raw []byte, messagesDir string) (parsed, bool) {
 	}
 	out := parsed{sessionID: id, startedAt: startedAt}
 	out.workspace = parseWorkspace(raw)
-	out.firstUser = firstUserText(messagesDir, requests)
-	out.lastAssistant = lastAssistantText(messagesDir, requests)
+	if out.workspace == "" {
+		// 新布局的 index.json 顶层没有 user_info 键；工作区线索只存在于首条
+		// 用户消息正文的 Workspace Folders 行里。
+		out.workspace = workspaceFromFirstUserMessage(messagesDir, ci.Messages)
+	}
+	out.firstUser = stripEnvelopes(firstUserText(messagesDir, requests, ci.Messages))
+	out.lastAssistant = lastAssistantText(messagesDir, requests, ci.Messages)
 	return out, true
 }
 
@@ -376,6 +457,30 @@ func parseWorkspace(raw []byte) string {
 	return ""
 }
 
+// workspaceFromFirstUserMessage extracts the workspace path from the first user
+// message's embedded user_info block ("Workspace Folders: /a, /b"). The current
+// client no longer puts user_info at the top level of index.json, so the only
+// attribution clue left is inside the message body; without it every session
+// would land unattributed. Returns "" when no clue is found.
+func workspaceFromFirstUserMessage(messagesDir string, ordered []codebuddyIndexMessage) string {
+	if messagesDir == "" {
+		return ""
+	}
+	for _, im := range ordered {
+		if im.Role != "user" || im.ID == "" {
+			continue
+		}
+		raw, err := memsrc.ReadCapped(filepath.Join(messagesDir, im.ID+".json"), maxMessageFileBytes)
+		if err != nil {
+			continue
+		}
+		if ms := workspaceFoldersRe.FindSubmatch(raw); len(ms) == 2 {
+			return strings.TrimSpace(string(ms[1]))
+		}
+	}
+	return ""
+}
+
 // requestStart resolves the startedAt of one message to its request, if any.
 func requestStart(requests []codebuddyRequest, id string) int64 {
 	for _, r := range requests {
@@ -388,9 +493,43 @@ func requestStart(requests []codebuddyRequest, id string) int64 {
 
 // lastAssistantText returns the last assistant turn by startedAt, preferring
 // <answer>-tagged content; falls back to the last non-null assistant text.
-func lastAssistantText(messagesDir string, requests []codebuddyRequest) string {
+func lastAssistantText(messagesDir string, requests []codebuddyRequest, ordered []codebuddyIndexMessage) string {
 	if messagesDir == "" {
 		return ""
+	}
+	// 新布局：index.messages 自带时序与角色——倒序找最后一条 assistant，优先
+	// <answer> 标记的回复；找不到再走旧的全目录扫描。
+	var fallback string
+	for i := len(ordered) - 1; i >= 0; i-- {
+		im := ordered[i]
+		if im.Role != "assistant" || im.ID == "" {
+			continue
+		}
+		raw, err := memsrc.ReadCapped(filepath.Join(messagesDir, im.ID+".json"), maxMessageFileBytes)
+		if err != nil {
+			continue
+		}
+		var m rawMap
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		txt := messageText(m)
+		if txt == "" {
+			continue
+		}
+		// 在已解码文本上判 <answer>，而不是原始 message 字符串——后者的转义
+		// 风格因写入方而异（\u003c 与 < 都见过），判原始串会漏判。
+		if strings.Contains(txt, "<answer>") {
+			if at := answerInnerRe.FindStringSubmatch(txt); len(at) == 2 && strings.TrimSpace(at[1]) != "" {
+				return textOf(at[1])
+			}
+		}
+		if t := stripEnvelopes(txt); t != "" && fallback == "" {
+			fallback = t
+		}
+	}
+	if fallback != "" {
+		return textOf(fallback)
 	}
 	type entry struct {
 		startedAt int64
@@ -419,7 +558,7 @@ func lastAssistantText(messagesDir string, requests []codebuddyRequest) string {
 			continue
 		}
 		role, _ := m.getString("role")
-		content, _ := m.getString("content")
+		content := messageText(m)
 		if role != "assistant" || content == "" {
 			continue
 		}
@@ -453,9 +592,75 @@ func isAnswer(raw json.RawMessage) bool {
 	return strings.Contains(s, "<answer>")
 }
 
-func firstUserText(messagesDir string, requests []codebuddyRequest) string {
+// answerInnerRe extracts the payload of the <answer> tag — it is a meaningful
+// marker (the turn the client chose as the reply), not boilerplate, so it must
+// NOT go through stripEnvelopes (2026-10-18 rehearsal: stripping it deleted the
+// reply text entirely).
+var answerInnerRe = regexp.MustCompile(`(?s)<answer>([\s\S]*?)</answer>`)
+
+// messageText extracts the display text of one message file. Current CodeBuddy
+// writes {"role":..,"message":"<escaped JSON>"} where the inner JSON carries
+// content:[{type:"text",text:...}]; the older shape kept a plain top-level
+// content string. 2026-10-18 重导演练发现：只读顶层 content 会把真实会话全部
+// 提成空文本（第三处布局漂移），故两条路径都要覆盖。
+func messageText(m rawMap) string {
+	if s, ok := m.getString("content"); ok && strings.TrimSpace(s) != "" {
+		return s
+	}
+	raw, ok := m["message"]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	var inner rawMap
+	if err := json.Unmarshal([]byte(s), &inner); err != nil {
+		return ""
+	}
+	cu, ok := inner["content"]
+	if !ok {
+		return ""
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(cu, &blocks); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, bl := range blocks {
+		if bl.Type == "text" && bl.Text != "" {
+			b.WriteString(bl.Text)
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func firstUserText(messagesDir string, requests []codebuddyRequest, ordered []codebuddyIndexMessage) string {
 	if messagesDir == "" {
 		return ""
+	}
+	// 新布局：index.messages 自带时序——按序找第一条有正文的 user 消息；
+	// 找不到再走旧的全目录扫描。
+	for _, im := range ordered {
+		if im.Role != "user" || im.ID == "" {
+			continue
+		}
+		raw, err := memsrc.ReadCapped(filepath.Join(messagesDir, im.ID+".json"), maxMessageFileBytes)
+		if err != nil {
+			continue
+		}
+		var m rawMap
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		if t := stripEnvelopes(messageText(m)); t != "" {
+			return textOf(t)
+		}
 	}
 	seen := map[string]bool{}
 	files, err := os.ReadDir(messagesDir)
@@ -481,7 +686,7 @@ func firstUserText(messagesDir string, requests []codebuddyRequest) string {
 			continue
 		}
 		role, _ := m.getString("role")
-		content, _ := m.getString("content")
+		content := messageText(m)
 		if role != "user" || content == "" {
 			continue
 		}
@@ -510,8 +715,18 @@ func firstUserText(messagesDir string, requests []codebuddyRequest) string {
 }
 
 // codebuddyIndex mirrors the CodeBuddy index.json surface relevant to import.
+// Current exports carry BOTH keys: requests groups message ids per turn, and
+// messages lists every message in conversation order with its role — that order
+// is what the text extraction relies on (requests carry no startedAt there).
 type codebuddyIndex struct {
-	Requests []codebuddyRequest `json:"requests"`
+	Requests []codebuddyRequest      `json:"requests"`
+	Messages []codebuddyIndexMessage `json:"messages"`
+}
+
+// codebuddyIndexMessage is one entry of the index's flat conversation list.
+type codebuddyIndexMessage struct {
+	ID   string `json:"id"`
+	Role string `json:"role"`
 }
 
 type rawMap map[string]json.RawMessage
