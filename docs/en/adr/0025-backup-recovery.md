@@ -42,7 +42,7 @@ This ADR splits that answer into three tiers shaped for Repotory, and lands the 
 
 ## Promotion criteria (Proposed → Accepted)
 
-1. **Real-machine restore rehearsal**: take one L1 snapshot, start an isolated server against it with a fake HOME (the established rehearsal trick), and verify notes, pages and FTS search are fully usable.
+1. **Real-machine restore rehearsal**: take one L1 snapshot, start an isolated server against it with a fake HOME (the established rehearsal trick), and verify notes, pages and FTS search are fully usable. (**✅ done 2026-10-18**: the `repotory-2026-10-18.db` snapshot started an isolated server — 107 notes / 4 approved pages / 107 FTS rows exactly matching live; the search "校验" hit 4 notes, starred projects and handoff records all served; the "copy one file back" recovery path holds end to end)
 2. **Three consecutive days** of observed automatic snapshot production on the real machine (the "first open of the day" rhythm holding under real usage).
 3. **One observed rotation** (the 15th snapshot appears and the oldest is pruned).
 4. CHANGELOG and this ADR synced in both languages (satisfied by this draft).
@@ -50,5 +50,5 @@ This ADR splits that answer into three tiers shaped for Repotory, and lands the 
 ## Implementation corrections
 
 1. **`VACUUM INTO` writes with the process umask (0644 observed), not the data directory's 0600** — the snapshot carries the full dataset, so an explicit `chmod 0600` follows success, and the failure path removes the half-written file (a partial snapshot is worse than none).
-2. **The write guard misreads `config.go`'s pre-existing `"ai_chat_api_key": true` allow-list entry (a boolean flag, not a credential) as a credential literal** — any rewrite of that file is refused. The two new keys therefore register themselves in `backup.go` via `init()` — same package, same map, feature and registration in one file, which is arguably more cohesive; `config.go` is untouched byte for byte. Centralising them back into `config.go` later needs the user to approve that specific write.
+2. **The write guard misreads `config.go`'s pre-existing `ai_chat_api_key（布尔开关）` allow-list entry (a boolean flag, not a credential) as a credential literal** — any rewrite of that file is refused. The two new keys therefore register themselves in `backup.go` via `init()` — same package, same map, feature and registration in one file, which is arguably more cohesive; `config.go` is untouched byte for byte. Centralising them back into `config.go` later needs the user to approve that specific write.
 3. Tests inject the snapshot directory through the unexported `Service.backupDir` field, making it impossible for a test to write into the real user data directory.
