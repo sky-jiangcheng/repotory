@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { lagged, renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
@@ -83,9 +83,6 @@ const entry = (over: Partial<HandoffEntry>): HandoffEntry => ({
 // order-dependent.
 const renderHome = async () => { await renderReady(<Home />) }
 
-// vitest globals are off, so testing-library's auto-cleanup never registers.
-afterEach(cleanup)
-
 // The hook resolves through Promise microtasks; a waitFor flush settles them
 // without relying on timers.
 const flush = async () => { await waitFor(() => {}) }
@@ -161,8 +158,12 @@ describe('Home workbench (ADR-0024 single-column first screen)', () => {
       my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
     }]))
     await renderHome()
-    const option = await screen.findByRole('option', { name: 'Alpha' })
-    const select = option.closest('select') as HTMLSelectElement
+    // Wait for the option — it is the data — and only then take the select by
+    // role, so this file needs no DOM traversal at all (ADR-0026 条件 4).
+    await screen.findByRole('option', { name: 'Alpha' })
+    const select = (await screen.findByRole('combobox', {
+      name: '对话检索范围',
+    })) as HTMLSelectElement
     fireEvent.change(select, { target: { value: '7' } })
     await waitFor(() => expect(select.value).toBe('7'))
   })

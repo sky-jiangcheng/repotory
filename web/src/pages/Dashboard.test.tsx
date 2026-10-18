@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor, cleanup } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import { renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
@@ -55,9 +55,6 @@ const mockGetStatusBar = vi.mocked(getStatusBar)
 const mockGetScanStatus = vi.mocked(getScanStatus)
 const mockSearchProjects = vi.mocked(searchProjects)
 const mockSearchAll = vi.mocked(searchAll)
-
-// vitest globals are off, so testing-library's auto-cleanup never registers.
-afterEach(cleanup)
 
 // First Dashboard component test (D25): the page previously only had App.smoke
 // shell coverage, while the ADR-0017 promotion gate requires functional tests
@@ -142,6 +139,6 @@ describe('Dashboard (first-screen project status half)', () => {
     await waitFor(() => expect(mockGetSummary).toHaveBeenCalled())
     // Dashboard.tsx swaps the goal for the weekend hint on non-workdays
     // (dashboard.weekend, defaultValue "Happy weekend").
-    await waitFor(() => expect(screen.getByText('Happy weekend')).toBeTruthy(), { timeout: 2000 })
+    expect(await screen.findByText('Happy weekend')).toBeTruthy()
   })
 })

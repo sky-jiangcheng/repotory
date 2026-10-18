@@ -5,7 +5,7 @@ import { useApiData, invalidateCache } from './useApiData'
 
 // useApiData resolves through Promise microtasks; flushing with a nested act
 // is enough to settle them without relying on timers.
-const flush = async () => { await act(async () => {}) }
+const flush = async () => { await act(async () => { await Promise.resolve() }) }
 
 beforeEach(() => {
   invalidateCache()

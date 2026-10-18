@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor, fireEvent, within, cleanup } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { renderReady } from '../test/renderReady'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -55,9 +55,6 @@ const renderSearch = async (initial = '/search') => {
   await renderReady(<Search />, { initialEntries: [initial] })
 }
 
-// vitest globals are off, so testing-library's auto-cleanup never registers.
-afterEach(cleanup)
-
 // useApiData's module-level cache (keyed 'projects:all' / 'tags:all') survives
 // across tests in this file — bust it so every case mounts cold.
 beforeEach(() => {
@@ -108,7 +105,11 @@ describe('Search page (ADR-0024 top-level global search)', () => {
     expect(within(notes).getByText('登录排查笔记')).toBeTruthy()
     expect(within(todos).getByText('修复登录超时')).toBeTruthy()
     // Both hit types use the shared global type-badge classes.
+    // 断言对象就是 class 本身（两类徽章共用全局样式派生），可访问树里没有对应语义可查
+    // ——ADR-0026 条件 4 的显式登记，不是疏漏。
+    // eslint-disable-next-line testing-library/no-node-access
     expect(document.querySelector('.hit-type-note')).not.toBeNull()
+    // eslint-disable-next-line testing-library/no-node-access
     expect(document.querySelector('.hit-type-todo')).not.toBeNull()
   })
 

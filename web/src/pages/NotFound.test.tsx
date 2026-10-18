@@ -7,12 +7,11 @@
 // up when a user followed a stale or mistyped link.
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest'
-import { render, cleanup, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import i18n from '../i18n' // real i18next instance — otherwise t() returns raw keys
 import NotFound from './NotFound'
-import styles from './NotFound.module.css'
 
 beforeAll(async () => {
   window.matchMedia = window.matchMedia || ((query: string) => ({
@@ -37,7 +36,6 @@ beforeAll(async () => {
 })
 
 afterEach(() => {
-  cleanup()
   vi.unstubAllGlobals()
 })
 
@@ -70,7 +68,9 @@ describe('NotFound', () => {
   it('offers a way out instead of a dead end', async () => {
     renderAt('/whatever')
     await screen.findByText('404')
-    const hrefs = [...document.querySelectorAll(`.${styles.notfoundActions} a`)].map(a => a.getAttribute('href'))
+    // 用 role 取链接而不是按 class 扫 DOM：这条断言要的是「有出路」，可访问树里
+    // 本来就有这些 link（ADR-0026 条件 4 下改掉的 node access）。
+    const hrefs = screen.getAllByRole('link').map(a => a.getAttribute('href'))
     expect(hrefs).toContain('/')
     expect(hrefs.length).toBeGreaterThanOrEqual(2)
   })

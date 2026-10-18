@@ -49,6 +49,11 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: 'jsdom',
+    // ADR-0026 条件 4：globals 开起来，测试运行器才会注册 testing-library 的自动
+    // cleanup——在此之前 7 个文件各自手写 `afterEach(cleanup)`，是复制出来的约定。
+    // 各文件仍显式 import describe/it/expect/vi，这条 house style 不变；globals 只是
+    // 让 RTL 的 afterEach 自动卸载生效。
+    globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environmentOptions: {
       jsdom: {

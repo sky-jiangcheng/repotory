@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // Partial mock: override the backend-calling endpoints, keep the rest real.
 vi.mock('../../api/client', async (importOriginal) => {
@@ -42,7 +42,6 @@ function renderTab(config: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  cleanup()
 })
 
 describe('AiTab model pull', () => {

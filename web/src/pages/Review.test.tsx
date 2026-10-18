@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor, fireEvent, within, cleanup } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { lagged, renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
@@ -118,8 +118,22 @@ async function pickProject(id: number, name: string) {
   await waitFor(() => expect(select.value).toBe(String(id)))
 }
 
-// vitest globals are off, so testing-library's auto-cleanup never registers.
-afterEach(cleanup)
+// The merge-suggestion <section> carries no accessible name (just an <h2>), and a
+// document-wide `listitem` query would also count the pending and rejected card
+// lists — so these tests must scope to the container before counting rows.
+//
+// 一条实测事实：`no-node-access` 在调用点上会报同样的 `heading.closest('section')`，
+// 挪进函数后却完全不报。规则是看上下文的，这正是它只能当形态守卫、不能当时序保证的
+// 又一个理由（ADR-0026 条件 4）。此处不需要 disable 注释——写了反而会被报成
+// unused override。
+async function mergeSection(): Promise<HTMLElement> {
+  const heading = await screen.findByText('review.mergeHeading')
+  return heading.closest('section') as HTMLElement
+}
+
+function mergeRows(section: HTMLElement): HTMLLIElement[] {
+  return Array.from(section.querySelectorAll('li'))
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -149,14 +163,13 @@ describe('Review merge suggestions (ADR-0019)', () => {
       ],
     })))
     await renderReview()
-    const heading = await screen.findByText('review.mergeHeading')
-    const section = heading.closest('section') as HTMLElement
+    const section = await mergeSection()
     // A1 (ADR-0026): the merge section is mounted unconditionally, so `await`ing
     // its heading waits for nothing — the rows are the data. With
     // REPO_TEST_LAG_MS set, the old synchronous read here ran one render early
     // and saw zero rows.
-    await waitFor(() => expect(section.querySelectorAll('li')).toHaveLength(2))
-    const rows = Array.from(section.querySelectorAll('li'))
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(2))
+    const rows = mergeRows(section)
     expect(rows).toHaveLength(2)
     // Direction is the row's whole payload: [[loser]] → [[winner]]. The loser's
     // slug must come BEFORE the winner's, or a reviewer reading top-down would
@@ -197,16 +210,16 @@ describe('Review merge suggestions (ADR-0019)', () => {
   it('hides a dismissed pair locally without calling anything', async () => {
     mockFindCandidates.mockImplementation(() => lagged(report()))
     await renderReview()
-    const row = (await screen.findByText('review.mergeHeading')).closest('section') as HTMLElement
+    const section = await mergeSection()
     // A1 (ADR-0026): the heading is mounted unconditionally, so waiting for it
     // proves nothing about the rows — wait for the row itself.
-    await waitFor(() => expect(row.querySelectorAll('li')).toHaveLength(1))
-    fireEvent.click(within(row).getByText('review.mergeIgnore'))
-    await waitFor(() => expect(row.querySelectorAll('li')).toHaveLength(0))
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(1))
+    fireEvent.click(within(section).getByText('review.mergeIgnore'))
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(0))
     // Ignoring is a view-local filter: nothing is sent anywhere, and nothing is
     // stored — no endpoint exists to record it, by design.
     expect(mockMerge).not.toHaveBeenCalled()
-    expect(row.textContent).toContain('review.emptyMergeTitle')
+    expect(section.textContent).toContain('review.emptyMergeTitle')
   })
 
   it('degrades a null candidate report to the empty state instead of throwing', async () => {
