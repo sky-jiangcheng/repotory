@@ -96,6 +96,26 @@ const communityReport = (over: Partial<WikiCommunityReport> = {}): WikiCommunity
 
 const renderReview = () => render(<MemoryRouter><ReviewPage /></MemoryRouter>)
 
+// The project filter renders one <option> per entry of `projects`, and that
+// state only lands after the load effect's getProjects() promise resolves. So
+// the combobox is queryable a render before the option it needs to accept:
+// jsdom matches an assigned value against the options present at that moment,
+// finds none, and hands the change handler an empty value — Number('') is 0,
+// so projectFilter never leaves 0 and React writes '0' straight back onto the
+// controlled node. Every project-gated button then stays disabled, and the
+// failure surfaces far from its cause as `expected true to be false` on a
+// button assertion. Which render wins that race tracked runner load, not
+// product behaviour, so await the option first; the value check keeps a
+// recurrence pointing at the select instead of at a downstream timeout.
+async function pickProject(id: number, name: string) {
+  await screen.findByRole('option', { name })
+  const select = (await screen.findByRole(
+    'combobox', { name: 'review.projectFilter' },
+  )) as HTMLSelectElement
+  fireEvent.change(select, { target: { value: String(id) } })
+  await waitFor(() => expect(select.value).toBe(String(id)))
+}
+
 // vitest globals are off, so testing-library's auto-cleanup never registers.
 afterEach(cleanup)
 
@@ -216,8 +236,7 @@ describe('Review community synthesis (ADR-0020)', () => {
     }])
     mockCommunity.mockResolvedValue(communityReport())
     renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCommunity')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)
@@ -241,8 +260,7 @@ describe('Review community synthesis (ADR-0020)', () => {
       llm_note: '未开启（wiki_community）：只做了结构检测',
     }))
     renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCommunity')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)
@@ -305,8 +323,7 @@ describe('Review queue wiring', () => {
       my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
     }])
     renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCompile')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)
