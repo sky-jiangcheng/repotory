@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, within, cleanup } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen, waitFor, fireEvent, within, cleanup } from '@testing-library/react'
+import { renderReady } from '../test/renderReady'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -49,8 +49,11 @@ const project = (over: Partial<Project>): Project => ({
   ...over,
 })
 
-const renderSearch = (initial = '/search') =>
-  render(<MemoryRouter initialEntries={[initial]}><Search /></MemoryRouter>)
+// renderReady (ADR-0026): the result regions are mounted from `hits`, which only
+// exists after the effect's promise resolves.
+const renderSearch = async (initial = '/search') => {
+  await renderReady(<Search />, { initialEntries: [initial] })
+}
 
 // vitest globals are off, so testing-library's auto-cleanup never registers.
 afterEach(cleanup)
@@ -72,7 +75,7 @@ describe('Search page (ADR-0024 top-level global search)', () => {
       project({ id: 2, name: 'Busy', my_added: 120, is_starred: false }),
       project({ id: 3, name: 'Starred', my_added: 0, is_starred: true }),
     ])
-    renderSearch()
+    await renderSearch()
     expect(await screen.findByText('Busy')).toBeTruthy()
     // my_added desc first; the starred project outranks the zero-activity tie.
     const hrefs = screen.getAllByRole('link').map(l => l.getAttribute('href'))
@@ -85,7 +88,7 @@ describe('Search page (ADR-0024 top-level global search)', () => {
 
   it('renders hot tag chips that fill the input and trigger the search', async () => {
     mockListAllTags.mockResolvedValue(['登录排查', '架构'])
-    renderSearch()
+    await renderSearch()
     const chip = await screen.findByRole('button', { name: '登录排查' })
     fireEvent.click(chip)
     // Chip click sets the query; the debounced effect fires searchAll.
@@ -97,7 +100,7 @@ describe('Search page (ADR-0024 top-level global search)', () => {
       { type: 'note', id: 5, project_id: 2, project_name: 'Alpha', title: '登录排查笔记', snippet: '关于 <mark>登录</mark> 的记录', updated_at: '2026-10-12 10:00:00' },
       { type: 'todo', id: 9, project_id: 3, project_name: 'Beta', title: '修复登录超时', snippet: '', updated_at: '2026-10-12 10:00:00' },
     ] satisfies SearchHit[])
-    renderSearch()
+    await renderSearch()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '登录' } })
     await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('登录'), { timeout: 2000 })
     const notes = await screen.findByRole('region', { name: '笔记' })
@@ -111,7 +114,7 @@ describe('Search page (ADR-0024 top-level global search)', () => {
 
   it('shows project-name matches under the projects group', async () => {
     mockGetProjects.mockResolvedValue([project({ id: 7, name: 'repotory-core', my_added: 30 })])
-    renderSearch()
+    await renderSearch()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'repotory' } })
     await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('repotory'), { timeout: 2000 })
     const group = await screen.findByRole('region', { name: '项目' })
@@ -122,14 +125,14 @@ describe('Search page (ADR-0024 top-level global search)', () => {
     mockSearch.mockResolvedValue([
       { type: 'note', id: 5, project_id: 2, project_name: 'Alpha', title: '登录排查笔记', snippet: '', updated_at: '2026-10-12 10:00:00' },
     ] satisfies SearchHit[])
-    renderSearch('/search?q=登录')
+    await renderSearch('/search?q=登录')
     expect(await screen.findByText('登录排查笔记')).toBeTruthy()
     expect(mockSearch).toHaveBeenCalledWith('登录')
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('登录')
   })
 
   it('shows the no-results message when nothing matches', async () => {
-    renderSearch()
+    await renderSearch()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '不存在' } })
     await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('不存在'), { timeout: 2000 })
     // The text renders twice (visible message + aria-live mirror), so assert

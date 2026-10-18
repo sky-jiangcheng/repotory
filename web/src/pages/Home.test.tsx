@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
+import { lagged, renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
 // (getConnectionKind etc.) real so components like StatusBar keep working.
@@ -78,7 +78,10 @@ const entry = (over: Partial<HandoffEntry>): HandoffEntry => ({
   ...over,
 })
 
-const renderHome = () => render(<MemoryRouter><Home /></MemoryRouter>)
+// renderReady (ADR-0026): Home fills the memory-ring strip and the project count
+// from promises inside effects, so returning early made reads of that state
+// order-dependent.
+const renderHome = async () => { await renderReady(<Home />) }
 
 // vitest globals are off, so testing-library's auto-cleanup never registers.
 afterEach(cleanup)
@@ -115,7 +118,7 @@ describe('Home workbench (ADR-0024 single-column first screen)', () => {
       entry({ note_id: 1, auto_captured: true }),
       entry({ note_id: 2, project_name: 'Beta', title: 'Session Handoff 2026-10-11 09:30', auto_captured: false }),
     ])
-    renderHome()
+    await renderHome()
     const ring = screen.getByRole('region', { name: '记忆环' })
     expect(await screen.findByText('Session Handoff 2026-10-12 15:04')).toBeTruthy()
     expect(ring.textContent).toContain('Alpha')
@@ -125,22 +128,42 @@ describe('Home workbench (ADR-0024 single-column first screen)', () => {
   })
 
   it('shows the empty hint when no handoff exists', async () => {
-    renderHome()
+    await renderHome()
     expect(await screen.findByText('还没有 handoff——会话结束或手动捕捉后会出现在这里')).toBeTruthy()
   })
 
   it('links the strip search entry to the top-level /search page', async () => {
-    renderHome()
+    await renderHome()
     await flush()
     const link = screen.getByRole('link', { name: /全局搜索/ })
     expect(link.getAttribute('href')).toBe('/search')
   })
 
   it('keeps the project status panels on the same screen (ADR-0017, merged layout)', async () => {
-    renderHome()
+    await renderHome()
     await flush()
     // Dashboard renders its (visually hidden) panel title; its presence proves
     // the status overview is on the same screen, not hidden or routed away.
     expect(screen.getAllByText('dashboard.title').length).toBeGreaterThan(0)
+  })
+
+  // ADR-0026 promotion criterion 2. The home knowledge-scope selector has the
+  // exact shape that used to flake in Review — a static option keeps the
+  // <select> mounted on the first render while the project options land later —
+  // and until this test nothing in the suite had ever touched it. Written after
+  // the floor existed, it waits for the option rather than the combobox, so it
+  // also holds with REPO_TEST_LAG_MS set; the await-the-combobox pattern it
+  // replaces could not.
+  it('offers late-arriving projects in the knowledge scope selector', async () => {
+    mockGetProjects.mockImplementation(() => lagged([{
+      id: 7, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
+      is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
+      my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
+    }]))
+    await renderHome()
+    const option = await screen.findByRole('option', { name: 'Alpha' })
+    const select = option.closest('select') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: '7' } })
+    await waitFor(() => expect(select.value).toBe('7'))
   })
 })

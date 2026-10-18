@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { screen, waitFor, cleanup } from '@testing-library/react'
+import { renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
 // (getConnectionKind etc.) real so components like StatusBar keep working.
@@ -119,7 +119,7 @@ describe('Dashboard (first-screen project status half)', () => {
     // The dashboard defaults to the starred-only filter (showStarredOnly=true),
     // so the seeded projects must be starred to reach the card grid.
     mockGetProjects.mockResolvedValue([proj(1, 'proj-alpha', { is_starred: true }), proj(2, 'proj-beta', { is_starred: true })])
-    render(<MemoryRouter><Dashboard /></MemoryRouter>)
+    await renderReady(<Dashboard />)
     expect(await screen.findByText('proj-alpha')).toBeTruthy()
     expect(screen.getByText('proj-beta')).toBeTruthy()
   })
@@ -127,7 +127,7 @@ describe('Dashboard (first-screen project status half)', () => {
   it('keeps the workday goal state visible for a workday summary', async () => {
     mockGetProjects.mockResolvedValue([proj(1, 'proj-alpha', { is_starred: true })])
     mockGetSummary.mockResolvedValue(summary({ is_workday: true, my_added: 500 }))
-    render(<MemoryRouter><Dashboard /></MemoryRouter>)
+    await renderReady(<Dashboard />)
     await waitFor(() => expect(mockGetSummary).toHaveBeenCalled())
     // The name renders in more than one spot (card + dropdown matches), so
     // assert presence rather than uniqueness.
@@ -138,7 +138,7 @@ describe('Dashboard (first-screen project status half)', () => {
   it('shows the weekend state instead of the goal when the day is not a workday', async () => {
     mockGetProjects.mockResolvedValue([])
     mockGetSummary.mockResolvedValue(summary({ is_workday: false }))
-    render(<MemoryRouter><Dashboard /></MemoryRouter>)
+    await renderReady(<Dashboard />)
     await waitFor(() => expect(mockGetSummary).toHaveBeenCalled())
     // Dashboard.tsx swaps the goal for the weekend hint on non-workdays
     // (dashboard.weekend, defaultValue "Happy weekend").
