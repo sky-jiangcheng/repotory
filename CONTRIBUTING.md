@@ -41,6 +41,17 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 - **改绑定面必须同步文档**：`internal/app` 的方法签名是对外契约，变更需同步 [docs/api/reference.md](docs/api/reference.md)
 - **重大决策走 ADR**：在 [docs/adr/](docs/adr/index.md) 新增编号文件，说明背景、决策与代价；历史决策（分层、FTS5、块编辑器、范围冻结）见 ADR 索引
 
+## 前端测试的异步落地（ADR-0026）
+
+组件在 effect 里用 promise 填状态，所以「元素已挂载」不等于「数据已到位」：`findBy*` 等一个**无条件挂载**的锚点时会立刻 resolve，随后同步读 effect 状态就是拿时序赌绿红。
+
+- **默认地板**：`web/src/test/renderReady.tsx` 的 `renderReady()`（内部 `settle()` 跨一次宏任务边界，微任务会先全部排空）。`Review` / `Home` / `Dashboard` / `Search` 四个组件测试文件已接入。
+- **边界（不覆盖哪些）**：`AiTab`（无 router、必传 props）、`NotFound` 与 `App.smoke`（用真实 i18n 实例）**不接 `settle()`**——真实 i18n 返回译文、mock 的 `t` 返回 key 或 `defaultValue`，两种断言口径不塞进同一个 helper。在这三个文件里写交互测试，必须自己等「就是数据的那个元素」。
+- **`settle()` 在 `vi.useFakeTimers()` 下会死锁**：它靠真实 `setTimeout(0)`，假计时器里永不 resolve，测试会挂到 `waitFor` 超时。用假计时器的都是 `renderHook` 测试、不经 `renderReady`——别把两者混用。
+- **等数据要等对东西**：锚点选错（仍然等静态标题）helper 救不回来。参照 `Review.test.tsx` 的 `pickProject()`，以及「先 `await` 目标 `option` 再改值」的写法。
+- **验收探针**：`cd web && REPO_TEST_LAG_MS=300 npx vitest run` 会让 `Review`/`Home` 的加载 promise 延后落地、把竞态窗口重开，必须全绿；不设该变量时 `lagged()` 是 no-op。
+- **别用「`beforeEach` 默认给非空 mock 列表」治这个病**——2026-10-18 已实测否证：踩中的用例本就喂了非空数据（问题在**何时**落地，不是**是否**存在），且该法直接破 `Home`/`Search`/`useKnowledgePage` 三处空态用例。详见 [ADR-0026](docs/adr/0026-frontend-test-async-readiness.md)。
+
 ## 范围冻结（重要）
 
 [ADR-0006](docs/adr/0006-scope-freeze.md) 冻结了产品范围：**核心是「发现 → 理解 → 记录 → 检索 → 交给 AI」闭环**，仪表盘与统计是支持能力；插件平台基础设施与 PWA 不再默认扩展。新增大功能前请先开 Issue 讨论，避免与范围声明冲突的投入。
