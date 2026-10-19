@@ -1,6 +1,6 @@
 # ADR-0014: LLM Wiki 知识编译层——摄入时编译、消费时取证
 
-- 状态：Proposed（本文只定方向与排序，未落任何代码；晋升条件见末尾）
+- 状态：Accepted（2026-10-19 晋升：lane 1 迁移可逆并已在真库演练、lane 3 delta 已过 abeval 门、`auto_import` 默认值+逐源门已随 schema v15 收口、页面类别与 schema 作用域已裁决——四条晋升条件全部满足；W1/W1b/W4/W2 已落地，原文「未落任何代码」的注记过期）
 - 日期：2026-10-07
 - 关联：[ADR-0003](0003-fts5-search.md)（FTS5）、[ADR-0007](0007-session-memory-protocol.md)（context / handoff）、[ADR-0011](0011-multi-agent-memory-importers.md)（多 agent 记忆导入）、[ADR-0012](0012-semantic-search.md)（语义检索）、[ADR-0013](0013-vector-database-selection.md)（向量存储）、[ADR-0010](0010-session-auto-capture.md)（隐私默认关的纪律）；TODO **M6**；起点版本 v1.15.1
 

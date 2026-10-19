@@ -1,6 +1,6 @@
 # ADR-0022: 自动发现与定时同步 agent 记忆——来源类型用户可见
 
-- 状态：Proposed（方案待评审；其中 CodeBuddy 接线为「解除当前未完成操作」的独立先行项，可不等整体批准即落地）
+- 状态：Proposed（方案待评审；注记 2026-10-19：独立先行项「CodeBuddy 接线」已随 v2.6.0 落地——source_type 暴露、knowledge_sync 定时同步与 CodeBuddy 双路导入源均已上线，其余整体方案仍待评审）
 - 日期：2026-10-14
 - 关联：[ADR-0011](0011-multi-agent-memory-importers.md)（多 agent 记忆源导入）、[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（LLM Wiki 知识编译层）、[ADR-0015](0015-w3-minimal-compile-loop.md)（W3 最小编译闭环）、[ADR-0007](0007-session-memory-protocol.md)（会话记忆协议）、[ADR-0009](0009-ide-presence.md)（IDE 存在感）、TODO 会话记忆路线 M2/M8
 

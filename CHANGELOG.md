@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **知识源导入 dry-run 预览（ADR-0011 决策 4 收口）**：设置 → 插件的每个知识源新增「预览」按钮——复用导入器自身的输出跑一次**只读**分类，按与真实导入相同的幂等键 `(project, source, title)` 判定将**新建**几条、**更新**几条并列出标题，全程零写入（不建笔记、不建占位项目、不计入导入统计、不发导入事件）；落点按只读方式解析（已有项目归其下、无项目的路径保持 project 0、空路径落「未分类」）。实现链：runtime `PreviewImport`（与 `TriggerImport` 同一把 `importMu` 串行）→ 服务 `PreviewKnowledgeImport` → 桌面绑定 `PreviewKnowledgeImport`（desktop-only，`surface.go` 登记理由与触发器同门），db 层新增 `FindProjectIDByRootPath` 只读助手（`EnsureImportPlaceholder` 查找半的读侧）。回归 `TestPreviewImportWritesNothing` 钉「零写入」不变量（对比预览前后 notes/projects 计数、断言无主路径的条目 project 0），`TestPreviewImportUnknownSource` 钉未知源报错。ADR-0011 由此晋升 Accepted，双语手册同步。
+- **RunBackupNow 设置页按钮（ADR-0025 L1 收尾）**：v2.6.0 落地了每日本地快照与 `RunBackupNow` 绑定，但设置页一直没有入口（注释原话「设置页按钮未接，脚本可调」）。现补上：设置 → 操作新增「数据库备份」组——「立即备份」按钮调用既有绑定，完成后报出快照落盘路径；当天已有快照时后端本就是 no-op，文案如实说明。新端点 `runBackupNow()` 沿既有 `call` 通道。
+- **wiki lint 新增 community-incoherent 模型检查（ADR-0020 收尾）**：`synthesis` 综述页此前只有结构性体检（孤页/链接），「综述是否忠实于其成员页」无人看。现把该检查并入 `wiki_lint_llm` 的模型半：payload 里 synthesis 页附上经 `page_links` 解析出的 members 成员页清单，提示词新增第三类发现 `community-incoherent`（综述与成员页明显不一致/遗漏/歪曲关键结论）。信任规则与既有两类一致——模型只能建议（findings 落 `[lint]` 待办，绝不改页）、page_id 必须能在库里查到、回复解析不出 JSON 就一条不采信；未知类型仍按既有口径降级为 stale。门不变：`wiki_lint_llm` 默认关。
+
 ## [2.7.0] - 2026-10-19
 
 ### 变更

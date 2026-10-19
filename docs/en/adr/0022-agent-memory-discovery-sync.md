@@ -1,6 +1,6 @@
 # ADR-0022: Auto-discovery and scheduled sync of agent memory — source type visible to the user
 
-- Status: Proposed (design pending review; the CodeBuddy wiring is an independent first-step item that can land without waiting for full approval)
+- Status: Proposed (design pending review; note 2026-10-19: the independent first-step item — the CodeBuddy wiring — has landed with v2.6.0: source_type exposure, the knowledge_sync scheduled service, and both CodeBuddy import sources are live. The rest of the design remains pending review.)
 - Date: 2026-10-14
 - Related: [ADR-0011](0011-multi-agent-memory-importers.md) (multi-agent memory importers), [ADR-0014](0014-llm-wiki-knowledge-compiler.md) (LLM Wiki knowledge compiler), [ADR-0015](0015-w3-minimal-compile-loop.md) (W3 minimal compile loop), [ADR-0007](0007-session-memory-protocol.md) (session memory protocol), [ADR-0009](0009-ide-presence.md) (IDE presence), TODO session-memory roadmap M2/M8
 

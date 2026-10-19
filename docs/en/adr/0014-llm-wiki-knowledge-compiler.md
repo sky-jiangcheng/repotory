@@ -1,6 +1,6 @@
 # ADR-0014: LLM Wiki knowledge compiler — compile at ingest, gather evidence at query time
 
-- Status: Proposed (this record fixes direction and sequencing only; no code shipped. Promotion criteria at the end)
+- Status: Accepted (promoted 2026-10-19: lane 1 migration is reversible and rehearsed on the real database, lane 3 delta passed the abeval gate, the auto_import default + per-source gate closed with schema v15, and page kinds vs schema scope are decided — all four promotion criteria are met. W1/W1b/W4/W2 have landed; the original "no code shipped" note is stale.)
 - Date: 2026-10-07
 - Relates to: ADR-0003 (FTS5), ADR-0007 (context / handoff), ADR-0011 (multi-agent memory importers), ADR-0012 (semantic search), ADR-0013 (vector store), ADR-0010 (privacy-off-by-default discipline); TODO **M6**; starting version v1.15.1. (Chinese original: `docs/adr/0014-*.md`.)
 
