@@ -28,18 +28,19 @@
 ### 用户动作 / 外部依赖
 
 - [ ] **真库事故后续（2026-10-14）**：事故已恢复（`.recover` 换入、integrity 83/100、批页成果保住）；三个收尾项如下（2026-10-18 更新）：
-  - **① 源重导 — ✅ 已完成（2026-10-18）**：修复 opencode/codebuddy 导入器布局漂移后真机重导：opencode 31 + codebuddy 15 + codebuddy-memory 2 = **48 条找回**（总笔记 59→107），重跑幂等（created=0/updated=N）；11 条自动归属 CBiUnion/CBiMoney/BookStore 等既有项目，其余落占位/未分类待归口；claude/codex 目录为空无所得；handoff 类只能从原会话人工补录。
+  - **① 源重导 — ✅ 已完成（2026-10-18）**：修复 opencode/codebuddy 导入器布局漂移后真机重导：opencode 31 + codebuddy 15 + codebuddy-memory 2 = **48 条找回**（总笔记 59→107），重跑幂等（created=0/updated=N）；11 条自动归属 CBiUnion/CBiMoney/BookStore 等既有项目，其余落占位/未分类待归口；claude/codex 目录为空无所得；handoff 类只能从原会话人工补录。**归口执行（2026-10-19）**：结构上唯一确定的归属已落——笔记 174（CodeBuddy 会话 11d3a6c5，工作目录 cbi-mis）→ 项目 **BE**（127，cbi-mis 仓库正属它），占位 121 随之清空（可在整理视图二次确认删除，回滚语句在 `.zwork/reassign-log.txt`）；其余经内容复核**不强制归口**：CodeStat 11 条（统计工具族，路径真实，等扫描自动转正）、富港资料 4 条（Documents 下无扫描覆盖、语义指向弱）、未分类 2 条（空工作目录的全局问答，本就是正确落点）。
   - **② TM 备份复查 — 验证完成、插盘暂缓（2026-10-18）**：`tmutil status` 正常（Running=0 无 error）、`isexcluded` [Included]、发现本地 APFS 快照 `2026-10-16-232630`；文件级双恢复点（重导前 59 条 / 重导后 107 条，quick_check ok）。剩「插盘 → `tmutil listbackups` / `ls` / `startbackup`」一步，用户决定暂缓（目的已讲清）；**内置每日本地快照（ADR-0025 L1）已补位**，只剩「异地」一层。
   - **③ FUSE 溯源 — 基本收口（2026-10-18）**：15 个 `.fuse_hidden*`（10-14 17:43–19:14，与损坏窗口精确吻合）指向 FUSE 挂载类工具；用户已确认当前未挂云盘，疑为当天短暂挂载过的同步客户端，仅剩「回忆 10-14 当天用过什么工具」；`~/.hermes/state.db` 不存在，Hermes 核验暂不可跑。
   - **备份验证命令（连接备份磁盘后执行）**：
     1. 复查快照内确有该路径：图形化「系统设置 → General → Time Machine → 浏览历史备份」定位 `…/repotory/repotory.db`；或命令行 `tmutil listbackups` 取快照名 `<N>`，`ls /Volumes/<TM盘>/Backups.backupdb/<主机名>/Data/<N>/Users/jiangcheng/Library/Application\ Support/repotory/`
     2. `tmutil status` 确认会话正常结束（Running=0、无 error）
     3. **脱开陷阱**：TM 只在备份盘连接时备份，「每日」在盘脱开期间不成立；本地快照（APFS、存本机、免备份盘）是离线兜底——查看 `sudo tmutil listlocalsnapshotdates`，手动造一份 `sudo tmutil localsnapshot`（本机无 `localsnapshots enable`，已实测）。**恢复**：本机 `tmutil` 无 `restore` verb（`tmutil help` 已核实）——走 Time Machine 备份浏览器，或最稳的兜底：直接挂载备份盘手工拷回 `/Volumes/<TM盘>/Backups.backupdb/<主机名>/Data/<快照>/` 下的 `repotory.db`（单文件库，拷文件即恢复）
-- [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**部分进展 2026-10-18**：wails build 通过、真机启动进程存活无崩溃；交互清单待用户按序核验）
+- [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**进展 2026-10-19**：v2.7.0 wails build 通过、新包已真机启动——schema v25 真机迁移完成、污染 repo_meta 清零；交互清单待用户按序核验，新增「向上合并确认弹窗」「按仓库拆分」两项）
 - [ ] **Hermes sessions 真机核验**：sessions 导入已落码（schema 由 TencentDB-Agent-Memory 的 shipped importer 确证，见 ADR-0011 实现修正节），差一次真机 `~/.hermes/state.db` 跑通 + 设置页点源验证。（2026-10-16 核查：本机 `~/.hermes/state.db` 尚不存在，需先产生 Hermes 会话数据再跑通）
 - [ ] **OMP 导入向**（等 OMP v1 稳定）；Bleve（需先做「是否替代 FTS5」架构决策）、Pinecone/Milvus（需凭据）按 `vectordb` registry 既有流程待接
 - [ ] **图密度欠账（lane 2 兑现前置，即 [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 条件 10 的门槛 ①）**：目标 **approved 页 ≥ 15、边 ≥ 20**（当前 **6 页 / 5 边**，其中 3 条连接 approved 页）；达标后才谈得上复跑 evidence 门（`cmd/abeval -mode evidence`）。
   - **进展 2026-10-18**：两轮限时编译 + 人审（批 2 拒 1）4→6 页、1→5 边；结构性瓶颈——日志类笔记出页率 ~0.2 页/条（BookStore 50 / investment-dashboard 5 全为 log），knowledge 类 1→2 页 + 3 边。
+  - **进展 2026-10-19**：BookStore 首轮 job（请求 8 条）在处理 2 条后被取消（10-18 14:23，非系统故障）；当前 BookStore 覆盖 2/50 条、**3 张 pending 页待人审**（CodeBuddy 占位页 / BookStore 项目页 / BookList 推荐功能页，前两张偏薄、第三张实质）；复跑入口 = 审核页继续按每轮 8 条排队，LM Studio 端点需在线。
   - **策略（2026-10-18 用户拍板路线①）**：BookStore 50 条日志挂机分轮编译（每轮 8 条、后台循环），跑完后人审 pending 页再复测密度；内容富集型笔记随使用积累是长期主路径。
 - [ ] **JetBrains 插件**：缓议，待真实需求信号（issue/star）+ 补 ADR 后立项
 

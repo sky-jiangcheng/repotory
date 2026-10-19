@@ -1,6 +1,6 @@
 # ADR-0025: 备份与恢复——产品自带的每日本地快照，云端推送 opt-in
 
-- 状态：Proposed（**2026-10-18 L1 已落码**：每日 VACUUM INTO 本地快照 + 14 份轮转 + `backup_enabled`/`backup_retain` 两道配置，纯本地零外发，`go test ./...` 全绿；L2 云端推送与 Docker 部署档为 opt-in 备选、本 ADR 只定型不落码。晋升 Accepted 差：真机恢复演练 + 连续三日快照观察 + 一次轮转观察，见「晋升条件」）
+- 状态：Proposed（**2026-10-18 L1 已落码**：每日 VACUUM INTO 本地快照 + 14 份轮转 + `backup_enabled`/`backup_retain` 两道配置，纯本地零外发，`go test ./...` 全绿；L2 云端推送与 Docker 部署档为 opt-in 备选、本 ADR 只定型不落码。晋升 Accepted 差：连续三日快照观察（**2026-10-19 进度 2/3**：10-18、10-19 已落盘）+ 一次轮转观察（retain=14，需第 15 份快照出现）；真机恢复演练已于 **2026-10-19 完成**——10-19 快照副本在沙箱 HOME 由 headless server（v2.7.0）启动：/health ok、GetProjects/ListOrganizeGroups 真实返回、107 笔记/15 页完整，副本开机自愈迁移 v24→v25 且 v25 清理 3 行污染 repo_meta。见「晋升条件」）
 - 日期：2026-10-18
 - 关联：[TODO 现状速查「真库事故」](../../TODO.md)（本 ADR 的直接动因）、[ADR-0011](0011-multi-agent-memory-importers.md)（隐私门纪律，L2 沿用）、[ADR-0021](0021-temporal-graph-page-versions.md)（page_versions 是页面层恢复凭据，本 ADR 是库文件层）、TODO「用户动作 ②」（TM 插盘已由用户暂缓，本 ADR 填补其空缺）、M3 语义检索草案（「未配置即零外发」文案的参照）
 - 配套：`internal/db/backup.go`（快照+轮转）、`internal/service/backup.go`（门控+节律）、真库手工恢复点 `repotory-{pre,post}-reimport-backup-20261018/`（L1 的手工前身）
