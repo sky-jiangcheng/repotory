@@ -4,12 +4,7 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
-## [Unreleased]
-
-### 修复
-
-- **审核页滚动时整个外壳（含导航栏）被滚出视野、视口下半部落入空白（用户实测三连截图定位）**：根滚动器被撑到了文档深度——`.visually-hidden` 等绝对定位元素以初始包含块为包含块（`.app` 与 body 均非定位元素），把根画布顶到 1822px（视口 745px），`html` 因此可滚；滚轮一旦路由到根滚动器（悬浮按钮上方、overscroll 链、WKWebView 根偏好），整个 `.app` 连导航栏一起滚走，滚过头后视口落在应用之外只剩背景色与悬浮 FAB——「顶部被遮盖」「内容被截断」「整页空白」三种报告同源。双层修复：`html, body { overflow: hidden }` 把根滚动结构性关死（应用外壳是固定 100vh 框架，一切滚动都发生在 `#main-content` 内），`.app { position: relative }` 收容绝对定位后代使其在壳内裁剪。headless Chrome + CDP 实测回归：根画布 1822→745、强制滚根 navTop 恒 0、内层滚动 900px 时导航满格且工具栏冻结在导航正下方、FAB 上滚轮不再拖动外壳（诊断法沿用 v2.6.0 布局实测先例；jsdom 断不了布局）。
-- **仪表盘摘要条与收藏筛选列表完全对不上（同一批截图）**：摘要条恒为全库口径，而列表切「关注」后只显示收藏项目——真库 2026-10-18 只有 `Script/repotory`（未收藏）一个仓库有变更（+2313/-362），于是「顶部 +2313 / 列表全 0」读起来像内部算错，实为两套口径同屏。现给 `GetSummary` 增加 `starredOnly` 作用域（db 层 `GetStatsByDateScope` JOIN 收藏项目），前端把筛选状态传进去，待办计数同口径（关注时只数收藏项目的待办）；`useDashboardData` 的刷新 effect 本就依赖筛选开关，只是参数断在最后一环。RPC 双口径实测：全库 +2313 / 收藏 +0，与列表行严格一致；服务层新回归 `TestGetSummaryScope` 钉住两套口径。摘要条手册（中英）补口径说明。
+## [2.8.0] - 2026-10-19
 
 ### 新增
 
@@ -19,6 +14,11 @@
 
 - **数据库快照远端推送（[ADR-0025](docs/adr/0025-backup-recovery.md) L2 落码，默认关）**：每天本地快照生成后，可选推送到你自己的 S3 兼容对象存储（AWS S3 / Cloudflare R2 / NAS 上的 MinIO 均可，`minio-go` 纯 Go 零 CGO 实现）。隐私门与 AI 功能同款：六键 `backup_remote_*` 默认全空 = **零外发**——开关未开或凭据不全时客户端根本不被构造（回归把「零外发」钉在行为上）；只上传快照副本，活库与 WAL/SHM sidecar 永无对象名（对象键正则回归钉死）。对象名即快照文件名（前缀默认 `repotory`），当天已存在即跳过、失败下一小时自动重试；`RunBackupNow` 返回契约不变（仍是本地路径）。设置 → 操作 → 数据库备份提供开关与五项表单（密钥输入框走密码型）。决策 3 的「只定型不落码」就此收口，形态二（快照上传）实现、形态一（Litestream sidecar）降为部署文档可选项。
 - **Docker 部署档（ADR-0025，NAS/homelab）**：仓库根新增 `Dockerfile`（三段构建：web `build:server` → CGO_ENABLED=0 的 `repotory-server` → alpine 运行层）与 `docker-compose.yml`（单容器 + 数据卷，宿主侧默认只绑 loopback）。数据目录经 `XDG_CONFIG_HOME=/data` 定位到卷内，`repotory.db` 与每日快照 `backups/` 都在卷上，可整目录纳入宿主备份计划；远端推送在容器内用同一组 `backup_remote_*` 键启用。手册「数据与备份」新增 L1/L2/Docker 三节（中英）。
+
+### 修复
+
+- **审核页滚动时整个外壳（含导航栏）被滚出视野、视口下半部落入空白（用户实测三连截图定位）**：根滚动器被撑到了文档深度——`.visually-hidden` 等绝对定位元素以初始包含块为包含块（`.app` 与 body 均非定位元素），把根画布顶到 1822px（视口 745px），`html` 因此可滚；滚轮一旦路由到根滚动器（悬浮按钮上方、overscroll 链、WKWebView 根偏好），整个 `.app` 连导航栏一起滚走，滚过头后视口落在应用之外只剩背景色与悬浮 FAB——「顶部被遮盖」「内容被截断」「整页空白」三种报告同源。双层修复：`html, body { overflow: hidden }` 把根滚动结构性关死（应用外壳是固定 100vh 框架，一切滚动都发生在 `#main-content` 内），`.app { position: relative }` 收容绝对定位后代使其在壳内裁剪。headless Chrome + CDP 实测回归：根画布 1822→745、强制滚根 navTop 恒 0、内层滚动 900px 时导航满格且工具栏冻结在导航正下方、FAB 上滚轮不再拖动外壳（诊断法沿用 v2.6.0 布局实测先例；jsdom 断不了布局）。
+- **仪表盘摘要条与收藏筛选列表完全对不上（同一批截图）**：摘要条恒为全库口径，而列表切「关注」后只显示收藏项目——真库 2026-10-18 只有 `Script/repotory`（未收藏）一个仓库有变更（+2313/-362），于是「顶部 +2313 / 列表全 0」读起来像内部算错，实为两套口径同屏。现给 `GetSummary` 增加 `starredOnly` 作用域（db 层 `GetStatsByDateScope` JOIN 收藏项目），前端把筛选状态传进去，待办计数同口径（关注时只数收藏项目的待办）；`useDashboardData` 的刷新 effect 本就依赖筛选开关，只是参数断在最后一环。RPC 双口径实测：全库 +2313 / 收藏 +0，与列表行严格一致；服务层新回归 `TestGetSummaryScope` 钉住两套口径。摘要条手册（中英）补口径说明。
 
 ## [2.7.0] - 2026-10-19
 
