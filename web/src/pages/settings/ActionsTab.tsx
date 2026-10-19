@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { triggerScan, importClaudeMemory } from '../../api/client'
+import { triggerScan, importClaudeMemory, runBackupNow } from '../../api/client'
 import s from './ActionsTab.module.css'
 
 interface Props {
@@ -12,6 +12,7 @@ export default function ActionsTab({ showMessage }: Props) {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
 
   const handleRescan = async () => {
     setSaving(true)
@@ -22,6 +23,18 @@ export default function ActionsTab({ showMessage }: Props) {
       showMessage(t('settings.rescanFailedMsg', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleBackup = async () => {
+    setBackingUp(true)
+    try {
+      const path = await runBackupNow()
+      showMessage(t('settings.backupDone', { path }))
+    } catch (e: unknown) {
+      showMessage(t('settings.backupFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setBackingUp(false)
     }
   }
 
@@ -47,6 +60,16 @@ export default function ActionsTab({ showMessage }: Props) {
         <div className={s.actionRow}>
           <button className="btn btn-primary" onClick={handleRescan} disabled={saving}>
             {saving ? t('common.scanning') : t('settings.rescanAll')}
+          </button>
+        </div>
+      </section>
+
+      <section className="settings-group">
+        <h2 className="settings-group-title">{t('settings.backupTitle')}</h2>
+        <p className="section-desc">{t('settings.backupDesc')}</p>
+        <div className={s.actionRow}>
+          <button className="btn btn-primary" onClick={handleBackup} disabled={backingUp}>
+            {backingUp ? t('settings.backingUp') : t('settings.backupNow')}
           </button>
         </div>
       </section>

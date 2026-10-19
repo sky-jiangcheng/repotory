@@ -564,6 +564,11 @@ export function exportMemoryJSON(limit: number): Promise<string> {
   }).then(d => d ?? '[]')
 }
 
+/** RunBackupNow writes today's local snapshot immediately (ADR-0025 L1). */
+export function runBackupNow(): Promise<string> {
+  return call<string>({ method: 'RunBackupNow' })
+}
+
 // --- Plugins -------------------------------------------------------------------------------
 
 export function getKnowledgeSources(): Promise<SourceStatus[]> {
