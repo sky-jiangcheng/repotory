@@ -111,9 +111,20 @@ func (a *App) GetProjectCommits(projectID int64, limit int) ([]stats.RecentCommi
 	return a.svc.GetProjectCommits(projectID, limit)
 }
 
-// UpdateProjectLevel adjusts a project's grouping level up or down.
-func (a *App) UpdateProjectLevel(id int64, direction string) (*service.LevelUpdateResult, error) {
-	return a.svc.UpdateProjectLevel(id, direction)
+// PreviewProjectMergeUp is the read-only half of the destructive "merge up" action:
+// it reports which sibling projects would be absorbed and deleted, with their
+// repository/note/todo counts. The UI shows this before it is allowed to ask for
+// confirmation.
+func (a *App) PreviewProjectMergeUp(id int64) (*service.MergePreview, error) {
+	return a.svc.PreviewProjectMergeUp(id)
+}
+
+// UpdateProjectLevel adjusts the grouping level. `confirmed` must be true for
+// direction "up", which absorbs and deletes sibling projects along with their notes
+// and todos; the service refuses otherwise. "down" splits by repository (it is not an
+// undo of a merge) and ignores the flag.
+func (a *App) UpdateProjectLevel(id int64, direction string, confirmed bool) (*service.LevelUpdateResult, error) {
+	return a.svc.UpdateProjectLevel(id, direction, confirmed)
 }
 
 // ToggleStar flips the starred status of a project.

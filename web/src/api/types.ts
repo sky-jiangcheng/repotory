@@ -25,6 +25,27 @@ export interface Project {
   below_standard: boolean
 }
 
+export interface MergeSibling {
+  id: number
+  name: string
+  root_path: string
+  repos: number
+  notes: number
+  todos: number
+}
+
+// What a "merge up" would swallow. Built server-side from the same listing the
+// merge consumes, so the confirmation dialog cannot understate the damage.
+export interface MergePreview {
+  target_id: number
+  target_name: string
+  new_root: string
+  siblings: MergeSibling[]
+  repos: number
+  notes: number
+  todos: number
+}
+
 export interface ProjectDetail {
   id: number
   name: string

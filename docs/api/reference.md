@@ -71,13 +71,16 @@ cd .. && go build -o repotory-server ./cmd/server
 | `ResolveWorkspacePath` | `(path) → ProjectResolution` | 只读：把一个绝对目录解析为归属 project，以及当该目录落在被扫描仓库内时对应的 repository（四层路径解析）。供 IDE 侧栏显示命中范围；无 MCP 对应面，agent 改为把 `path` 传给 `repotory_context`。见 [AI 集成](../features/ai-integration.md) |
 | `SearchProjects` | `(query) → ProjectResponse[]` | 名称/路径模糊搜索（含昨日统计增强） |
 | `ToggleStar` | `(id) → bool` | 切换收藏，返回新状态（原子 UPDATE） |
-| `UpdateProjectLevel` | `(id, "up"\|"down") → {success, new_level}` | 合并/拆分项目（单事务） |
+| `UpdateProjectLevel` | `(id, "up"\|"down", confirmed) → {success, new_level}` | 合并/拆分项目（单事务）。`"up"` 会吸收并**删除**同级项目（连带其仓库/笔记/待办），必须 `confirmed=true`，未确认直接报错且零改动；`"down"` 按仓库拆分，忽略该参 |
+| `PreviewProjectMergeUp` | `(id) → MergePreview` | 只读预览：`"up"` 将吸收删除哪些同级项目及随迁的仓库/笔记/待办计数——确认弹窗的数据源，与合并共用同一份兄弟清单（`db.MergePlan`），预览无法少报。无 MCP 对应面（与 `UpdateProjectLevel` 同为 desktop-only） |
 | `RefreshProjectHistory` | `(id) → {success}` | 回填该项目近 365 天统计 |
 | `ListOrganizeGroups` | `() → OrganizeGroup[]` | 知识库整理：列出仍是落点（`import_placeholder` / `default`）、还挂着未归类笔记的项目，含笔记数与「是否有被扫描仓库指向它」。只读，无 MCP 对应面（整理是人的动作，见 [ADR-0023](../adr/0023-note-ownership-knowledge-organize.md)） |
 | `ReassignLandingNotes` | `(sourceId, targetId) → int` | 把某落点项目的全部笔记归口到目标真项目（或「未分类」），返回移动条数。源必须是落点项目，目标必须是扫描项目/默认。无 MCP 对应面 |
 | `DeleteLandingProject` | `(id, deleteNotes bool) → error` | 删除一个 `import_placeholder` 落点项目；仍带笔记时须 `deleteNotes=true` 显式确认（连带删除其笔记）。默认项目与扫描项目一律拒绝——删除是确认动作，不自动级联。无 MCP 对应面 |
 
 **OrganizeGroup**：`{ project_id, name, root_path, kind, note_count, repo_bound }`。
+
+**MergePreview**：`{ target_id, target_name, new_root, siblings: MergeSibling[], repos, notes, todos }`，其中 `MergeSibling`：`{ id, name, root_path, repos, notes, todos }`；空 `siblings` 表示没有可吸收的同级项目。
 
 **ProjectResponse**（节选）：
 

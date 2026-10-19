@@ -1,4 +1,6 @@
 import { useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { describeApiError } from '../utils/apiError'
 
 /**
  * useNoteMutations encapsulates all note write operations (create / edit /
@@ -19,6 +21,7 @@ export interface NoteMutationsHandle {
 }
 
 export function useNoteMutations(setError: (msg: string) => void): NoteMutationsHandle {
+  const { t } = useTranslation()
   const lastOpRef = useRef<(() => Promise<void>) | null>(null)
 
   const run = useCallback(async (op: () => Promise<void>, errMsg: string): Promise<boolean> => {
@@ -28,10 +31,10 @@ export function useNoteMutations(setError: (msg: string) => void): NoteMutations
       return true
     } catch (e) {
       lastOpRef.current = op
-      setError(errMsg + (e instanceof Error ? e.message : ''))
+      setError(errMsg + describeApiError(t, e))
       return false
     }
-  }, [setError])
+  }, [setError, t])
 
   const retryLast = useCallback(() => {
     const op = lastOpRef.current

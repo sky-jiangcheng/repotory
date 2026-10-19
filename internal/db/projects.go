@@ -254,23 +254,46 @@ func SplitProjectDown(db *sql.DB, id int64) (int, error) {
 		}
 	} else {
 		for _, repo := range repos[1:] {
-			res, err := tx.Exec(
-				"INSERT INTO projects (name, root_path, level_override, is_auto_grouped) VALUES (?, ?, ?, 0)",
-				filepath.Base(repo.Path), repo.Path, project.LevelOverride-1,
-			)
-			if err != nil {
-				return 0, fmt.Errorf("failed to create sub-project: %w", err)
+			// A repo path may already be owned by another project — typically a
+			// per-repo project that survived an earlier "merge up" (its own parent
+			// directory differs from the merged root, so the merge never absorbed
+			// it). The blind INSERT used to die on `UNIQUE constraint failed:
+			// projects.root_path` and roll the whole split back, which surfaced raw
+			// SQLite text in the UI and left the project stuck at the merged level.
+			// The repo is re-pointed at the project that already owns that path.
+			var ownerID int64
+			lookup := tx.QueryRow("SELECT id FROM projects WHERE root_path = ?", repo.Path).Scan(&ownerID)
+			if lookup == sql.ErrNoRows {
+				res, err := tx.Exec(
+					"INSERT INTO projects (name, root_path, level_override, is_auto_grouped) VALUES (?, ?, ?, 0)",
+					filepath.Base(repo.Path), repo.Path, project.LevelOverride-1,
+				)
+				if err != nil {
+					return 0, fmt.Errorf("failed to create sub-project: %w", err)
+				}
+				if ownerID, err = res.LastInsertId(); err != nil {
+					return 0, fmt.Errorf("failed to get new project id: %w", err)
+				}
+			} else if lookup != nil {
+				return 0, fmt.Errorf("failed to look up the owner of %q: %w", repo.Path, lookup)
 			}
-			newID, err := res.LastInsertId()
-			if err != nil {
-				return 0, fmt.Errorf("failed to get new project id: %w", err)
-			}
-			if _, err := tx.Exec("UPDATE repositories SET project_id = ? WHERE id = ?", newID, repo.ID); err != nil {
+			if _, err := tx.Exec("UPDATE repositories SET project_id = ? WHERE id = ?", ownerID, repo.ID); err != nil {
 				return 0, fmt.Errorf("failed to reassign repo: %w", err)
 			}
 		}
-		// Keep the original project bound to its first repo.
-		if _, err := tx.Exec("UPDATE projects SET is_auto_grouped = 0, root_path = ?, level_override = ? WHERE id = ?", repos[0].Path, project.LevelOverride-1, id); err != nil {
+		// Keep the original project bound to its first repo — but only move its
+		// root onto that repo's path when no other project owns it, for the same
+		// reason as above. The level and grouping flags always update.
+		newRoot := repos[0].Path
+		var taken int64
+		lookup := tx.QueryRow("SELECT id FROM projects WHERE root_path = ? AND id != ?", newRoot, id).Scan(&taken)
+		if lookup == sql.ErrNoRows {
+			if _, err := tx.Exec("UPDATE projects SET is_auto_grouped = 0, root_path = ?, level_override = ? WHERE id = ?", newRoot, project.LevelOverride-1, id); err != nil {
+				return 0, fmt.Errorf("failed to update project: %w", err)
+			}
+		} else if lookup != nil {
+			return 0, fmt.Errorf("failed to look up the owner of %q: %w", newRoot, lookup)
+		} else if _, err := tx.Exec("UPDATE projects SET is_auto_grouped = 0, level_override = ? WHERE id = ?", project.LevelOverride-1, id); err != nil {
 			return 0, fmt.Errorf("failed to update project: %w", err)
 		}
 	}
@@ -301,40 +324,16 @@ func MergeProjectUp(db *sql.DB, id int64) (int, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	parentDir := filepath.Dir(project.RootPath)
-	if parentDir != "" && parentDir != "/" && parentDir != "." {
-		// Sibling match is an exact filepath.Dir comparison over all projects.
-		// This used to pre-filter with root_path LIKE parentDir || '/%', but
-		// the LIKE pattern is never escaped: a '%' or '_' in the directory
-		// name over-matched (saved only by the exact re-check), and on Windows
-		// the '\' in every path acted as the LIKE escape character, so the
-		// pattern matched nothing and merge silently became a no-op.
-		rows, err := tx.Query("SELECT id, root_path FROM projects WHERE id != ?", id)
+	parentDir := mergeParentDir(project.RootPath)
+	if parentDir != "" {
+		// The listing is shared with the confirmation preview on purpose: what the
+		// user approves has to be the same set the merge actually swallows.
+		siblings, err := mergeAbsorbableSiblings(tx, id, parentDir)
 		if err != nil {
-			return 0, fmt.Errorf("failed to query siblings: %w", err)
+			return 0, err
 		}
-		var siblingIDs []int64
-		for rows.Next() {
-			var sid int64
-			var sroot string
-			if err := rows.Scan(&sid, &sroot); err != nil {
-				rows.Close()
-				return 0, fmt.Errorf("failed to scan sibling: %w", err)
-			}
-			// A project that already sits exactly at parentDir is a merge
-			// source too, not just a same-parent sibling. Without this the
-			// final UPDATE hit `UNIQUE constraint failed: projects.root_path`
-			// and the whole merge rolled back — which made split irreversible:
-			// the project a split came out of still occupies the very path the
-			// merge tries to move it into. Its own Dir is the grandparent, so
-			// the sibling comparison above never saw it.
-			if filepath.Dir(sroot) == parentDir || sroot == parentDir {
-				siblingIDs = append(siblingIDs, sid)
-			}
-		}
-		rows.Close()
-
-		for _, sid := range siblingIDs {
+		for _, sib := range siblings {
+			sid := sib.ID
 			if _, err := tx.Exec("UPDATE repositories SET project_id = ? WHERE project_id = ?", id, sid); err != nil {
 				return 0, fmt.Errorf("failed to move repos: %w", err)
 			}
@@ -359,4 +358,98 @@ func MergeProjectUp(db *sql.DB, id int64) (int, error) {
 		return 0, fmt.Errorf("failed to commit level change: %w", err)
 	}
 	return project.LevelOverride + 1, nil
+}
+
+// mergeParentDir is the directory a "merge up" moves the project root onto, or ""
+// when there is nothing above it to merge into. Shared by the merge and by its
+// confirmation preview so the two can never disagree about what gets swallowed.
+func mergeParentDir(rootPath string) string {
+	parent := filepath.Dir(rootPath)
+	if parent == "" || parent == "/" || parent == "." {
+		return ""
+	}
+	return parent
+}
+
+// mergeQuerier is satisfied by both *sql.DB and *sql.Tx: MergeProjectUp runs the
+// listing inside its transaction, the confirmation preview runs it on the database.
+type mergeQuerier interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// mergeAbsorbableSiblings lists the projects a "merge up" deletes after moving their
+// repositories, notes and todos into id.
+//
+// Sibling matching is an exact filepath.Dir comparison over all projects. It used to
+// pre-filter with root_path LIKE parentDir || '/%', but that pattern is never
+// escaped: a '%' or '_' in a directory name over-matched (surviving only because of
+// the exact re-check), and on Windows the '\' in every path acted as the LIKE escape
+// character so the pattern matched nothing and a merge silently became a no-op.
+//
+// A project already sitting exactly on parentDir is a source too, not just a
+// same-parent sibling — without it the merge's final UPDATE hits
+// `UNIQUE constraint failed: projects.root_path` and the whole transaction rolls
+// back, which is what made split irreversible: the project a split came out of still
+// owns the very path the merge wants to move into.
+func mergeAbsorbableSiblings(q mergeQuerier, id int64, parentDir string) ([]domain.MergeSibling, error) {
+	rows, err := q.Query("SELECT id, name, root_path FROM projects WHERE id != ?", id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query siblings: %w", err)
+	}
+	var found []domain.MergeSibling
+	for rows.Next() {
+		var s domain.MergeSibling
+		if err := rows.Scan(&s.ID, &s.Name, &s.RootPath); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("failed to scan sibling: %w", err)
+		}
+		if filepath.Dir(s.RootPath) == parentDir || s.RootPath == parentDir {
+			found = append(found, s)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("failed to read siblings: %w", err)
+	}
+	// The per-project counts below reuse the same connection, so the row set has to
+	// be closed first — leaving it open deadlocks a transaction.
+	rows.Close()
+
+	for i := range found {
+		found[i].Repos = countRowsForProject(q, "repositories", found[i].ID)
+		found[i].Notes = countRowsForProject(q, "project_notes", found[i].ID)
+		found[i].Todos = countRowsForProject(q, "project_todos", found[i].ID)
+	}
+	return found, nil
+}
+
+// countRowsForProject receives its table name from this package's own call sites
+// only, never from caller input, so the concatenation stays safe.
+func countRowsForProject(q mergeQuerier, table string, projectID int64) int {
+	var n int
+	if err := q.QueryRow("SELECT count(*) FROM "+table+" WHERE project_id = ?", projectID).Scan(&n); err != nil {
+		return 0
+	}
+	return n
+}
+
+// MergePlan reports what MergeProjectUp would do to id: the root it would move onto
+// and the projects it would delete on the way. The confirmation dialog is built from
+// this, which is why it shares mergeAbsorbableSiblings with the merge itself.
+// An empty parentDir means there is nothing above this project to merge into.
+func MergePlan(db *sql.DB, id int64) (*Project, string, []domain.MergeSibling, error) {
+	project, err := GetProjectByID(db, id)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("project not found: %w", err)
+	}
+	parentDir := mergeParentDir(project.RootPath)
+	if parentDir == "" {
+		return project, "", nil, nil
+	}
+	siblings, err := mergeAbsorbableSiblings(db, id, parentDir)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return project, parentDir, siblings, nil
 }

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getProjectDetail, getProjectOverview, updateProjectLevel } from '../api/client'
-import type { ProjectDetail, ProjectOverview } from '../api/client'
+import { getProjectDetail, getProjectOverview, updateProjectLevel, previewProjectMergeUp } from '../api/client'
+import type { MergePreview, ProjectDetail, ProjectOverview } from '../api/client'
 import type { TrendDataset } from '../components/TrendChart'
+import { describeApiError } from '../utils/apiError'
 
 /** Aggregated daily stat for trend chart. */
 interface DailyStat {
@@ -80,17 +81,39 @@ export function useProjectDetail(id: string | undefined) {
   // Returns the outcome so the page can flash visible feedback — the old
   // version only setError()ed, and the error banner lives outside the normal
   // render path, so a failed merge/split looked exactly like a dead button.
-  const handleLevelChange = async (direction: 'up' | 'down'): Promise<{ ok: boolean; error?: string }> => {
+  // `confirmed` is required by the backend for "up" (a merge deletes the absorbed
+  // siblings); "down" ignores it.
+  const handleLevelChange = async (
+    direction: 'up' | 'down',
+    confirmed: boolean,
+  ): Promise<{ ok: boolean; error?: string; raw?: string }> => {
     if (!id) return { ok: false }
     try {
-      await updateProjectLevel(Number(id), direction)
+      await updateProjectLevel(Number(id), direction, confirmed)
       const updated = await getProjectDetail(Number(id))
       setProject(updated)
       return { ok: true }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : t('common.failed')
+      // `raw` is kept because the page still has one message-specific branch
+      // ("no sibling here") that must key off the backend's own sentence, not off
+      // the localized text the user is shown.
+      const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+      const msg = describeApiError(t, e) || t('common.failed')
       setError(msg)
-      return { ok: false, error: msg }
+      return { ok: false, error: msg, raw }
+    }
+  }
+
+  // What "up" would absorb and delete, so the page can put real counts in front of
+  // the user before asking. A failed preview returns null and the page must then NOT
+  // proceed with the merge — guessing at the damage is exactly what this guards.
+  const previewMergeUp = async (): Promise<MergePreview | null> => {
+    if (!id) return null
+    try {
+      return await previewProjectMergeUp(Number(id))
+    } catch (e: unknown) {
+      setError(describeApiError(t, e) || t('common.failed'))
+      return null
     }
   }
 
@@ -162,6 +185,7 @@ export function useProjectDetail(id: string | undefined) {
     totals,
     retry: load,
     handleLevelChange,
+    previewMergeUp,
   }
 }
 

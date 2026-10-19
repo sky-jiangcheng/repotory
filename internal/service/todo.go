@@ -27,6 +27,12 @@ func (s *Service) CreateTodo(projectID int64, title string) (*domain.Todo, error
 	if strings.TrimSpace(title) == "" {
 		return nil, fmt.Errorf("title is required")
 	}
+	// Checked here rather than left to the foreign key: an absent project used to
+	// surface as `constraint failed: FOREIGN KEY constraint failed (787)` — a
+	// SQLite code the UI had no way to say anything useful about.
+	if _, err := db.GetProjectByID(s.db, projectID); err != nil {
+		return nil, ErrProjectNotFound
+	}
 	return db.CreateTodo(s.db, projectID, title)
 }
 

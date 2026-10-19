@@ -19,6 +19,7 @@ import VersionHistoryPanel from './notes/VersionHistoryPanel'
 import ErrorBanner from './ErrorBanner'
 import Icon from './Icon'
 import s from './NoteSection.module.css'
+import { describeApiError } from '../utils/apiError'
 
 interface Props {
   projectId: number
@@ -57,7 +58,7 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
       .then(notes => { if (fetchSeqRef.current === seq) setNotes(notes) })
       .catch(e => {
         // A failed load must not masquerade as the "no notes yet" empty state.
-        if (fetchSeqRef.current === seq) setError(`${t('project.loadFailed')}: ${e instanceof Error ? e.message : ''}`)
+        if (fetchSeqRef.current === seq) setError(`${t('project.loadFailed')}: ${describeApiError(t, e)}`)
       })
       .finally(() => { if (fetchSeqRef.current === seq) setLoading(false) })
   }, [projectId, t])

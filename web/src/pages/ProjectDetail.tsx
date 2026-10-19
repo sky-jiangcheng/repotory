@@ -30,7 +30,7 @@ function ProjectDetailPage() {
 
   const {
     project, overview, loading, error, setError,
-    scope, setScope, trendData, totals, retry, handleLevelChange,
+    scope, setScope, trendData, totals, retry, handleLevelChange, previewMergeUp,
   } = useProjectDetail(id)
 
   // The page's sections live behind tabs instead of one long scroll: the
@@ -77,12 +77,43 @@ function ProjectDetailPage() {
   }
 
   const onLevelChange = async (direction: 'up' | 'down') => {
-    const r = await handleLevelChange(direction)
+    let confirmed = false
+    if (direction === 'up') {
+      // A merge is destructive: it deletes every sibling project it absorbs, along
+      // with their notes and todos. The counts come from the server, so what the
+      // user approves is what the merge will do. No preview means no merge.
+      const pre = await previewMergeUp()
+      if (!pre) return
+      if (pre.siblings.length > 0) {
+        const shown = pre.siblings.slice(0, 8).map(s => `• ${s.name}`).join('\n')
+        const more = pre.siblings.length > 8
+          ? `\n${t('project.levelUpMore', { n: pre.siblings.length - 8, defaultValue: '' })}`
+          : ''
+        const ok = window.confirm(t('project.levelUpConfirm', {
+          count: pre.siblings.length,
+          target: pre.target_name,
+          names: shown + more,
+          repos: pre.repos,
+          notes: pre.notes,
+          todos: pre.todos,
+          defaultValue: '',
+        }))
+        if (!ok) return
+        confirmed = true
+      } else {
+        // Nothing is absorbed, so no project disappears: the click only moves the
+        // root up one level. No dialog, and the backend's explicit-intent flag is
+        // set because a human did ask for this.
+        confirmed = true
+      }
+    }
+    const r = await handleLevelChange(direction, confirmed)
     if (r.ok) {
       flashAction(t('project.levelChanged'))
-    } else if (r.error && r.error.toLowerCase().includes('not found')) {
+    } else if (r.raw && /not found/i.test(r.raw)) {
       // MergeProjectUp/SplitProjectDown surface "no sibling here" as 404 —
-      // translate it or the button reads as dead.
+      // translate it or the button reads as dead. Matched on the backend sentence
+      // because r.error is already localized for display.
       flashAction(t('project.levelNoSibling'))
     } else {
       flashAction(r.error || t('common.failed'))

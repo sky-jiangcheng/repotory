@@ -393,8 +393,8 @@
     "current": "（当前）",
     "autoGroup": "自动分组",
     "manualGroup": "手动分组",
-    "levelUp": "提升分组级别",
-    "levelDown": "降低分组级别",
+    "levelUp": "合并到上级目录（提升分组级别）",
+    "levelDown": "按仓库拆分（降低分组级别）",
     "realtimeMining": "实时",
     "fromCache": "缓存",
     "noRepos": "项目未找到",
@@ -444,7 +444,7 @@
     "techStack": "技术栈",
     "mainLanguage": "主语言",
     "groupLevel": "分组级别 {{n}}",
-    "groupLevelHint": "调整聚合粒度：数字越小，归并的项目范围越大",
+    "groupLevelHint": "调整聚合粒度：级别数字越大，聚合范围越大。向上＝把项目根抬到父目录，并吸收、删除同一父目录下的同级项目（需确认，会连带迁移其笔记与待办）；向下＝按仓库拆成独立项目，这不是撤销上一步。",
     "scope": "范围",
     "overviewEmpty": "等待首次挖掘",
     "overviewEmptyHint": "打开详情即自动提取，稍后刷新即可",
@@ -456,8 +456,10 @@
     "refreshHistory": "刷新统计历史",
     "refreshingHistory": "正在刷新…",
     "loadFailed": "加载失败",
+    "levelUpMore": "……另有 {{n}} 个",
     "levelChanged": "分组已更新",
     "levelNoSibling": "当前目录没有可合并或拆分的相邻项目",
+    "levelUpConfirm": "将把 {{count}} 个同级项目合并进「{{target}}」并删除它们：\n{{names}}\n随之迁移：{{repos}} 个仓库、{{notes}} 条笔记、{{todos}} 条待办。\n注意：此操作无法自动撤销——“按仓库拆分”不会还原原来的项目结构。确定合并？",
     "tab_overview": "概览",
     "tab_commits": "提交",
     "tab_repos": "仓库",
@@ -824,5 +826,14 @@
     "versionDiffHint": "查看这一版与当前内容的差异",
     "versionNoDiff": "这一版与当前内容一致。",
     "versionLoadError": "加载页面版本失败"
+  },
+  "errors": {
+    "projectNotFound": "项目不存在（可能已被删除）",
+    "noteNotFound": "笔记不存在（可能已被删除）",
+    "repoNotFound": "仓库不存在（可能已被移除或重新扫描）",
+    "titleRequired": "标题不能为空",
+    "recordGone": "这条记录已不存在，请刷新后重试",
+    "pathTaken": "该目录已被其他项目占用",
+    "mergeNeedsConfirmation": "该操作会合并并删除同级项目，需要明确确认"
   }
 }

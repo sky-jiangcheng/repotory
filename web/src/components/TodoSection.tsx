@@ -5,6 +5,7 @@ import { useConfirmClick } from '../hooks/useConfirmClick'
 import ErrorBanner from './ErrorBanner'
 import Icon from './Icon'
 import s from './TodoSection.module.css'
+import { describeApiError } from '../utils/apiError'
 
 interface Props {
   projectId: number
@@ -27,7 +28,7 @@ function TodoSection({ projectId }: Props) {
       .then(todos => { if (fetchSeqRef.current === seq) setTodos(todos) })
       .catch(e => {
         // A failed load must not masquerade as the "no todos" empty state.
-        if (fetchSeqRef.current === seq) setError(`${t('project.loadFailed')}: ${e instanceof Error ? e.message : ''}`)
+        if (fetchSeqRef.current === seq) setError(`${t('project.loadFailed')}: ${describeApiError(t, e)}`)
       })
       .finally(() => { if (fetchSeqRef.current === seq) setLoading(false) })
   }, [projectId, t])

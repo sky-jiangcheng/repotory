@@ -49,6 +49,21 @@ const (
 	DefaultProjectRootPath = "repotory://memory/default"
 )
 
+// MergeSibling is one project that a "merge up" (grouping level +) would swallow:
+// the merge moves its repositories, notes and todos into the surviving project and
+// then deletes the row. It exists as a type because the operation is destructive:
+// the same listing feeds the confirmation preview, so what the user is asked to
+// approve is computed by the same code that performs the merge (see
+// db.MergeAbsorbableSiblings) and cannot quietly understate the damage.
+type MergeSibling struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	RootPath string `json:"root_path"`
+	Repos    int    `json:"repos"`
+	Notes    int    `json:"notes"`
+	Todos    int    `json:"todos"`
+}
+
 // OrganizeGroup is one row in the knowledge-base "organize" surface (ADR-0023
 // decision 5): a landing project — an import placeholder or the default
 // ("Uncategorized") bucket — that holds notes the user has not yet assigned to a

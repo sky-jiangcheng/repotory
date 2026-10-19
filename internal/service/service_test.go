@@ -207,10 +207,10 @@ func TestGetHeatmapDataProjectFilter(t *testing.T) {
 func TestUpdateProjectLevelValidation(t *testing.T) {
 	svc, _ := setupService(t)
 	pid := seedProject(t, svc.db, "p", "/tmp/p")
-	if _, err := svc.UpdateProjectLevel(pid, "sideways"); err == nil {
+	if _, err := svc.UpdateProjectLevel(pid, "sideways", false); err == nil {
 		t.Error("expected error for invalid direction")
 	}
-	if _, err := svc.UpdateProjectLevel(999, "up"); err == nil {
+	if _, err := svc.UpdateProjectLevel(999, "up", true); err == nil {
 		t.Error("expected error for missing project")
 	}
 }

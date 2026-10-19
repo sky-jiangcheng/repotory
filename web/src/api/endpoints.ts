@@ -15,6 +15,7 @@ import type {
   HandoffResult,
   KnowledgeSyncStatus,
   MergeCandidateReport,
+  MergePreview,
   MergeResult,
   Note,
   NoteCount,
@@ -128,16 +129,27 @@ export function refreshProjectHistory(id: number): Promise<{ success: boolean }>
   })
 }
 
+// `confirmed` must be true for "up": a merge absorbs and DELETES sibling projects
+// along with their notes and todos, and the service refuses an unconfirmed call.
+// "down" splits by repository — it is not an undo of a merge — and ignores the flag.
 export function updateProjectLevel(
   id: number,
-  direction: 'up' | 'down'
+  direction: 'up' | 'down',
+  confirmed: boolean
 ): Promise<{ success: boolean; new_level: number }> {
   return call({
     method: 'UpdateProjectLevel',
-    args: [id, direction],
+    args: [id, direction, confirmed],
     path: `/projects/${id}/level`,
-    init: jsonInit('POST', { direction }),
+    init: jsonInit('POST', { direction, confirmed }),
   })
+}
+
+// Read-only preview of what "up" would absorb and delete; backs the confirmation
+// dialog. Desktop-only binding like the other organize/grouping actions: it travels
+// over /api/rpc, so it declares no REST path.
+export function previewProjectMergeUp(id: number): Promise<MergePreview> {
+  return call<MergePreview>({ method: 'PreviewProjectMergeUp', args: [id] })
 }
 
 export function searchProjects(query: string): Promise<Project[]> {

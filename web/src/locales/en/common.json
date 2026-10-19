@@ -394,8 +394,8 @@
     "current": " (current)",
     "autoGroup": "Auto-group",
     "manualGroup": "Manual grouping",
-    "levelUp": "Increase group level",
-    "levelDown": "Decrease group level",
+    "levelUp": "Merge into the parent directory (raise group level)",
+    "levelDown": "Split by repository (lower group level)",
     "realtimeMining": "Live",
     "fromCache": "Cached",
     "noRepos": "Project not found",
@@ -445,7 +445,7 @@
     "techStack": "Tech Stack",
     "mainLanguage": "Main language",
     "groupLevel": "Group level {{n}}",
-    "groupLevelHint": "Adjust aggregation granularity: a lower number merges a wider project scope",
+    "groupLevelHint": "Aggregation granularity: a higher number means a wider scope. Up moves the project root to its parent directory and absorbs — then deletes — the sibling projects there (it asks first, and takes their notes and todos with it). Down splits the project into one project per repository; it is not an undo.",
     "scope": "Scope",
     "overviewEmpty": "Awaiting first mining",
     "overviewEmptyHint": "Auto-extracted when you open the page; refresh to see it.",
@@ -457,8 +457,10 @@
     "refreshHistory": "Refresh history",
     "refreshingHistory": "Refreshing…",
     "loadFailed": "Load failed",
+    "levelUpMore": "…and {{n}} more",
     "levelChanged": "Grouping updated",
     "levelNoSibling": "No sibling projects here to merge or split",
+    "levelUpConfirm": "This merges {{count}} sibling project(s) into \"{{target}}\" and deletes them:\n{{names}}\nMoving with them: {{repos}} repositories, {{notes}} notes, {{todos}} todos.\nNote: this cannot be undone automatically — \"split by repository\" does not restore the previous structure. Merge anyway?",
     "tab_overview": "Overview",
     "tab_commits": "Commits",
     "tab_repos": "Repositories",
@@ -825,5 +827,14 @@
     "versionDiffHint": "Diff this snapshot against the page's current content",
     "versionNoDiff": "This snapshot matches the current content.",
     "versionLoadError": "Failed to load page versions"
+  },
+  "errors": {
+    "projectNotFound": "Project not found (it may have been deleted)",
+    "noteNotFound": "Note not found (it may have been deleted)",
+    "repoNotFound": "Repository not found (it may have been removed or rescanned)",
+    "titleRequired": "Title is required",
+    "recordGone": "That record no longer exists — refresh and try again",
+    "pathTaken": "That directory is already owned by another project",
+    "mergeNeedsConfirmation": "This merges and deletes sibling projects and needs an explicit confirmation"
   }
 }

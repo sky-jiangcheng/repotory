@@ -69,6 +69,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"GetRepoCommits":        {SurfaceDesktopOnly, "", "commit table for the detail page"},
 	"GetProjectCommits":     {SurfaceDesktopOnly, "", "commit table for the detail page"},
 	"UpdateProjectLevel":    {SurfaceDesktopOnly, "", "project grouping is a human organising act"},
+	"PreviewProjectMergeUp": {SurfaceDesktopOnly, "", "read-only half of the destructive merge-up confirmation flow; grouping is human-only, so its preview has no MCP twin either"},
 	"ToggleStar":            {SurfaceDesktopOnly, "", "collection is UI state"},
 	"RefreshProjectHistory": {SurfaceDesktopOnly, "", "long-running git refresh driven from the detail page"},
 	"SearchProjects":        {SurfaceDesktopOnly, "", "project picker in the UI"},

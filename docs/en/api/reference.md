@@ -71,13 +71,16 @@ cd .. && go build -o repotory-server ./cmd/server
 | `ResolveWorkspacePath` | `(path) → ProjectResolution` | read-only: resolve an absolute directory to its owning project and, when the folder sits inside a scanned repository, that repository (the four-tier path resolution). Backs the IDE's scope display; there is no MCP twin — agents pass `path` to `repotory_context` instead. See [AI Integration](../features/ai-integration.md) |
 | `SearchProjects` | `(query) → ProjectResponse[]` | fuzzy search by name/path (enriched with yesterday's stats) |
 | `ToggleStar` | `(id) → bool` | toggle star, returns the new state (atomic UPDATE) |
-| `UpdateProjectLevel` | `(id, "up"\|"down") → {success, new_level}` | merge/split projects (single transaction) |
+| `UpdateProjectLevel` | `(id, "up"\|"down", confirmed) → {success, new_level}` | merge/split projects (single transaction). `"up"` absorbs and **deletes** sibling projects (with their repos/notes/todos) and requires `confirmed=true`; an unconfirmed call errors out and changes nothing. `"down"` splits by repository and ignores the flag |
+| `PreviewProjectMergeUp` | `(id) → MergePreview` | read-only preview of which siblings `"up"` would absorb and delete, with the migrated repo/note/todo counts — the confirmation dialog's data source, sharing one sibling listing with the merge itself (`db.MergePlan`), so the preview cannot understate. No MCP twin (desktop-only, like `UpdateProjectLevel`) |
 | `RefreshProjectHistory` | `(id) → {success}` | backfill the last 365 days of stats for this project |
 | `ListOrganizeGroups` | `() → OrganizeGroup[]` | knowledge-base organize: lists landing projects (kind `import_placeholder` / `default`) that still hold unfiled notes, with their note count and whether a scanned repository points at them. Read-only, no MCP twin — organizing is a human act (see [ADR-0023](../adr/0023-note-ownership-knowledge-organize.md)) |
 | `ReassignLandingNotes` | `(sourceId, targetId) → int` | re-file every note from a landing project into a target real project (or "Uncategorized"); returns the number moved. Source must be a landing project; target must be a scanned project or the default. No MCP twin |
 | `DeleteLandingProject` | `(id, deleteNotes bool) → error` | delete an `import_placeholder` landing project; when it still holds notes `deleteNotes` must be true to confirm removing them along with it. The default and scanned projects are always refused — deletion is a confirmed action, never an automatic cascade. No MCP twin |
 
 **OrganizeGroup**: `{ project_id, name, root_path, kind, note_count, repo_bound }`.
+
+**MergePreview**: `{ target_id, target_name, new_root, siblings: MergeSibling[], repos, notes, todos }`, where `MergeSibling`: `{ id, name, root_path, repos, notes, todos }`; an empty `siblings` means there is nothing to absorb.
 
 **ProjectResponse** (excerpt):
 
