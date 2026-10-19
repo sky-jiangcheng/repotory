@@ -35,6 +35,11 @@ type Service struct {
 	// only by tests so they never write into the real user data directory.
 	backupDir string
 
+	// remoteDialer builds the object-store client for one L2 upload (ADR-0025
+	// L2). Nil at runtime — the real minio dialer runs — and overridden by
+	// tests so no test ever touches a network.
+	remoteDialer remoteStoreDialer
+
 	// onImportEvent, when set, is invoked with the import.completed payload
 	// after every knowledge import so the UI layer can forward it to the
 	// frontend (Wails events, CLI output, ...).

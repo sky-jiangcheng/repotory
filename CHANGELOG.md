@@ -12,6 +12,9 @@
 - **RunBackupNow 设置页按钮（ADR-0025 L1 收尾）**：v2.6.0 落地了每日本地快照与 `RunBackupNow` 绑定，但设置页一直没有入口（注释原话「设置页按钮未接，脚本可调」）。现补上：设置 → 操作新增「数据库备份」组——「立即备份」按钮调用既有绑定，完成后报出快照落盘路径；当天已有快照时后端本就是 no-op，文案如实说明。新端点 `runBackupNow()` 沿既有 `call` 通道。
 - **wiki lint 新增 community-incoherent 模型检查（ADR-0020 收尾）**：`synthesis` 综述页此前只有结构性体检（孤页/链接），「综述是否忠实于其成员页」无人看。现把该检查并入 `wiki_lint_llm` 的模型半：payload 里 synthesis 页附上经 `page_links` 解析出的 members 成员页清单，提示词新增第三类发现 `community-incoherent`（综述与成员页明显不一致/遗漏/歪曲关键结论）。信任规则与既有两类一致——模型只能建议（findings 落 `[lint]` 待办，绝不改页）、page_id 必须能在库里查到、回复解析不出 JSON 就一条不采信；未知类型仍按既有口径降级为 stale。门不变：`wiki_lint_llm` 默认关。
 
+- **数据库快照远端推送（[ADR-0025](docs/adr/0025-backup-recovery.md) L2 落码，默认关）**：每天本地快照生成后，可选推送到你自己的 S3 兼容对象存储（AWS S3 / Cloudflare R2 / NAS 上的 MinIO 均可，`minio-go` 纯 Go 零 CGO 实现）。隐私门与 AI 功能同款：六键 `backup_remote_*` 默认全空 = **零外发**——开关未开或凭据不全时客户端根本不被构造（回归把「零外发」钉在行为上）；只上传快照副本，活库与 WAL/SHM sidecar 永无对象名（对象键正则回归钉死）。对象名即快照文件名（前缀默认 `repotory`），当天已存在即跳过、失败下一小时自动重试；`RunBackupNow` 返回契约不变（仍是本地路径）。设置 → 操作 → 数据库备份提供开关与五项表单（密钥输入框走密码型）。决策 3 的「只定型不落码」就此收口，形态二（快照上传）实现、形态一（Litestream sidecar）降为部署文档可选项。
+- **Docker 部署档（ADR-0025，NAS/homelab）**：仓库根新增 `Dockerfile`（三段构建：web `build:server` → CGO_ENABLED=0 的 `repotory-server` → alpine 运行层）与 `docker-compose.yml`（单容器 + 数据卷，宿主侧默认只绑 loopback）。数据目录经 `XDG_CONFIG_HOME=/data` 定位到卷内，`repotory.db` 与每日快照 `backups/` 都在卷上，可整目录纳入宿主备份计划；远端推送在容器内用同一组 `backup_remote_*` 键启用。手册「数据与备份」新增 L1/L2/Docker 三节（中英）。
+
 ## [2.7.0] - 2026-10-19
 
 ### 变更

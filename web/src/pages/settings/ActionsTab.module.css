@@ -20,3 +20,19 @@
   background: var(--bg-tertiary);
   border-radius: 4px;
 }
+
+.remoteGrid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.remoteGrid label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.remoteGrid label span {
+  color: var(--text-tertiary);
+}

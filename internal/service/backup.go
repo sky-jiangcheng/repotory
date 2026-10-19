@@ -20,9 +20,11 @@ import (
 //
 // The design keeps three promises:
 //
-//   - Local-only, zero outbound. Snapshots are VACUUM INTO files under the
-//     data directory; nothing leaves the machine, so there is no privacy gate
-//     to ask (cloud push is ADR-0025 L2 and is a separate, explicit opt-in).
+//   - Local-first by default. Snapshots are VACUUM INTO files under the data
+//     directory; with no L2 opt-in nothing leaves the machine. The optional
+//     remote push (ADR-0025 L2, backup_remote.go) uploads only the snapshot
+//     copy, only after the local file exists, and only when the user has
+//     explicitly configured a target.
 //
 //   - One snapshot per day, by construction. The daily filename doubles as the
 //     idempotency key: the hourly ticker and every app launch call the same
@@ -92,6 +94,10 @@ func (s *Service) RunBackupNow() (string, error) {
 		return "", err
 	}
 	log.Printf("database snapshot ready: %s", path)
+	// ADR-0025 L2: push the fresh snapshot when the remote opt-in is fully
+	// configured. Never fails the caller — the local snapshot is the promise
+	// this function makes; the push is opportunistic and logged.
+	s.pushRemoteBackup(path)
 	return path, nil
 }
 

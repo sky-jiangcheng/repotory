@@ -1,0 +1,19 @@
+# Repotory headless server (ADR-0025 Docker tier): one container, one volume.
+# The volume holds /data/repotory/repotory.db plus its daily snapshots under
+# /data/repotory/backups/ — include that path in your host backup plan.
+#
+# The API has no authentication and must not be exposed to the public internet
+# directly; put it behind an authenticating proxy if you need remote access.
+services:
+  repotory:
+    build: .
+    image: repotory-server:latest
+    container_name: repotory
+    ports:
+      - "127.0.0.1:18765:18765"   # loopback only by default; tighten/relax deliberately
+    volumes:
+      - repotory-data:/data
+    restart: unless-stopped
+
+volumes:
+  repotory-data:

@@ -161,7 +161,7 @@ function Settings() {
           </div>
         )}
 
-        {tab === 'actions' && <ActionsTab showMessage={showMessage} />}
+        {tab === 'actions' && data && <ActionsTab initialConfig={data.config} showMessage={showMessage} />}
       </div>
     </div>
   )

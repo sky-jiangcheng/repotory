@@ -1,6 +1,6 @@
 # ADR-0025: 备份与恢复——产品自带的每日本地快照，云端推送 opt-in
 
-- 状态：Proposed（**2026-10-18 L1 已落码**：每日 VACUUM INTO 本地快照 + 14 份轮转 + `backup_enabled`/`backup_retain` 两道配置，纯本地零外发，`go test ./...` 全绿；L2 云端推送与 Docker 部署档为 opt-in 备选、本 ADR 只定型不落码。晋升 Accepted 差：连续三日快照观察（**2026-10-19 进度 2/3**：10-18、10-19 已落盘）+ 一次轮转观察（retain=14，需第 15 份快照出现）；真机恢复演练已于 **2026-10-19 完成**——10-19 快照副本在沙箱 HOME 由 headless server（v2.7.0）启动：/health ok、GetProjects/ListOrganizeGroups 真实返回、107 笔记/15 页完整，副本开机自愈迁移 v24→v25 且 v25 清理 3 行污染 repo_meta。见「晋升条件」）
+- 状态：Proposed（**2026-10-18 L1 已落码**：每日 VACUUM INTO 本地快照 + 14 份轮转 + `backup_enabled`/`backup_retain` 两道配置，纯本地零外发，`go test ./...` 全绿；L2 云端推送已于 **2026-10-19 落码**（决策 3 落码注记：形态二「定时上传 L1 快照」，minio-go 进程内实现、六键 `backup_remote_*` 默认全空 = 零外发；Dockerfile/compose 随附，litestream sidecar 降为部署文档可选项）。晋升 Accepted 差：连续三日快照观察（**2026-10-19 进度 2/3**：10-18、10-19 已落盘）+ 一次轮转观察（retain=14，需第 15 份快照出现）；真机恢复演练已于 **2026-10-19 完成**——10-19 快照副本在沙箱 HOME 由 headless server（v2.7.0）启动：/health ok、GetProjects/ListOrganizeGroups 真实返回、107 笔记/15 页完整，副本开机自愈迁移 v24→v25 且 v25 清理 3 行污染 repo_meta。见「晋升条件」）
 - 日期：2026-10-18
 - 关联：[TODO 现状速查「真库事故」](../../TODO.md)（本 ADR 的直接动因）、[ADR-0011](0011-multi-agent-memory-importers.md)（隐私门纪律，L2 沿用）、[ADR-0021](0021-temporal-graph-page-versions.md)（page_versions 是页面层恢复凭据，本 ADR 是库文件层）、TODO「用户动作 ②」（TM 插盘已由用户暂缓，本 ADR 填补其空缺）、M3 语义检索草案（「未配置即零外发」文案的参照）
 - 配套：`internal/db/backup.go`（快照+轮转）、`internal/service/backup.go`（门控+节律）、真库手工恢复点 `repotory-{pre,post}-reimport-backup-20261018/`（L1 的手工前身）
@@ -28,6 +28,8 @@
 **决策 2：恢复路径 = 单文件拷回。** 快照是完整独立的 SQLite 文件，恢复就是换文件——这是最短、最不易错的恢复路径，也是手工恢复点（事故后验证过的流程）的直接延续。晋升条件要求真机演练一次。
 
 **决策 3：L2 云端推送 = opt-in，本 ADR 只定型不落码。** 两种等价形态：Litestream 式 WAL 流式归档（近 PITR），或定时把 L1 快照上传 S3 兼容对象存储。隐私门纪律与 M3 完全一致：**未配置凭据 = 零外发，默认关**，文案沿用「仅当你主动配置…才会外发」句式。Docker 部署档（NAS/homelab 用户）：`repotory-server` 容器 + data volume + litestream sidecar 的 compose 文档化；桌面主体验不引入 Docker。
+
+> **落码注记（2026-10-19，形态二）**：实现选择「定时上传 L1 快照」而非 Litestream——快照已由 L1 产出且文件名即幂等键，上传只是把既有产物搬走，不需要引入流式归档的第二套恢复语义。S3 客户端用 **minio-go**（纯 Go、零 CGO、通吃 S3/R2/MinIO/B2），每次上传现建现弃客户端、凭据不驻留内存。六键 `backup_remote_{enabled,endpoint,bucket,prefix,access_key,secret_key}` 全部默认空，**enabled≠1 或任一必填为空 → dialer 根本不被构造**（`TestRemoteBackupOffByDefault`/`TestRemoteBackupMissingCredsStaysLocal` 把「零外发」钉在行为上而非意愿上）。对象名 = 快照文件名（`<前缀>/repotory-YYYY-MM-DD.db`），已存在即跳过（当日幂等），上传失败仅记日志、下一小时 ticker 免费重试；红线由回归钉死：**对象键正则只允许快照文件名，活库与 WAL/SHM sidecar 永无对象名**。RunBackupNow 的返回契约不变（仍是本地路径），push 是纯旁路。设置页「数据库备份」组提供开关 + 五项表单；手册 `docs/data-management.md`（中英）新增 L1/L2/Docker 三节。
 
 **决策 4：红线——活库永不进云盘同步文件夹。** iCloud Drive / OneDrive / rclone mount 一类文件级同步对正在写入的 SQLite 文件是著名损坏源；10-14 事故的干扰源嫌疑（数据目录里 15 个 `.fuse_hidden*`）正指向这一类工具。云端化只允许两种形态：同步数据库**自己产出的静态快照文件**，或**流式推 WAL 日志**——绝不是让同步工具碰 live 文件。
 
