@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **审核页滚动时整个外壳（含导航栏）被滚出视野、视口下半部落入空白（用户实测三连截图定位）**：根滚动器被撑到了文档深度——`.visually-hidden` 等绝对定位元素以初始包含块为包含块（`.app` 与 body 均非定位元素），把根画布顶到 1822px（视口 745px），`html` 因此可滚；滚轮一旦路由到根滚动器（悬浮按钮上方、overscroll 链、WKWebView 根偏好），整个 `.app` 连导航栏一起滚走，滚过头后视口落在应用之外只剩背景色与悬浮 FAB——「顶部被遮盖」「内容被截断」「整页空白」三种报告同源。双层修复：`html, body { overflow: hidden }` 把根滚动结构性关死（应用外壳是固定 100vh 框架，一切滚动都发生在 `#main-content` 内），`.app { position: relative }` 收容绝对定位后代使其在壳内裁剪。headless Chrome + CDP 实测回归：根画布 1822→745、强制滚根 navTop 恒 0、内层滚动 900px 时导航满格且工具栏冻结在导航正下方、FAB 上滚轮不再拖动外壳（诊断法沿用 v2.6.0 布局实测先例；jsdom 断不了布局）。
+- **仪表盘摘要条与收藏筛选列表完全对不上（同一批截图）**：摘要条恒为全库口径，而列表切「关注」后只显示收藏项目——真库 2026-10-18 只有 `Script/repotory`（未收藏）一个仓库有变更（+2313/-362），于是「顶部 +2313 / 列表全 0」读起来像内部算错，实为两套口径同屏。现给 `GetSummary` 增加 `starredOnly` 作用域（db 层 `GetStatsByDateScope` JOIN 收藏项目），前端把筛选状态传进去，待办计数同口径（关注时只数收藏项目的待办）；`useDashboardData` 的刷新 effect 本就依赖筛选开关，只是参数断在最后一环。RPC 双口径实测：全库 +2313 / 收藏 +0，与列表行严格一致；服务层新回归 `TestGetSummaryScope` 钉住两套口径。摘要条手册（中英）补口径说明。
+
 ### 新增
 
 - **知识源导入 dry-run 预览（ADR-0011 决策 4 收口）**：设置 → 插件的每个知识源新增「预览」按钮——复用导入器自身的输出跑一次**只读**分类，按与真实导入相同的幂等键 `(project, source, title)` 判定将**新建**几条、**更新**几条并列出标题，全程零写入（不建笔记、不建占位项目、不计入导入统计、不发导入事件）；落点按只读方式解析（已有项目归其下、无项目的路径保持 project 0、空路径落「未分类」）。实现链：runtime `PreviewImport`（与 `TriggerImport` 同一把 `importMu` 串行）→ 服务 `PreviewKnowledgeImport` → 桌面绑定 `PreviewKnowledgeImport`（desktop-only，`surface.go` 登记理由与触发器同门），db 层新增 `FindProjectIDByRootPath` 只读助手（`EnsureImportPlaceholder` 查找半的读侧）。回归 `TestPreviewImportWritesNothing` 钉「零写入」不变量（对比预览前后 notes/projects 计数、断言无主路径的条目 project 0），`TestPreviewImportUnknownSource` 钉未知源报错。ADR-0011 由此晋升 Accepted，双语手册同步。

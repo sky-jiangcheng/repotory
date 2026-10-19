@@ -224,7 +224,7 @@ export function updateScanRoots(scan_roots: string[]): Promise<ScanRootsResult> 
 
 // --- Summary / heatmap / status bar -----------------------------------------------
 
-export function getSummary(date?: string): Promise<Summary> {
+export function getSummary(date?: string, starredOnly = false): Promise<Summary> {
   const empty: Summary = {
     date: '', repo_count: 0, total_files: 0, total_added: 0,
     total_deleted: 0, my_added: 0, my_deleted: 0, my_files: 0, is_workday: false,
@@ -232,7 +232,7 @@ export function getSummary(date?: string): Promise<Summary> {
   const params = date ? `?date=${date}` : ''
   return call<Summary>({
     method: 'GetSummary',
-    args: [date ?? ''],
+    args: [date ?? '', starredOnly],
     path: `/summary${params}`,
   }).then(d => d ?? empty)
 }

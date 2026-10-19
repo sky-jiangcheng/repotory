@@ -31,7 +31,7 @@ A horizontal memory band at the very top of the home screen: the "Memory Ring" l
 
 - **Progress ring**: today's (or the selected date's) personal added lines vs the daily goal; no goal is shown on non-workdays
 - **Subtitle**: how far you are from the goal, personal additions / file count / repos involved
-- **Summary bar**: team additions / deletions, personal additions / files, total todo count
+- **Summary bar**: team additions / deletions, personal additions / files, total todo count. The strip's **scope follows the list filter**: under "Starred" it aggregates only starred projects' repositories (todos included), so the header numbers always match the project rows below; "All" is the whole-library scope
 
 ### Commit heatmap
 

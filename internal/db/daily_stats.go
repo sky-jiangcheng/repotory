@@ -52,6 +52,24 @@ func GetStatsByDate(db *sql.DB, date string) ([]DailyStat, error) {
 	return scanDailyStats(rows, err)
 }
 
+// GetStatsByDateScope is GetStatsByDate restricted to a list scope. With
+// starredOnly the rows cover only repositories of starred projects, so the
+// dashboard summary strip aggregates exactly the set the filtered project
+// list shows — global totals above a starred-filtered list read as two
+// different products (dashboard-scope fix, ADR-0024 follow-up).
+func GetStatsByDateScope(db *sql.DB, date string, starredOnly bool) ([]DailyStat, error) {
+	if !starredOnly {
+		return GetStatsByDate(db, date)
+	}
+	rows, err := db.Query(
+		"SELECT d.id, d.repository_id, d.stat_date, d.author, d.files_changed, d.lines_added, d.lines_deleted "+
+			"FROM daily_stats d "+
+			"JOIN repositories r ON r.id = d.repository_id "+
+			"JOIN projects p ON p.id = r.project_id AND p.is_starred = 1 "+
+			"WHERE d.stat_date = ?", date)
+	return scanDailyStats(rows, err)
+}
+
 // GetHeatmapData returns per-day aggregated stats between start and end.
 // A non-empty gitUser restricts the aggregation to that author. A positive
 // projectID restricts it to the repositories of that project (used by the

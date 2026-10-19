@@ -185,8 +185,12 @@ func (a *App) GetScanStatus() *service.ScanStatus { return a.svc.GetScanStatus()
 
 // --- Summary / heatmap / status ----------------------------------------------
 
-// GetSummary returns aggregated stats for all repositories on a given date.
-func (a *App) GetSummary(date string) (*service.SummaryData, error) { return a.svc.GetSummary(date) }
+// GetSummary returns aggregated stats for a given date; starredOnly restricts
+// the aggregation to starred projects' repositories so the dashboard header
+// matches the filtered list's scope.
+func (a *App) GetSummary(date string, starredOnly bool) (*service.SummaryData, error) {
+	return a.svc.GetSummary(date, starredOnly)
+}
 
 // GetHeatmapData returns daily commit stats for the past year. A positive
 // projectID restricts the aggregation to that project's repositories.
