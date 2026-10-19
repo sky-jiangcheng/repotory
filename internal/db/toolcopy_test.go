@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -97,12 +98,13 @@ func TestCopyForToolingMigratesTheCopyNotTheSource(t *testing.T) {
 	defer func() { _ = cp.Close() }()
 
 	// The copy is current and usable.
+	want := strconv.Itoa(currentSchemaVersion(t))
 	var got int
-	if err := cp.DB.QueryRow(`SELECT value = '24' FROM app_config WHERE key='schema_version'`).Scan(&got); err != nil {
+	if err := cp.DB.QueryRow(`SELECT value = ? FROM app_config WHERE key='schema_version'`, want).Scan(&got); err != nil {
 		t.Fatalf("read copy version: %v", err)
 	}
 	if got != 1 {
-		t.Fatal("the copy should have been migrated to v24")
+		t.Fatalf("the copy should have been migrated to v%s", want)
 	}
 	var snaps int
 	if err := cp.DB.QueryRow(`SELECT COUNT(*) FROM page_versions`).Scan(&snaps); err != nil {
@@ -227,7 +229,7 @@ func TestRequireSchemaVersion(t *testing.T) {
 		t.Fatalf("a behind database must return ErrSchemaBehind, got %v", err)
 	} else {
 		// The remedy has to be in the message, or the error is just a shrug.
-		for _, want := range []string{"v24", "v99", "desktop app", "copy"} {
+		for _, want := range []string{"v" + strconv.Itoa(currentSchemaVersion(t)), "v99", "desktop app", "copy"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("error %q should mention %q", err.Error(), want)
 			}

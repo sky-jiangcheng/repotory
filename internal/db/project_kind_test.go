@@ -129,8 +129,8 @@ func TestProjectKindReopenKeepsOneDefault(t *testing.T) {
 		_ = second.QueryRow(`SELECT value FROM app_config WHERE key='schema_version'`).Scan(&raw)
 		t.Fatalf("read schema_version (raw=%q): %v", raw, err)
 	}
-	if version != 24 {
-		t.Fatalf("schema_version = %d, want 24", version)
+	if want := currentSchemaVersion(t); version != want {
+		t.Fatalf("schema_version = %d, want %d", version, want)
 	}
 }
 

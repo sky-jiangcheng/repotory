@@ -389,12 +389,16 @@ func (s *Service) mineAndCache(cacheRepoID int64, rootPath string, repos []domai
 	if err != nil || k == nil {
 		return
 	}
-	// For a multi-repo grouping the container directory is not a git
+	// The project root of a grouping is a container directory, not a git
 	// repository, so Mine's per-path git probes (activity, top contributors)
-	// silently returned zero. Aggregate across the actual repositories
-	// instead — languages/tech stack walk the working tree and are already
-	// container-safe.
-	if len(repos) > 1 {
+	// silently return zero — they only succeed where `git` itself works. Aggregate
+	// across the actual repositories instead. This applies to a single repository
+	// too, and that is the common case, not an edge: one repo under
+	// <projectRoot>/<repo> leaves `len(repos) > 1` false, so the old guard cached a
+	// zeroed activity for every such project (4 of the 5 repo_meta rows on a real
+	// library, one of them a repository with 6,660 commits). Languages/tech stack
+	// walk the working tree and are already container-safe.
+	if len(repos) >= 1 {
 		paths := make([]string, 0, len(repos))
 		for _, r := range repos {
 			paths = append(paths, r.Path)

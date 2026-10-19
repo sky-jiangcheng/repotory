@@ -369,6 +369,26 @@ func upgradeSchema(db *sql.DB) error {
 		// and an InitDB self-heal call). Enum values are checked in Go, never with
 		// an inline CHECK: adding a table CHECK would force a projects rebuild.
 		{id: 24, fn: EnsureProjectKind},
+		// v25: drop mining caches poisoned by the single-repo grouping case.
+		//
+		// v13 dropped repo_meta for MULTI-repo projects, because mining ran git in
+		// the project root and a container of sibling repos is not a git repository;
+		// its comment reasoned that "single-repo projects mined their actual
+		// repository and keep their cache". That assumption was wrong: a project can
+		// be single-repo and still have a container root (/x/MiddlePlatform holding
+		// /x/MiddlePlatform/<repo>), which is the ordinary shape after a scan of a
+		// group directory. Those rows cached a zeroed activity too — 4 of the 5
+		// repo_meta rows on a real library, one of them a repository with 6,660
+		// commits — and nothing invalidates repo_meta, so they stayed broken even
+		// after the aggregation condition was widened to one-or-more repositories.
+		//
+		// The predicate is structural rather than evidence-based on purpose: gating on
+		// "daily_stats proves this repo has commits" would repair only 1 of the 4 rows,
+		// because daily_stats covers 63 of 140 repositories here. `project root <>
+		// repository path` is exactly the condition that produces the bad mining, so it
+		// catches every affected row; a legitimately zero-commit project among them
+		// costs one re-mine, the same trade v13 already accepted.
+		{id: 25, fn: DropPoisonedActivityMeta},
 	}
 
 	for _, m := range migrations {
@@ -629,6 +649,37 @@ func insertDefaults(db *sql.DB) error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// DropPoisonedActivityMeta deletes repo_meta rows whose cached activity is empty or
+// zero for a project whose root directory is not the repository it was meant to mine
+// — the shape that made knowledge.Mine's git probes run in a non-git container and
+// cache the resulting zeros. See migration v25's comment in upgradeSchema.
+//
+// One-time by design rather than an InitDB self-heal: once the aggregation is fixed
+// the re-mined rows are correct, and re-running this on every open would repeatedly
+// drop and re-mine any genuinely commit-less grouping.
+func DropPoisonedActivityMeta(db *sql.DB) error {
+	res, err := db.Exec(`
+		DELETE FROM repo_meta
+		WHERE repository_id IN (
+				SELECT r.id FROM repositories r
+				JOIN projects p ON p.id = r.project_id
+				WHERE p.root_path <> r.path
+		  )
+		  AND (
+				activity IS NULL
+				OR activity = ''
+				OR activity = '{}'
+				OR activity LIKE '%"total_commits":0%'
+		  )`)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("schema migration 25: dropped %d poisoned repo_meta activity cache(s)", n)
 	}
 	return nil
 }

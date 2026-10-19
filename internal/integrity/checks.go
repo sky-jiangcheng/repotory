@@ -52,7 +52,7 @@ const schemaVersionKey = "schema_version"
 // project lands a note on a placeholder or the default instead of silently
 // dropping it. Additive: one ALTERed column with a constant default + one
 // idempotent seed, enum validated in Go (no CHECK rebuild).
-const ExpectedSchemaVersion = 24
+const ExpectedSchemaVersion = 25
 
 // StaleAfterDays is the age at which the repo_meta knowledge cache is reported
 // as stale. The cache feeds generated knowledge (tech stack, readme excerpt,
