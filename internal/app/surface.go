@@ -127,6 +127,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"GetKnowledgeSources":        {SurfaceDesktopOnly, "", "plugins settings tab"},
 	"GetKnowledgeSyncStatus":     {SurfaceDesktopOnly, "", "periodic-sync status row in the plugins settings tab"},
 	"TriggerKnowledgeImport":     {SurfaceDesktopOnly, "", "importing another tool's memory is an explicit human opt-in (ADR-0011 privacy gate)"},
+	"PreviewKnowledgeImport":     {SurfaceDesktopOnly, "", "read-only dry-run of one import; same human opt-in surface as the trigger it previews (ADR-0011 privacy gate)"},
 	"TriggerAllKnowledgeImports": {SurfaceDesktopOnly, "", "batch import of other tools' memory files; same per-click consent as the single-source triggers"},
 	"ImportClaudeMemory":         {SurfaceDesktopOnly, "", "reads another tool's memory files off disk; the explicit per-click consent is the point (ADR-0011 decision 4)"},
 	"CaptureClaudeHandoff":       {SurfaceDesktopOnly, "", "reads another tool's session transcript; consent is per-click in settings"},

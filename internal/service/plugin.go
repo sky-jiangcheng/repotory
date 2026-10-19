@@ -51,6 +51,17 @@ func (s *Service) TriggerKnowledgeImport(name string) (pluginruntime.ImportRun, 
 	return run, err
 }
 
+// PreviewKnowledgeImport runs one knowledge source in read-only preview mode:
+// it reports which notes would be created or updated without writing anything
+// (ADR-0011 决策 4 dry-run). Unlike the trigger it does not emit an import
+// event — nothing was imported.
+func (s *Service) PreviewKnowledgeImport(name string) (pluginruntime.ImportPreview, error) {
+	if s.rt == nil {
+		return pluginruntime.ImportPreview{}, fmt.Errorf("plugin runtime not initialized")
+	}
+	return s.rt.PreviewImport(name)
+}
+
 // TriggerAllKnowledgeImports runs every registered knowledge source and emits
 // an import.completed event for each, so the UI can surface per-source results.
 func (s *Service) TriggerAllKnowledgeImports() []pluginruntime.SourceRun {

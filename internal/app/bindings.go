@@ -69,7 +69,7 @@ import (
 //   Config: GetConfig, UpdateConfig, UpdateScanRoots
 //   Exports: GenerateLLMsTxt, ExportNoteAsMarkdown, ExportMemoryJSON
 //   Plugins/knowledge sources: GetKnowledgeSources, GetKnowledgeSyncStatus,
-//                              TriggerKnowledgeImport,
+//                              TriggerKnowledgeImport, PreviewKnowledgeImport,
 //                              TriggerAllKnowledgeImports, ImportClaudeMemory,
 //                              CaptureClaudeHandoff
 //   Memory ring (D25 first screen): ListRecentHandoffs — content-free
@@ -340,6 +340,12 @@ func (a *App) GetKnowledgeSyncStatus() service.KnowledgeSyncStatus {
 // TriggerKnowledgeImport runs one knowledge source and returns its statistics.
 func (a *App) TriggerKnowledgeImport(name string) (pluginruntime.ImportRun, error) {
 	return a.svc.TriggerKnowledgeImport(name)
+}
+
+// PreviewKnowledgeImport runs one knowledge source in read-only preview mode
+// and reports what it WOULD import, writing nothing (ADR-0011 决策 4 dry-run).
+func (a *App) PreviewKnowledgeImport(name string) (pluginruntime.ImportPreview, error) {
+	return a.svc.PreviewKnowledgeImport(name)
 }
 
 // TriggerAllKnowledgeImports runs every registered knowledge source.

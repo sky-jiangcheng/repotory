@@ -1,6 +1,6 @@
 # ADR-0011: Multi-agent memory importers — reusable pipeline + per-source feasibility
 
-- Status: Proposed (framework + five sources landed: claude AUTO; codex / opencode / openclaw / hermes (curated + sessions) as opt-in MANUAL. Cursor deferred after verification — see decision 3)
+- Status: Accepted (2026-10-19: framework + all five sources landed — claude AUTO; codex / opencode / openclaw / hermes (curated + sessions) as opt-in MANUAL; Cursor deferred after verification, see decision 3. Decision 4's dry-run preview shipped: PreviewKnowledgeImport classifies a source's documents against the real idempotency key with zero writes.)
 - Date: 2026-10-03
 - Relates to: ADR-0002 (in-process plugin runtime), ADR-0007, ADR-0010, TODO M2. (Chinese original: `docs/adr/0011-*.md`.)
 

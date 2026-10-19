@@ -163,3 +163,19 @@
   transform: translateX(18px);
   background: #fff;
 }
+
+.pluginPreview {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.pluginPreview summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+}
+
+.pluginPreview ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  list-style: none;
+}

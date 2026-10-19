@@ -269,6 +269,84 @@ func (r *Runtime) TriggerImport(name string) (ImportRun, error) {
 	return run, nil
 }
 
+// ImportPreviewItem is one document a preview run WOULD write, classified by
+// the same idempotency key the real import upsert uses.
+type ImportPreviewItem struct {
+	Title     string `json:"title"`
+	Action    string `json:"action"` // "create" | "update" | "skip"
+	ProjectID int64  `json:"project_id"`
+}
+
+// ImportPreview reports what a knowledge source WOULD import, writing nothing:
+// no note, no placeholder project, no import event, no source-stat update. It
+// backs the settings page's dry-run (ADR-0011 决策 4: 导入前可预览将产生的
+// 笔记条数/标题), and reuses the importer's own output so there is no second
+// reading path to keep in sync.
+type ImportPreview struct {
+	Source  string              `json:"source"`
+	Created int                 `json:"created"`
+	Updated int                 `json:"updated"`
+	Skipped int                 `json:"skipped"`
+	Items   []ImportPreviewItem `json:"items"`
+}
+
+// Total returns the number of documents the preview examined.
+func (p ImportPreview) Total() int { return p.Created + p.Updated + p.Skipped }
+
+// PreviewImport runs the source's Import() and classifies every document
+// against the same key the real upsert uses — (project, source, title) via
+// db.GetNoteBySourceTitle. Landing is resolved read-only: a repo path maps to
+// the project owning that root_path when one exists, else project 0 (the real
+// import would CREATE a placeholder — the preview must not, so the item keeps
+// project 0 and still classifies as a create against the source key); an empty
+// repo path maps to the seeded default project. Serialization matches
+// TriggerImport because Import() reads the same external directories.
+func (r *Runtime) PreviewImport(name string) (ImportPreview, error) {
+	r.importMu.Lock()
+	defer r.importMu.Unlock()
+
+	r.mu.Lock()
+	src := r.sources[name]
+	r.mu.Unlock()
+	if src == nil {
+		return ImportPreview{}, fmt.Errorf("plugin runtime: unknown knowledge source %q", name)
+	}
+
+	docs, err := r.safeImport(src)
+	if err != nil {
+		r.recordSourceError(src, err)
+		return ImportPreview{}, err
+	}
+
+	out := ImportPreview{Source: name, Items: []ImportPreviewItem{}}
+	for _, d := range docs {
+		pid := d.ProjectID
+		if pid <= 0 {
+			if strings.TrimSpace(d.RepoPath) != "" {
+				if found, lerr := db.FindProjectIDByRootPath(r.db, d.RepoPath); lerr == nil {
+					pid = found
+				}
+			} else if def, derr := db.GetDefaultProjectID(r.db); derr == nil {
+				pid = def
+			}
+		}
+		item := ImportPreviewItem{Title: d.Title, ProjectID: pid, Action: "create"}
+		_, lerr := db.GetNoteBySourceTitle(r.db, pid, src.name, d.Title)
+		switch {
+		case lerr == nil:
+			item.Action = "update"
+			out.Updated++
+		case lerr == sql.ErrNoRows:
+			out.Created++
+		default:
+			item.Action = "skip"
+			out.Skipped++
+		}
+		out.Items = append(out.Items, item)
+	}
+	return out, nil
+}
+
 // recordSourceError stores a source-level failure so SourceStatus.Enabled
 // reflects it instead of always reporting healthy.
 func (r *Runtime) recordSourceError(src *sourceEntry, err error) {

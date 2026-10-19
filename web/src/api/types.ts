@@ -283,6 +283,22 @@ export interface ImportRun {
   skipped: number
 }
 
+export interface ImportPreviewItem {
+  title: string
+  action: 'create' | 'update' | 'skip'
+  project_id: number
+}
+
+// What a knowledge source WOULD import, classified without writing anything
+// (ADR-0011 decision 4 dry-run).
+export interface ImportPreview {
+  source: string
+  created: number
+  updated: number
+  skipped: number
+  items: ImportPreviewItem[]
+}
+
 // KnowledgeSyncStatus reports the periodic knowledge sync's last round
 // (matches Go service.KnowledgeSyncStatus).
 export interface KnowledgeSyncStatus {

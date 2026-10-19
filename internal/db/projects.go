@@ -52,6 +52,19 @@ func GetStarredProjects(db *sql.DB) ([]Project, error) {
 }
 
 // GetProjectByID returns a single project by id.
+// FindProjectIDByRootPath returns the id of the project whose root_path equals
+// path, or 0 (nil error) when none does. It is the read-only lookup half of
+// EnsureImportPlaceholder, so the import preview can classify a doc's landing
+// without creating placeholder rows (ADR-0011 决策 4 dry-run).
+func FindProjectIDByRootPath(db *sql.DB, path string) (int64, error) {
+	var id int64
+	err := db.QueryRow(`SELECT id FROM projects WHERE root_path = ?`, path).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return id, err
+}
+
 func GetProjectByID(db *sql.DB, id int64) (*Project, error) {
 	p := &Project{}
 	err := db.QueryRow("SELECT "+projectColumns+" FROM projects WHERE id = ?", id).

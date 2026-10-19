@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  getKnowledgeSources, getKnowledgeSyncStatus, triggerKnowledgeImport, captureClaudeHandoff,
-  updateConfig, type SourceStatus,
+  getKnowledgeSources, getKnowledgeSyncStatus, triggerKnowledgeImport, previewKnowledgeImport, captureClaudeHandoff,
+  updateConfig, type SourceStatus, type ImportPreview,
 } from '../../api/client'
 
 // Imported as `css`, not the usual `s`: this file maps sources.map((s) => ...), which
@@ -28,6 +28,8 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
   const { t } = useTranslation()
   const [sources, setSources] = useState<SourceStatus[]>([])
   const [importingSource, setImportingSource] = useState('')
+  const [previewingSource, setPreviewingSource] = useState('')
+  const [preview, setPreview] = useState<{ name: string; data: ImportPreview } | null>(null)
   const [autoImport, setAutoImport] = useState(initialAutoImport)
   const [claudeCapture, setClaudeCapture] = useState(initialClaudeCapture)
   const [targets, setTargets] = useState<Record<string, string>>(
@@ -63,6 +65,18 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
       showMessage(t('settings.importFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
     } finally {
       setImportingSource('')
+    }
+  }
+
+  const handlePreviewSource = async (name: string) => {
+    setPreviewingSource(name)
+    try {
+      const r = await previewKnowledgeImport(name)
+      setPreview({ name, data: r })
+    } catch (e: unknown) {
+      showMessage(t('settings.previewFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setPreviewingSource('')
     }
   }
 
@@ -188,12 +202,41 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
                         The row's hover state carries the emphasis instead. */}
                     <button
                       className={`btn btn-sm ${css.pluginImportBtn}`}
+                      onClick={() => handlePreviewSource(s.name)}
+                      disabled={previewingSource !== '' || !s.detected}
+                      title={t('settings.previewHint')}
+                    >
+                      {previewingSource === s.name ? t('settings.previewing') : t('settings.preview')}
+                    </button>
+                    <button
+                      className={`btn btn-sm ${css.pluginImportBtn}`}
                       onClick={() => handleImportSource(s.name)}
                       disabled={importingSource !== '' || !s.enabled}
                     >
                       {importingSource === s.name ? t('settings.importing') : t('settings.importNow')}
                     </button>
                   </div>
+                  {preview?.name === s.name && (
+                    <details className={css.pluginPreview}>
+                      <summary>
+                        {t('settings.previewResult', {
+                          created: preview.data.created,
+                          updated: preview.data.updated,
+                          skipped: preview.data.skipped,
+                        })}
+                      </summary>
+                      <ul>
+                        {preview.data.items.map((it) => (
+                          <li key={`${it.action}-${it.title}`}>
+                            <span className={css.pluginDetail}>
+                              {it.action === 'create' ? '+ ' : it.action === 'update' ? '~ ' : '- '}
+                              {it.title}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                 </li>
               ))}
             </ul>
