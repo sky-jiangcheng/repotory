@@ -179,33 +179,7 @@ flowchart TB
 
 The dashed edge is the point: handoffs are stored in local SQLite, not in any agent's private memory, so the loop closes across agents — Claude Code writes the handoff, Cursor reads it.
 
-Both paths meet at one local knowledge base — the human side (desktop app, VS Code extension), the agent side (MCP tools, llms.txt), one service layer underneath, and `repotory-init` wiring the agent side in one command:
-
 How the human side, the agent side and the local core fit together — and where `repotory-init` sits: see [Architecture](docs/en/architecture.md).
-mermaid
-flowchart TB
-    subgraph HUMAN[👤 Human user — visible in the IDE]
-        direction LR
-        DESKTOP[Desktop App]
-        VSCODE[VS Code extension<br/>VS Code · Cursor · Windsurf]
-    end
-    subgraph AGENT[🤖 AI agent user — tool surface]
-        direction LR
-        MCP[repotory-mcp · 13 MCP tools]
-        DSH[dsh Harness plugin · llms.txt]
-    end
-    subgraph CORE[🧠 Local knowledge base — single source of truth]
-        direction LR
-        SVC[internal/service] --- DB[(SQLite + FTS5)]
-    end
-    HUMAN ~~~ AGENT ~~~ CORE
-    INIT[⚡ repotory-init · one-command registration]
-    INIT --> MCP
-    DESKTOP --> SVC
-    VSCODE --> SVC
-    MCP --> SVC
-    DSH --> SVC
-```
 
 > **Why Repotory?** Coding agents don't retain *the judgment you've accumulated across these repos*: why something was designed this way, what gotcha you hit last time, what the next todo is. Repotory sinks all of that into a local, searchable memory layer that any agent can read and write — `repotory_context` injects it at session start, `repotory_handoff` captures it at session end, and everything in between is retrieved on demand.
 > For positioning priorities, feature tiers and the scope freeze, see [ADR-0006](docs/en/adr/0006-scope-freeze.md) and the [positioning brief](docs/positioning-brief.md) (Chinese).

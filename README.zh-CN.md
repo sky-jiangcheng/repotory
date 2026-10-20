@@ -178,33 +178,7 @@ flowchart TB
 
 那条虚线是重点：交接存在本地 SQLite 里，不在任何 Agent 的私有记忆中，所以闭环能跨 Agent 合上——Claude Code 写的交接，Cursor 直接读。
 
-两条路径汇于同一个本地知识库——人这一侧（桌面应用、VS Code 扩展）、Agent 那一侧（MCP 工具、llms.txt），下面同一套 service 层，`repotory-init` 一条命令把 Agent 侧接好：
-
 人的一侧、agent 的一侧与本地核心如何拼装（以及 `repotory-init` 的位置）：见[架构说明](docs/architecture.md)。
-mermaid
-flowchart TB
-    subgraph HUMAN[👤 人类用户 — 在 IDE 里可见]
-        direction LR
-        DESKTOP[桌面应用]
-        VSCODE[VS Code 扩展<br/>VS Code · Cursor · Windsurf]
-    end
-    subgraph AGENT[🤖 AI Agent 用户 — 工具面]
-        direction LR
-        MCP[repotory-mcp · 13 个 MCP 工具]
-        DSH[dsh Harness 插件 · llms.txt]
-    end
-    subgraph CORE[🧠 本地知识库 — 唯一事实源]
-        direction LR
-        SVC[internal/service] --- DB[(SQLite + FTS5)]
-    end
-    HUMAN ~~~ AGENT ~~~ CORE
-    INIT[⚡ repotory-init · 一条命令完成注册]
-    INIT --> MCP
-    DESKTOP --> SVC
-    VSCODE --> SVC
-    MCP --> SVC
-    DSH --> SVC
-```
 
 > **为什么需要 Repotory？** 编程 Agent 不保留*你跨多个仓库积累的判断*：为什么这样设计、上次踩了什么坑、下一个 todo 是什么。每个 Agent 各有一套私有记忆格式，换工具等于从零开始。Repotory 把它们全部沉淀进一个本地、可搜索的记忆层，任何 Agent 都能读写——`repotory_context` 在会话开始时注入，`repotory_handoff` 在会话结束时捕获，其间按需检索。
 > 关于产品定位优先级、功能分级与范围冻结，见 [ADR-0006](docs/adr/0006-scope-freeze.md) 与[定位简报](docs/positioning-brief.md)（仅中文）。
