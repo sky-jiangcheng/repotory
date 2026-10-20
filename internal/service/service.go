@@ -30,6 +30,16 @@ type Service struct {
 	rt    *pluginruntime.Runtime
 	guser string // git user.name used to split "mine" vs "all" stats
 
+	// backupDir overrides where local snapshots land (ADR-0025 L1). Empty at
+	// runtime — RunBackupNow derives it from the platform data dir — and set
+	// only by tests so they never write into the real user data directory.
+	backupDir string
+
+	// remoteDialer builds the object-store client for one L2 upload (ADR-0025
+	// L2). Nil at runtime — the real minio dialer runs — and overridden by
+	// tests so no test ever touches a network.
+	remoteDialer remoteStoreDialer
+
 	// onImportEvent, when set, is invoked with the import.completed payload
 	// after every knowledge import so the UI layer can forward it to the
 	// frontend (Wails events, CLI output, ...).
@@ -87,6 +97,12 @@ type Service struct {
 	// gitUserMu guards guser so the git_author config key can be applied at
 	// runtime instead of only at construction time.
 	gitUserMu sync.RWMutex
+
+	// syncMu guards the periodic knowledge-sync status fields below: they are
+	// written by the background ticker and read by KnowledgeSyncStatus.
+	syncMu      sync.Mutex
+	syncLastRun time.Time
+	syncLastErr error
 }
 
 // New creates a Service with production dependencies: the local git CLI
@@ -167,6 +183,12 @@ func (s *Service) Startup() {
 		// ahead of the rt guard below rather than being skipped by it.
 		s.startEmbedDrainer()
 
+		// Page-embedding drain (ADR-0018 lane 2): the page twin of the note
+		// drainer above, sharing the same provider and semantic_search gate but
+		// writing to the separate page_embeddings index. Also ahead of the rt
+		// guard: it needs only the queue and the endpoint.
+		s.startPageEmbedDrainer()
+
 		// Wiki lint (ADR-0014 决策 5): the scheduled half of the two trigger paths.
 		// Its first pass is one interval away, so opening the app files no todos.
 		s.startWikiLintTicker()
@@ -182,6 +204,18 @@ func (s *Service) Startup() {
 		}
 		s.registerBuiltinImporters()
 		log.Printf("knowledge-source runtime ready: %d source(s)", len(s.rt.SourceStatuses()))
+
+		// Periodic knowledge sync: re-runs the sources whose sync_source_<name>
+		// switch is on, on a scheduler cadence. Started after the importer
+		// registration (it needs the runtime) and before auto-import (both go
+		// through TriggerImport, so the runtime's importMu serializes them).
+		// The first round is one full interval away, never at launch.
+		s.startKnowledgeSyncTicker()
+
+		// Local database snapshots (ADR-0025 L1): one VACUUM INTO snapshot per
+		// day, produced at first open and retried hourly (no-ops once today's
+		// file exists). Purely local — no outbound traffic, no privacy gate.
+		s.startBackupTicker()
 
 		// Auto-import knowledge sources on startup (issue #36) — but only on an
 		// explicit opt-in. Tracked via bgGo so Shutdown waits for it instead of

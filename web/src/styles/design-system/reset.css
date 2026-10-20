@@ -10,6 +10,14 @@
 
 html, body {
   height: 100%;
+  /* The app shell is a fixed 100vh frame; ALL scrolling happens inside
+     #main-content. The root must never scroll: absolutely-positioned strays
+     (e.g. .visually-hidden regions resolving against the initial containing
+     block) once grew the root canvas to the document depth, and a wheel
+     routed to the root scroller dragged the whole shell — nav bar included —
+     out of view, leaving a blank viewport below the app. overflow:hidden
+     makes that class of bug structurally impossible. */
+  overflow: hidden;
 }
 
 body {
@@ -28,6 +36,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Containing block for absolutely-positioned descendants (skip link,
+     visually-hidden live regions): without it they resolve against the root
+     canvas and extend the document's scrollable area. */
+  position: relative;
 }
 
 /* --- Skip link (a11y) --- */

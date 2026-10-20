@@ -52,6 +52,12 @@ export default function AiTab({ config, showMessage, onSaved }: Props) {
     try {
       const res = await listAIModels(baseURL.trim(), apiKey.trim())
       setModels(res.models)
+      // Auto-select the first fetched model when the field is empty so the pull
+      // has a visible result. Previously the list only fed a <datalist>, which
+      // WKWebView renders weakly, so after "拉取模型" the picker looked unchanged.
+      if (res.models.length > 0 && model.trim() === '') {
+        setModel(res.models[0])
+      }
       // The probe tries near-miss path variants (LM Studio's base is /v1 but
       // ".../api/v1" is the classic mistype); adopt the URL that worked.
       if (res.resolved_base_url && res.resolved_base_url !== baseURL.trim()) {
@@ -192,12 +198,22 @@ export default function AiTab({ config, showMessage, onSaved }: Props) {
           value={model}
           onChange={(e) => setModel(e.target.value)}
           className="form-input"
-          list="ai-model-options"
           placeholder="qwen2.5-7b-instruct / gpt-4o-mini / …"
         />
-        <datalist id="ai-model-options">
-          {models.map(m => <option key={m} value={m} />)}
-        </datalist>
+        {/* 拉取到的模型渲染成真正可见可点的下拉（WKWebView 对 <datalist> 支持差，
+            旧实现在 WebKit 里不显示下拉，拉取后「看起来没变化」）。保留上方自由
+            文本输入以便手输列表外的模型；从这里选择会回填 model。 */}
+        {models.length > 0 && (
+          <select
+            className="form-input"
+            aria-label="model"
+            value={models.includes(model) ? model : ''}
+            onChange={(e) => setModel(e.target.value)}
+          >
+            <option value="" hidden />
+            {models.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
         <span className="form-hint">{t('settings.ai.modelHint')}</span>
       </div>
 

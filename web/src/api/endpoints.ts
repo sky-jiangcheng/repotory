@@ -13,12 +13,15 @@ import type {
   ImportResult,
   ImportRun,
   HandoffResult,
+  KnowledgeSyncStatus,
   MergeCandidateReport,
+  MergePreview,
   MergeResult,
   Note,
   NoteCount,
   NoteVersion,
   NoteWithProject,
+  OrganizeGroup,
   Project,
   ProjectDetail,
   ProjectOverview,
@@ -57,6 +60,26 @@ export function getProjects(date?: string, starredOnly = false): Promise<Project
 
 export function getProjectDetail(id: number): Promise<ProjectDetail> {
   return call<ProjectDetail>({ method: 'GetProjectDetail', args: [id], path: `/projects/${id}` })
+}
+
+// --- Organize (ADR-0023) ------------------------------------------------------
+// Landing buckets (import placeholders / the default "Uncategorized") that still
+// hold unfiled notes, and the human actions to re-file or remove them. All
+// desktop-only: no MCP twin; they travel over /api/rpc, so no REST path is needed.
+
+/** The landing projects awaiting organization, with note counts + repo binding. */
+export function listOrganizeGroups(): Promise<OrganizeGroup[]> {
+  return call<OrganizeGroup[]>({ method: 'ListOrganizeGroups', args: [] }).then(d => d ?? [])
+}
+
+/** Move every note out of a landing project into a target; returns the count moved. */
+export function reassignLandingNotes(sourceId: number, targetId: number): Promise<number> {
+  return call<number>({ method: 'ReassignLandingNotes', args: [sourceId, targetId] }).then(r => r ?? 0)
+}
+
+/** Delete a landing placeholder; deleteNotes confirms removing the notes in it. */
+export function deleteLandingProject(id: number, deleteNotes: boolean): Promise<void> {
+  return call<void>({ method: 'DeleteLandingProject', args: [id, deleteNotes] })
 }
 
 /**
@@ -106,16 +129,27 @@ export function refreshProjectHistory(id: number): Promise<{ success: boolean }>
   })
 }
 
+// `confirmed` must be true for "up": a merge absorbs and DELETES sibling projects
+// along with their notes and todos, and the service refuses an unconfirmed call.
+// "down" splits by repository — it is not an undo of a merge — and ignores the flag.
 export function updateProjectLevel(
   id: number,
-  direction: 'up' | 'down'
+  direction: 'up' | 'down',
+  confirmed: boolean
 ): Promise<{ success: boolean; new_level: number }> {
   return call({
     method: 'UpdateProjectLevel',
-    args: [id, direction],
+    args: [id, direction, confirmed],
     path: `/projects/${id}/level`,
-    init: jsonInit('POST', { direction }),
+    init: jsonInit('POST', { direction, confirmed }),
   })
+}
+
+// Read-only preview of what "up" would absorb and delete; backs the confirmation
+// dialog. Desktop-only binding like the other organize/grouping actions: it travels
+// over /api/rpc, so it declares no REST path.
+export function previewProjectMergeUp(id: number): Promise<MergePreview> {
+  return call<MergePreview>({ method: 'PreviewProjectMergeUp', args: [id] })
 }
 
 export function searchProjects(query: string): Promise<Project[]> {
@@ -190,7 +224,7 @@ export function updateScanRoots(scan_roots: string[]): Promise<ScanRootsResult> 
 
 // --- Summary / heatmap / status bar -----------------------------------------------
 
-export function getSummary(date?: string): Promise<Summary> {
+export function getSummary(date?: string, starredOnly = false): Promise<Summary> {
   const empty: Summary = {
     date: '', repo_count: 0, total_files: 0, total_added: 0,
     total_deleted: 0, my_added: 0, my_deleted: 0, my_files: 0, is_workday: false,
@@ -198,7 +232,7 @@ export function getSummary(date?: string): Promise<Summary> {
   const params = date ? `?date=${date}` : ''
   return call<Summary>({
     method: 'GetSummary',
-    args: [date ?? ''],
+    args: [date ?? '', starredOnly],
     path: `/summary${params}`,
   }).then(d => d ?? empty)
 }
@@ -530,10 +564,19 @@ export function exportMemoryJSON(limit: number): Promise<string> {
   }).then(d => d ?? '[]')
 }
 
+/** RunBackupNow writes today's local snapshot immediately (ADR-0025 L1). */
+export function runBackupNow(): Promise<string> {
+  return call<string>({ method: 'RunBackupNow' })
+}
+
 // --- Plugins -------------------------------------------------------------------------------
 
 export function getKnowledgeSources(): Promise<SourceStatus[]> {
   return call<SourceStatus[]>({ method: 'GetKnowledgeSources', path: '/plugins/sources' }).then(d => d ?? [])
+}
+
+export function getKnowledgeSyncStatus(): Promise<KnowledgeSyncStatus> {
+  return call<KnowledgeSyncStatus>({ method: 'GetKnowledgeSyncStatus', path: '/plugins/sync-status' }).then(d => d ?? { last_run: '', last_error: '' })
 }
 
 export function triggerKnowledgeImport(name: string): Promise<ImportRun> {

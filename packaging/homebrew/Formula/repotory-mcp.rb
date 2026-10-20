@@ -9,18 +9,18 @@
 class RepotoryMcp < Formula
   desc "MCP stdio server exposing the Repotory local knowledge base to AI agents"
   homepage "https://github.com/sky-jiangcheng/repotory"
-  version "2.0.0"
+  version "2.9.1"
   license "MIT"
 
   if OS.mac? && Hardware::CPU.arm?
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-arm64.tar.gz"
-    sha256 "b7fa4bfd6cc49bbfed3916b88f8de6e505ebaede6a7c6bae5eb7e6e8f62fe3b7"
+    sha256 "7ab743299ea485d35db2a4b7e9f9c537f5c968d32e56f94738fb9794896b5033"
   elsif OS.mac? && Hardware::CPU.is_64_bit?
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-amd64.tar.gz"
-    sha256 "75682bc0ec892ffdbab31fbbea0cea89536baa10063128332283aac83f730bdd"
+    sha256 "430b06608e8ec2e83e3164dbc832118cc3976280d34fefb7fd2e8921005dc3a3"
   else
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-linux-amd64.tar.gz"
-    sha256 "d876978b5799ab9a83c6cb6901acafdede845611b0b76ea9465ad23a92679436"
+    sha256 "757925c7c0d573d1a5027b6935c4056f26a586d11f8860329f4b4c7656c705c8"
   end
 
   def install

@@ -97,8 +97,16 @@ func (s *Service) PinNote(noteID int64, pinned bool) error {
 	return db.PinNote(s.db, noteID, pinned)
 }
 
-// MoveNote reassigns a note to a different project.
+// MoveNote reassigns a note to a different project. Both sides are checked so a
+// stale id answers with a domain error instead of the driver's `sql: no rows in
+// result set` or a bare FOREIGN KEY code.
 func (s *Service) MoveNote(noteID, projectID int64) error {
+	if _, err := db.GetNoteByID(s.db, noteID); err != nil {
+		return ErrNoteNotFound
+	}
+	if _, err := db.GetProjectByID(s.db, projectID); err != nil {
+		return ErrProjectNotFound
+	}
 	return db.MoveNote(s.db, noteID, projectID)
 }
 

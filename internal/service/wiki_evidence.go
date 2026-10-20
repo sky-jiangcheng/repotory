@@ -51,6 +51,18 @@ type EvidenceBudget struct {
 // which leaves the conversation room on an 8k model.
 var DefaultEvidenceBudget = EvidenceBudget{MaxItems: 12, MaxChars: 4000, Deadline: 3 * time.Second}
 
+// L0/L1 two-phase packing, adapted from ai-memory's brief tiers: the budget
+// first buys DISTINCT evidence at a short excerpt (L0), then deepens what was
+// admitted toward the upstream ceiling (L1) in relevance order. A candidate is
+// never admitted at full depth — a 600-rune page would crowd out three other
+// items before the second candidate is seen — and an upgrade is all-or-nothing:
+// a half-deepened snippet is the worst of both shapes. Upstream caps stay the
+// depth ceiling (pages 600 / notes 400 runes).
+const (
+	evidenceL0PageRunes = 200
+	evidenceL0NoteRunes = 140
+)
+
 func (b EvidenceBudget) withDefaults() EvidenceBudget {
 	if b.MaxItems <= 0 {
 		b.MaxItems = DefaultEvidenceBudget.MaxItems
@@ -66,14 +78,16 @@ func (b EvidenceBudget) withDefaults() EvidenceBudget {
 
 // EvidenceItem is one retrieved unit with a citation reference the answer can use.
 type EvidenceItem struct {
-	Ref     string `json:"ref"`  // "P1" / "N3" — what the answer cites
-	Type    string `json:"type"` // "page" | "note"
-	ID      int64  `json:"id"`   // stable id within its own type
-	Title   string `json:"title"`
-	Slug    string `json:"slug,omitempty"` // pages only
-	Kind    string `json:"kind"`           // page kind or note kind
-	Snippet string `json:"snippet"`
-	Rank    int    `json:"rank"` // 1-based position in its own ranked list
+	Ref         string `json:"ref"`  // "P1" / "N3" — what the answer cites
+	Type        string `json:"type"` // "page" | "note"
+	ID          int64  `json:"id"`   // stable id within its own type
+	ProjectID   int64  `json:"project_id"`
+	ProjectName string `json:"project_name,omitempty"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug,omitempty"` // pages only
+	Kind        string `json:"kind"`           // page kind or note kind
+	Snippet     string `json:"snippet"`
+	Rank        int    `json:"rank"` // 1-based position in its own ranked list
 }
 
 // Evidence is a budgeted, citable set plus an honest account of what did not fit.
@@ -106,37 +120,102 @@ func (s *Service) GatherEvidence(projectID int64, query string, budget EvidenceB
 	// note #7 and page #7 would score as the same object. That collision is a
 	// known trap in this codebase (it is why SearchAll never went through fuse), so
 	// position interleaving is used until pages have their own vector space.
+	type cand struct {
+		item EvidenceItem
+		full string
+	}
+	cands := make([]cand, 0, len(pages)+len(notes))
 	pi, ni := 0, 0
-	for len(ev.Items) < budget.MaxItems {
-		advanced := false
+	for pi < len(pages) || ni < len(notes) {
 		if pi < len(pages) {
-			// Spelled out deliberately, NOT `advanced = advanced || tryAdd(...)`:
-			// once the page branch sets advanced, || short-circuits and the note is
-			// never attempted — which silently dropped every note from evidence
-			// whenever any page matched, i.e. the normal case.
-			if ev.tryAdd(pages[pi], "P", budget) {
-				advanced = true
-			}
+			cands = append(cands, cand{item: pages[pi], full: pages[pi].Snippet})
 			pi++
 		}
-		if len(ev.Items) >= budget.MaxItems {
-			break
-		}
 		if ni < len(notes) {
-			if ev.tryAdd(notes[ni], "N", budget) {
-				advanced = true
-			}
+			cands = append(cands, cand{item: notes[ni], full: notes[ni].Snippet})
 			ni++
 		}
-		if !advanced && pi >= len(pages) && ni >= len(notes) {
+	}
+
+	// Phase L0: admit at a short excerpt so coverage (how many DISTINCT items the
+	// budget can see) is maximised before any single item gets depth.
+	fulls := make([]string, 0, len(cands))
+	admitted := 0
+	for _, c := range cands {
+		if admitted >= budget.MaxItems {
 			break
 		}
+		it := c.item
+		if it.Type == "page" {
+			it.Snippet = clipRunes(c.full, evidenceL0PageRunes)
+		} else {
+			it.Snippet = clipRunes(c.full, evidenceL0NoteRunes)
+		}
+		prefix := "N"
+		if it.Type == "page" {
+			prefix = "P"
+		}
+		if ev.tryAdd(it, prefix, budget) {
+			fulls = append(fulls, c.full)
+			admitted++
+		}
 	}
-	ev.Dropped = max0(len(pages)-pi) + max0(len(notes)-ni)
+	ev.Dropped = max0(len(cands) - admitted)
+
+	// Phase L1: deepen what was admitted, best-ranked first, skipping any single
+	// upgrade that does not fit so a late cheap upgrade is not blocked by an
+	// early expensive one. The budget stays a hard ceiling; deepening shortfall
+	// is NOT truncation — no candidate was dropped for it.
+	used := 0
+	for _, it := range ev.Items {
+		used += len([]rune(it.Title)) + len([]rune(it.Snippet))
+	}
+	for i := range ev.Items {
+		full := fulls[i]
+		delta := len([]rune(full)) - len([]rune(ev.Items[i].Snippet))
+		if delta <= 0 {
+			continue // upstream already gave this item its full depth
+		}
+		if used+delta > budget.MaxChars {
+			continue
+		}
+		used += delta
+		ev.Items[i].Snippet = full
+	}
 	if ev.Dropped > 0 {
 		ev.Truncated = true
 	}
 	ev.ElapsedMS = time.Since(start).Milliseconds()
+
+	// Access reinforcement (schema v26 foundation, adapted from ai-memory's
+	// access-weighted retention): a page that surfaced into an answer's evidence
+	// has been USED — recording that is what later lets ranking or decay treat
+	// used pages differently. The db layer throttles to one bump per page per
+	// minute; failures are non-fatal and deliberately silent (a metrics write
+	// must never turn into "AI 问答不可用").
+	pageIDs := make([]int64, 0, len(ev.Items))
+	for _, it := range ev.Items {
+		if it.Type == "page" {
+			pageIDs = append(pageIDs, it.ID)
+		}
+	}
+	if len(pageIDs) > 0 {
+		_, _ = db.TouchWikiPages(s.db, pageIDs, time.Now())
+	}
+
+	// Populate project names for evidence items where project ID is known
+	if projs, err := db.GetAllProjects(s.db); err == nil {
+		pNames := make(map[int64]string, len(projs))
+		for _, pr := range projs {
+			pNames[pr.ID] = pr.Name
+		}
+		for i := range ev.Items {
+			if ev.Items[i].ProjectID > 0 {
+				ev.Items[i].ProjectName = pNames[ev.Items[i].ProjectID]
+			}
+		}
+	}
+
 	return ev
 }
 
@@ -160,6 +239,13 @@ func (e *Evidence) tryAdd(item EvidenceItem, prefix string, budget EvidenceBudge
 }
 
 // evidencePages ranks wiki pages, keeping project-owned plus global pages.
+//
+// When wiki_graph_search is OFF (the default), this is exactly the FTS ordering it
+// has always produced — the graph branch below is not entered, so enabling the
+// feature later cannot change today's answers. When ON, the FTS hits seed a 1-hop
+// expansion along ref/part-of/documents edges, re-ranked with PageRank; the result
+// is a SUPERSET of the FTS hits (a hit stays a hit), re-ordered so structurally
+// adjacent pages can surface. See expandPageEvidence and wiki_graph_evidence.go.
 func (s *Service) evidencePages(query string, projectID int64, limit int, budget time.Duration) []EvidenceItem {
 	if budget <= 0 {
 		return nil
@@ -168,14 +254,72 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 	if err != nil || len(found) == 0 {
 		return nil
 	}
-	out := make([]EvidenceItem, 0, len(found))
-	for i, p := range found {
+	// Project filter first, so both the FTS-order path and the graph path rank the
+	// same visible set (another project's page is skipped, not hidden).
+	visible := found[:0:0]
+	byID := make(map[int64]int, len(found)) // id -> index in found, for O(1) lookup
+	for i := range found {
+		byID[found[i].ID] = i
+	}
+	for _, p := range found {
 		if projectID > 0 && p.ProjectID != 0 && p.ProjectID != projectID {
 			continue // another project's page: correct to skip, not to hide
 		}
+		visible = append(visible, p)
+	}
+	if len(visible) == 0 {
+		return nil
+	}
+
+	// OFF path (default): the exact FTS ordering, unchanged.
+	if !s.graphSearchEnabled() {
+		out := make([]EvidenceItem, 0, len(visible))
+		for i, p := range visible {
+			out = append(out, EvidenceItem{
+				Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
+				Snippet: clipRunes(p.Content, 600), Rank: i + 1,
+			})
+		}
+		return out
+	}
+
+	// ON path: expand + re-rank over page ids, then map back to items. Neighbours
+	// the FTS pass never returned are loaded here (approved-only, PageHitsByIDs).
+	seedIDs := make([]int64, len(visible))
+	for i, p := range visible {
+		seedIDs[i] = p.ID
+	}
+	ordered := s.expandPageEvidence(seedIDs)
+
+	// Load any neighbour pages not already in the FTS result, so an expanded id has
+	// a title/snippet to render. Approved-only (PageHitsByIDs filters status).
+	var missing []int64
+	for _, id := range ordered {
+		if _, ok := byID[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		if extra, err := db.PageHitsByIDs(s.db, missing); err == nil {
+			for _, p := range extra {
+				if _, ok := byID[p.ID]; !ok {
+					found = append(found, p)
+					byID[p.ID] = len(found) - 1
+				}
+			}
+		}
+	}
+
+	out := make([]EvidenceItem, 0, len(ordered))
+	for rank, id := range ordered {
+		idx, ok := byID[id]
+		if !ok {
+			continue // a neighbour that vanished between expansion and load
+		}
+		p := found[idx]
 		out = append(out, EvidenceItem{
-			Type: "page", ID: p.ID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
-			Snippet: clipRunes(p.Content, 600), Rank: i + 1,
+			Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
+			Snippet: clipRunes(p.Content, 600), Rank: rank + 1,
 		})
 	}
 	return out
@@ -201,7 +345,7 @@ func (s *Service) evidenceNotes(query string, projectID int64, limit int, start 
 			continue
 		}
 		out = append(out, EvidenceItem{
-			Type: "note", ID: h.ID, Title: h.Title, Kind: "note",
+			Type: "note", ID: h.ID, ProjectID: h.ProjectID, Title: h.Title, Kind: "note",
 			Snippet: clipRunes(h.Snippet, 400), Rank: i + 1,
 		})
 	}

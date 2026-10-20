@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, within, cleanup } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { lagged, renderReady } from '../test/renderReady'
 
 // Partial mock: override the backend-calling endpoints, keep everything else
 // (getConnectionKind etc.) real — same shape as Home.test.tsx.
@@ -94,18 +94,57 @@ const communityReport = (over: Partial<WikiCommunityReport> = {}): WikiCommunity
   ...over,
 })
 
-const renderReview = () => render(<MemoryRouter><ReviewPage /></MemoryRouter>)
+// renderReady (ADR-0026) — the page fills its queues from a Promise.all inside a
+// useEffect, so returning before that settles is how this file used to flake.
+const renderReview = async () => { await renderReady(<ReviewPage />) }
 
-// vitest globals are off, so testing-library's auto-cleanup never registers.
-afterEach(cleanup)
+// The project filter renders one <option> per entry of `projects`, and that
+// state only lands after the load effect's getProjects() promise resolves. So
+// the combobox is queryable a render before the option it needs to accept:
+// jsdom matches an assigned value against the options present at that moment,
+// finds none, and hands the change handler an empty value — Number('') is 0,
+// so projectFilter never leaves 0 and React writes '0' straight back onto the
+// controlled node. Every project-gated button then stays disabled, and the
+// failure surfaces far from its cause as `expected true to be false` on a
+// button assertion. Which render wins that race tracked runner load, not
+// product behaviour, so await the option first; the value check keeps a
+// recurrence pointing at the select instead of at a downstream timeout.
+async function pickProject(id: number, name: string) {
+  await screen.findByRole('option', { name })
+  const select = (await screen.findByRole(
+    'combobox', { name: 'review.projectFilter' },
+  )) as HTMLSelectElement
+  fireEvent.change(select, { target: { value: String(id) } })
+  await waitFor(() => expect(select.value).toBe(String(id)))
+}
+
+// The merge-suggestion <section> carries no accessible name (just an <h2>), and a
+// document-wide `listitem` query would also count the pending and rejected card
+// lists — so these tests must scope to the container before counting rows.
+//
+// 一条实测事实：`no-node-access` 在调用点上会报同样的 `heading.closest('section')`，
+// 挪进函数后却完全不报。规则是看上下文的，这正是它只能当形态守卫、不能当时序保证的
+// 又一个理由（ADR-0026 条件 4）。此处不需要 disable 注释——写了反而会被报成
+// unused override。
+async function mergeSection(): Promise<HTMLElement> {
+  const heading = await screen.findByText('review.mergeHeading')
+  return heading.closest('section') as HTMLElement
+}
+
+function mergeRows(section: HTMLElement): HTMLLIElement[] {
+  return Array.from(section.querySelectorAll('li'))
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockGetProjects.mockResolvedValue([])
-  mockListPending.mockResolvedValue([])
+  // The three promises ADR-0026 names as this page's load path. Under
+  // REPO_TEST_LAG_MS they land late on purpose — that is the promotion-criterion-1
+  // probe, and it is a no-op on every ordinary run.
+  mockGetProjects.mockImplementation(() => lagged([]))
+  mockListPending.mockImplementation(() => lagged([]))
   mockListRejected.mockResolvedValue([])
   mockListJobs.mockResolvedValue([])
-  mockFindCandidates.mockResolvedValue(report({ candidates: [] }))
+  mockFindCandidates.mockImplementation(() => lagged(report({ candidates: [] })))
   mockMerge.mockResolvedValue(null)
   mockCommunity.mockResolvedValue(communityReport())
   mockListVersions.mockResolvedValue([])
@@ -114,7 +153,7 @@ beforeEach(() => {
 
 describe('Review merge suggestions (ADR-0019)', () => {
   it('renders each candidate as a directed pair, loser first', async () => {
-    mockFindCandidates.mockResolvedValue(report({
+    mockFindCandidates.mockImplementation(() => lagged(report({
       candidates: [
         candidate(),
         candidate({
@@ -122,11 +161,15 @@ describe('Review merge suggestions (ADR-0019)', () => {
           score: 4, signals: ['linked'], shared_notes: 0,
         }),
       ],
-    }))
-    renderReview()
-    const heading = await screen.findByText('review.mergeHeading')
-    const section = heading.closest('section') as HTMLElement
-    const rows = Array.from(section.querySelectorAll('li'))
+    })))
+    await renderReview()
+    const section = await mergeSection()
+    // A1 (ADR-0026): the merge section is mounted unconditionally, so `await`ing
+    // its heading waits for nothing — the rows are the data. With
+    // REPO_TEST_LAG_MS set, the old synchronous read here ran one render early
+    // and saw zero rows.
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(2))
+    const rows = mergeRows(section)
     expect(rows).toHaveLength(2)
     // Direction is the row's whole payload: [[loser]] → [[winner]]. The loser's
     // slug must come BEFORE the winner's, or a reviewer reading top-down would
@@ -149,7 +192,7 @@ describe('Review merge suggestions (ADR-0019)', () => {
       loser_id: 3, loser_slug: 'gateway-payment', winner_id: 11, winner_slug: 'payment-gateway',
       edges_redirected: 2, edges_dropped: 0, notes_reattached: 3, loser_previous_status: 'approved',
     })
-    renderReview()
+    await renderReview()
     const adopt = await screen.findByText('review.mergeAdopt')
     fireEvent.click(adopt)
     // Armed, not executed — a merge destroys the loser's content, so one click
@@ -165,41 +208,46 @@ describe('Review merge suggestions (ADR-0019)', () => {
   })
 
   it('hides a dismissed pair locally without calling anything', async () => {
-    mockFindCandidates.mockResolvedValue(report())
-    renderReview()
-    const row = (await screen.findByText('review.mergeHeading')).closest('section') as HTMLElement
-    expect(row.querySelectorAll('li')).toHaveLength(1)
-    fireEvent.click(within(row).getByText('review.mergeIgnore'))
-    await waitFor(() => expect(row.querySelectorAll('li')).toHaveLength(0))
+    mockFindCandidates.mockImplementation(() => lagged(report()))
+    await renderReview()
+    const section = await mergeSection()
+    // A1 (ADR-0026): the heading is mounted unconditionally, so waiting for it
+    // proves nothing about the rows — wait for the row itself.
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(1))
+    fireEvent.click(within(section).getByText('review.mergeIgnore'))
+    await waitFor(() => expect(mergeRows(section)).toHaveLength(0))
     // Ignoring is a view-local filter: nothing is sent anywhere, and nothing is
     // stored — no endpoint exists to record it, by design.
     expect(mockMerge).not.toHaveBeenCalled()
-    expect(row.textContent).toContain('review.emptyMergeTitle')
+    expect(section.textContent).toContain('review.emptyMergeTitle')
   })
 
   it('degrades a null candidate report to the empty state instead of throwing', async () => {
     // The endpoint normalises null to an empty report, but the page is the last
     // line: a report that arrives null must still render the queue, not a crash.
-    mockFindCandidates.mockResolvedValue(null as unknown as MergeCandidateReport)
-    mockListPending.mockResolvedValue([pendingPage()])
-    renderReview()
+    mockFindCandidates.mockImplementation(() => lagged(null as unknown as MergeCandidateReport))
+    mockListPending.mockImplementation(() => lagged([pendingPage()]))
+    await renderReview()
     expect(await screen.findByText('review.mergeHeading')).toBeTruthy()
+    // A1 (ADR-0026): the empty-merge title and the pending row are both
+    // effect-filled, while the heading is not — await one of the data elements
+    // before reading the rest synchronously.
+    expect(await screen.findByText('payment-gateway')).toBeTruthy()
     expect(screen.getByText('review.emptyMergeTitle')).toBeTruthy()
     // The rest of the page survived the null too.
     expect(screen.getByText('review.pendingHeading')).toBeTruthy()
-    expect(screen.getByText('payment-gateway')).toBeTruthy()
   })
 
   it('says when the list was truncated', async () => {
     mockFindCandidates.mockResolvedValue(report({ truncated: true }))
-    renderReview()
+    await renderReview()
     expect(await screen.findByText('review.mergeTruncated')).toBeTruthy()
   })
 })
 
 describe('Review community synthesis (ADR-0020)', () => {
   it('is disabled on "all projects", because project 0 is the global tier', async () => {
-    renderReview()
+    await renderReview()
     const button = (await screen.findByText('review.startCommunity')) as HTMLButtonElement
     expect(button.disabled).toBe(true)
     // The reason is stated, not implied by a greyed control.
@@ -215,9 +263,8 @@ describe('Review community synthesis (ADR-0020)', () => {
       my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
     }])
     mockCommunity.mockResolvedValue(communityReport())
-    renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await renderReview()
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCommunity')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)
@@ -240,9 +287,8 @@ describe('Review community synthesis (ADR-0020)', () => {
       revision_todos: 0, empty_bodies: 0, outbound_bytes: 0,
       llm_note: '未开启（wiki_community）：只做了结构检测',
     }))
-    renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await renderReview()
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCommunity')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)
@@ -261,7 +307,7 @@ describe('Review page version history (ADR-0021)', () => {
       pageVersion({ id: 70, created_at: '2026-10-09 12:00:00' }),
     ])
     mockDiff.mockResolvedValue('--- a/payment-gateway\n+++ b/payment-gateway\n-旧结论\n+新结论')
-    renderReview()
+    await renderReview()
     const toggle = await screen.findByText('review.versionHistory')
     fireEvent.click(toggle)
     await waitFor(() => expect(mockListVersions).toHaveBeenCalledWith(11))
@@ -278,7 +324,7 @@ describe('Review page version history (ADR-0021)', () => {
   it('says so when a page has no snapshots', async () => {
     mockListPending.mockResolvedValue([pendingPage()])
     mockListVersions.mockResolvedValue([])
-    renderReview()
+    await renderReview()
     fireEvent.click(await screen.findByText('review.versionHistory'))
     expect(await screen.findByText('review.versionEmpty')).toBeTruthy()
     expect(mockDiff).not.toHaveBeenCalled()
@@ -290,7 +336,7 @@ describe('Review page version history (ADR-0021)', () => {
 describe('Review queue wiring', () => {
   it('approves through the binding and reloads the queue', async () => {
     mockListPending.mockResolvedValue([pendingPage()])
-    renderReview()
+    await renderReview()
     fireEvent.click(await screen.findByText('review.approve'))
     await waitFor(() => expect(mockListPending).toHaveBeenCalledWith(0))
     await waitFor(() => expect(approveWikiPage).toHaveBeenCalledWith(11))
@@ -304,9 +350,8 @@ describe('Review queue wiring', () => {
       is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
       my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
     }])
-    renderReview()
-    const select = await screen.findByRole('combobox', { name: 'review.projectFilter' })
-    fireEvent.change(select, { target: { value: '4' } })
+    await renderReview()
+    await pickProject(4, 'Alpha')
     const button = (await screen.findByText('review.startCompile')) as HTMLButtonElement
     await waitFor(() => expect(button.disabled).toBe(false))
     fireEvent.click(button)

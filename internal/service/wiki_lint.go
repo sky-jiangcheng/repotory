@@ -423,7 +423,8 @@ func lintRelationCycles(edges []db.PageLinkRow, allow map[string]bool) []WikiFin
 	return out
 }
 
-// runWikiLintLLM is the model-backed half: contradictions and stale claims. Gated
+// runWikiLintLLM is the model-backed half: contradictions, stale claims and
+// synthesis-vs-members coherence (community-incoherent, ADR-0020). Gated
 // on its own key plus a configured chat endpoint. It returns findings only and has
 // no code path to page writes.
 func (s *Service) runWikiLintLLM(pages []db.WikiPage) ([]WikiFinding, string) {
@@ -442,22 +443,49 @@ func (s *Service) runWikiLintLLM(pages []db.WikiPage) ([]WikiFinding, string) {
 		list = list[:lintMaxLLMPages]
 	}
 
+	// ADR-0020 follow-up: synthesis pages get their member slugs attached so the
+	// model can judge "community-incoherent" against what the page actually
+	// synthesizes, not against the whole corpus. Members come from the same edge
+	// table the structural half reads; nothing here can write.
+	members := map[int64][]string{}
+	if edges, err := db.ListPageLinks(s.db); err == nil {
+		kindOf := make(map[int64]string, len(pages))
+		slugOf := make(map[int64]string, len(pages))
+		for _, p := range pages {
+			kindOf[p.ID] = p.Kind
+			slugOf[p.ID] = p.Slug
+		}
+		for _, e := range edges {
+			if kindOf[e.FromID] != "synthesis" || e.FromID == e.ToID {
+				continue
+			}
+			if slug, ok := slugOf[e.ToID]; ok {
+				members[e.FromID] = append(members[e.FromID], slug)
+			}
+		}
+	}
+
 	arr := make([]map[string]any, 0, len(list))
 	for _, p := range list {
-		arr = append(arr, map[string]any{
+		entry := map[string]any{
 			"page_id": p.ID, "slug": p.Slug, "kind": p.Kind, "title": p.Title,
 			"updated": p.UpdatedAt, "excerpt": truncateBytes(p.Content, lintExcerptBytes),
-		})
+		}
+		if m := members[p.ID]; len(m) > 0 {
+			entry["members"] = m
+		}
+		arr = append(arr, entry)
 	}
 	encoded, err := json.Marshal(arr)
 	if err != nil {
 		return nil, "页面序列化失败：跳过 LLM 检查"
 	}
 	var ctx strings.Builder
-	ctx.WriteString("以下是若干互相链接的知识页（JSON 数组，含各自更新时间）。找出两类问题：\n" +
+	ctx.WriteString("以下是若干互相链接的知识页（JSON 数组，含各自更新时间；synthesis 页带 members 成员页清单）。找出三类问题：\n" +
 		"1. contradiction：两页对同一事实陈述冲突；\n" +
-		"2. stale：某页断言被更新时间更晚的页覆盖或已过时。\n" +
-		`只输出 JSON 数组，元素形如 {"type":"contradiction|stale","page_id":<id>,"other_id":<id或null>,"detail":"<一句话>"}。` +
+		"2. stale：某页断言被更新时间更晚的页覆盖或已过时；\n" +
+		"3. community-incoherent：synthesis 综述页与它的 members 成员页内容明显不一致、遗漏或歪曲了成员页的关键结论。\n" +
+		`只输出 JSON 数组，元素形如 {"type":"contradiction|stale|community-incoherent","page_id":<id>,"other_id":<id或null>,"detail":"<一句话>"}。` +
 		"没有发现就输出 []。不要提改写方案，不要输出 JSON 以外的字符。\n\n")
 	ctx.Write(encoded)
 
@@ -493,9 +521,15 @@ func (s *Service) runWikiLintLLM(pages []db.WikiPage) ([]WikiFinding, string) {
 		if !ok {
 			continue // the model named a page that does not exist; never address it
 		}
+		// Unknown types degrade to "stale" (skeptical by default);
+		// community-incoherent gets its own check name so the todo reads as a
+		// synthesis-consistency question, not a staleness one.
 		check := "stale"
-		if it.Type == "contradiction" {
+		switch it.Type {
+		case "contradiction":
 			check = "contradiction"
+		case "community-incoherent":
+			check = "community-incoherent"
 		}
 		other := ""
 		if o, ok := byID[it.OtherID]; ok && it.OtherID != it.PageID {

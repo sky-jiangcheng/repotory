@@ -3,10 +3,10 @@
 // The in-process script-plugin system (ADR-0002, yaegi interpreter) has been
 // removed (C11 方案B): there is no user-authored plugin loader anymore. What
 // remains is the small interface every built-in knowledge importer implements
-// (claude, codex, opencode, openclaw, hermes, cursor) and the document shape
-// it produces. Registration, gating and the idempotent upsert path live in
-// internal/core/plugin/runtime; docs/plugins/overview.md is the user-facing
-// list of sources.
+// (claude, codex, opencode, openclaw, hermes, cursor, codebuddy,
+// codebuddy-memory) and the document shape it produces. Registration, gating
+// and the idempotent upsert path live in internal/core/plugin/runtime;
+// docs/plugins/overview.md is the user-facing list of sources.
 package plugin
 
 // KnowledgeImporter imports knowledge (e.g. notes) from an external source
@@ -20,13 +20,49 @@ type KnowledgeImporter interface {
 	Import() ([]ImportDoc, error)
 }
 
+// ProbeResult is the outcome of a knowledge source's presence check: whether
+// the agent's data actually exists on this machine, plus a short
+// human-readable detail line (root path, match count) for the settings page.
+// A probe is cheap and read-only — stat/readdir on the source's own
+// allowlisted directory, never file content, never parent/sibling paths
+// (ADR-0011 决策 3 hard scoping, ADR-0022 决策 1).
+type ProbeResult struct {
+	Detected bool   `json:"detected"`
+	Detail   string `json:"detail"`
+}
+
+// Prober is an OPTIONAL capability of a KnowledgeImporter. Sources that
+// implement it let the runtime report "which agent memory exists on this
+// machine" in the settings page instead of listing every registered source
+// blindly. Probe must stay cheap and must never read data outside the
+// source's own declared directory.
+type Prober interface {
+	Probe() ProbeResult
+}
+
 // ImportDoc is a single document produced by a KnowledgeImporter, to be
 // upserted into the knowledge base.
 type ImportDoc struct {
-	ProjectID int64  // target project; 0 to skip
-	Title     string // note title
-	Content   string // note body (Markdown)
-	Tags      string // comma-separated tags
-	Kind      string // note kind: knowledge | log | idea | other
-	Source    string // provenance, e.g. "claude"
+	// ProjectID is the resolved target project. 0 means "the importer could not
+	// match a project"; the runtime then LANDS the note rather than dropping it
+	// (ADR-0023): onto a placeholder project keyed by RepoPath when one is known,
+	// else onto the seeded default ("Uncategorized") project. A truly non-empty
+	// RepoPath is what lets an unmatched repo-scoped source still get a home.
+	ProjectID int64
+	// RepoPath is the source's repository/workspace path (a real filesystem path
+	// when the importer has one). Used only when ProjectID == 0 to create or reuse
+	// an import-placeholder project; because it is stored as the placeholder's
+	// root_path, a later scan that discovers the same repo adopts the row and
+	// promotes it to a real project. Empty for agent-global sources (openclaw,
+	// hermes, codebuddy-memory), which then land on the default project.
+	RepoPath string
+	// RepoName optionally overrides the placeholder project's display name; when
+	// empty the runtime uses the base name of RepoPath. Sources whose match key is
+	// a decoded label rather than a real path (claude) set this.
+	RepoName string
+	Title    string // note title
+	Content  string // note body (Markdown)
+	Tags     string // comma-separated tags
+	Kind     string // note kind: knowledge | log | idea | other
+	Source   string // provenance, e.g. "claude"
 }

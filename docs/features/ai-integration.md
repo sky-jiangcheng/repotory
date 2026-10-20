@@ -41,6 +41,7 @@ Repotory 面向 AI 代理提供读取通道与自检工具，全部复用同一 
 | `wiki_community_summary` | 关 | 让聊天模型起草 `synthesis` 页（第五种页，[ADR-0020](../adr/0020-community-synthesis.md)）；**绝不上定时器**，也无 MCP 工具 | 每个成员页的标题 + 有界摘录（≤900 字节） → 你的 chat 端点 |
 | `community_min_size` | `3` | 社区综述的最小页数门槛；低于它的碎片被丢弃并计入 `dropped_small` | 无——纯本地阈值，不外发 |
 | `community_max_size` | `30` | 社区综述的最大页数门槛；更大的块只报告不综述（计入 `dropped_large`） | 无——纯本地阈值，不外发 |
+| `wiki_graph_search` | 关 | 图感知取证（[ADR-0018](../adr/0018-knowledge-graph-foundation.md) lane 2）：AskAI 的页面证据以检索命中为种子，沿 `ref/part-of/documents` 边扩 1 跳召回邻居并用 PageRank 重排；关时（默认）`evidencePages` 走与开启前**逐条一致**的 FTS 顺序 | 无外发——纯本地 SQL 图遍历；若同时开了 `semantic_search`，页面向量召回沿用它对端点的授权 |
 
 两个密钥键（`embedding_api_key` / `vector_store_api_key`，以及 `ai_chat_api_key`）在读取配置时以掩码返回、不回传界面——后端持真值，界面只显示 `********`。
 
@@ -51,6 +52,18 @@ Repotory 面向 AI 代理提供读取通道与自检工具，全部复用同一 
 - **引导式配置**：`go run ./cmd/vector-init`。它会自检 sqlite-vec 是否装载（建 vec0 → 写测试向量 → KNN 往返 → 清理），让你选 embedding provider（本地 Ollama 为默认推荐，或任意 OpenAI 兼容远端），写入配置，最后指向应用内设置复核。加 `-store qdrant`（或 `weaviate`）可写远程向量库并当场探测；**不可达或未配则自动退回本地**，不会让检索变少。
 - **首次要跑一次全量重建**（O(全部笔记) 次文本送端点）。之后不需要再重建：笔记的新建、标题/正文修改、删除由数据库触发器排队，后台每 5 秒批量排空；已删除的笔记会从向量索引里移除。维度未知或索引尚未建立时排空器直接跳过且不消费队列（猜维度意味着可能 drop 整个索引），端点不可达时任务原地保留、下一轮重试。细节见[知识库与笔记](knowledge.md) 的「语义检索」。
 - **效果先量化再改默认值**：`go run ./cmd/abeval` 对活库跑「词法 vs 词法+向量」的 Recall@k / NDCG@k 与差值门判定。它读的是你的库，但**不会改动它**：工具在 `VACUUM INTO` 出的一次性副本上运行，所以评测触发的索引重建与 schema 迁移都落在副本里。设置 → AI 已提供知情开启与重建索引入口；真实标注 query 集与门槛通过之前，该功能保持默认关闭——宁缺毋滥，也不默认放大隐私面。
+
+### 检索真实标注工作流（Phase 0 门禁）
+
+语义检索默认上线与 ADR-0018 lane 2 图感知取证两道门共用同一份**真实标注 query 集**。流程五步，工具只负责机械半边，**相关性判断只能由人完成**：
+
+1. **充实语料再开始**：标注质量取决于库里有什么可标。先批准审核页的 pending 页面，再在 设置 → 插件 对各知识源点「立即导入」（六源清单见[知识源导入](../plugins/overview.md)；`openclaw_project` / `hermes_project` 未设的源会按设计跳过）。`repotory_integrity`（MCP）过一遍确认 FTS 索引无漂移——**索引漂移会让检索静默漏结果，标注前必须排除**。验收：笔记 **≥10 条**（目标 ≥15；低于 10 条时单条波动就能主导结论，门禁输出只是噪音）。
+2. **导出工作表**：`go run ./cmd/queryset -seed > notes.tsv`。它走一次性副本、只读，**不碰真库**；输出的笔记行号是标注的唯一单位。
+3. **人工标注**：每条问题写你真会问的（已有的问题比编造的更真实），`relevant=` 填 1–3 个能回答它的行号，**不凑数**。这是唯一纯手工的一步：门禁拿标注当真值量检索，真值若由工具读笔记猜出来，测的就是猜测器不是检索，**没核对的草稿不能用**。
+4. **生成标注集**：`go run ./cmd/queryset -emit notes.tsv -out queries.jsonl`。行号到真实 id 由工具解析（行号与工作表文件绑定——**不要重新 `-seed` 后混入已标注的行**，每次 `-seed` 的编号都会重排）。**`queries.jsonl` 是长期资产，随库保留**，两道门复用同一份。
+5. **跑门禁**：`go run ./cmd/abeval -cases queries.jsonl -k 10 -min-recall 0.05`，打印 Recall@k / NDCG@k 与 `GATE PASS/FAIL`。同样走一次性副本，不动真库。
+
+门禁阈值：M3 语义检索默认上线要求 hybrid−lexical recall@10 增益 ≥ 0.05；M7 Lane 2 图感知取证要求 evidence+graph 相对 evidence 的 delta 为正，并附带 `page#N` vs `note#N` 串号专项回归。
 
 ## AI 问答：现在怎么取证
 

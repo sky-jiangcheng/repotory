@@ -1,11 +1,12 @@
 {
   "name": "repotory",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.9.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:server": "tsc && vite build --mode server --outDir dist-server",
     "preview": "vite preview",
     "lint": "eslint src",
     "test": "vitest run"
@@ -35,6 +36,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-testing-library": "^7.16.2",
     "globals": "^17.12.0",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",

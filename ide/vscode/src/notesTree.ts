@@ -20,7 +20,7 @@ export function parseSearchHits(text: string): NoteHit[] {
 export class NotesSearchProvider implements vscode.TreeDataProvider<NoteItem> {
   private hits: NoteHit[] = [];
   private scope = "";
-  private hint = "Run the search command to query the knowledge base";
+  private hint = 'Repotory Knowledge Base — run "Repotory: Search Knowledge" to query your notes & todos';
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
 

@@ -38,10 +38,32 @@ Data directory:
 
 ## Backup
 
+### Cold backup (copy the directory)
+
 1. **Quit Repotory** (the database runs in WAL mode; copying it while the app is running can lose WAL content that has not been flushed to disk)
 2. Copy the entire data directory `repotory/` (or at least `repotory.db` together with `repotory.db-wal` / `repotory.db-shm`)
 
 We recommend taking a cold backup before swapping disks or upgrading to a major version; day to day, you can also include the data directory in your whole-disk backups such as Time Machine or File History.
+
+### Built-in daily snapshot (L1, on by default)
+
+At app startup and on hourly retries the app produces the day's snapshot with `VACUUM INTO`, written under `backups/` in the data directory (`repotory-YYYY-MM-DD.db`, permission 0600); after the first success of the day every further attempt is a no-op. Rotation keeps 14 snapshots by default (`backup_retain`). Settings → Actions has a "Back up now" button; `backup_enabled=0` turns the feature off entirely (both manual and scheduled runs are then explicitly refused).
+
+### Remote push (L2, off by default)
+
+An optional off-site copy: configure an S3-compatible object store under **Settings → Actions → Database backup** (AWS S3, Cloudflare R2, MinIO on a NAS — all work) and each daily local snapshot is uploaded to your bucket after it is created. The privacy gate matches the AI features — **nothing configured = zero egress** — and only the snapshot copy is ever uploaded, never the live database file or its WAL/SHM sidecars. The object name is the snapshot filename itself (`<prefix>/repotory-YYYY-MM-DD.db`, prefix defaults to `repotory`); an object that already exists skips the upload, and a failed upload retries within the hour.
+
+Config keys (settings page or `UpdateConfig`): `backup_remote_enabled` (switch), `backup_remote_endpoint`, `backup_remote_bucket`, `backup_remote_prefix` (optional), `backup_remote_access_key`, `backup_remote_secret_key`.
+
+### Docker deployment (headless, NAS/homelab)
+
+The repository root ships a `Dockerfile` and `docker-compose.yml`: a single container running `repotory-server` (serving the frontend from the same origin), with the data volume mounted at `/data`. The data directory is located inside the volume via `XDG_CONFIG_HOME=/data` (`/data/repotory/repotory.db`), so snapshots land in `/data/repotory/backups/` — include that directory in your host's backup plan as well. The remote push is enabled inside the container through the same `backup_remote_*` config keys.
+
+```bash
+docker compose up -d --build     # default port 18765, open http://localhost:18765
+```
+
+> The service still runs **without authentication** — do not expose the port directly to the public internet; add an authentication layer before any remote access (see the trust-boundary note in `docs/api/reference.md`).
 
 ## Migrating to a New Machine
 

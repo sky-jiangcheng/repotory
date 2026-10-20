@@ -10,7 +10,7 @@
 // the shell renders translated text and no error surfaces.
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest'
-import { render, cleanup, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactElement } from 'react'
 
 /** Record of every Wails binding method invoked during a test. */
@@ -39,6 +39,7 @@ function installWailsBindings() {
     // panel calls its own summary/heatmap/status endpoints on mount.
     ListRecentHandoffs: () => Promise.resolve([]),
     ListProjects: () => Promise.resolve([]),
+    GetProjects: () => Promise.resolve([]),
     GetSummary: () => Promise.resolve(null),
     GetTodoCounts: () => Promise.resolve([]),
     GetNoteCounts: () => Promise.resolve([]),
@@ -76,7 +77,6 @@ beforeAll(() => {
 })
 
 afterEach(() => {
-  cleanup()
   wailsCalls.length = 0
 })
 
@@ -121,6 +121,9 @@ describe('App desktop shell', () => {
     await waitFor(() => expect(wailsCalls).toContain('ListRecentHandoffs'), { timeout: LAZY_CHUNK_TIMEOUT })
     const body = document.body.textContent ?? ''
     expect(body).not.toMatch(/did not match the expected pattern/)
+    // 断言的是「不该出现的连接横幅」——缺席的元素没有可查语义，只能按 class 判空。
+    // ADR-0026 条件 4 的显式登记。
+    // eslint-disable-next-line testing-library/no-node-access
     expect(document.querySelector('.conn-banner')).toBeNull()
   }, LAZY_CHUNK_TIMEOUT)
 })

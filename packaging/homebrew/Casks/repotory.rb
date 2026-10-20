@@ -6,7 +6,7 @@
 # sha256 must be filled after each release is published; Homebrew hard-fails on
 # a mismatch, which is exactly what we want from a placeholder.
 cask "repotory" do
-  version "2.0.0"
+  version "2.9.1"
   name "Repotory"
   desc "Local-first code project context base"
   homepage "https://github.com/sky-jiangcheng/repotory"
@@ -14,12 +14,12 @@ cask "repotory" do
 
   on_arm do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-darwin-arm64.dmg"
-    sha256 "b4599769ad77f0361d6744bf6fb7fd50fc3c8e2123a999e3960220f3846aa314"
+    sha256 "79ac596dc403564be5a3a795fe4e3fa8229e8240a1f7f47db31381e001509e28"
   end
 
   on_intel do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-darwin-amd64.dmg"
-    sha256 "05a014860b3b8c5322091c7ca7cb2d3be4e1e832b43eb1b3ebb216125dbe12cc"
+    sha256 "928e88cc99a9486f81752fce2237d01d7bfaa776cf89325c83c0e73766593b35"
   end
 
   app "Repotory.app"

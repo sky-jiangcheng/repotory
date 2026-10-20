@@ -6,6 +6,8 @@ import (
 	"log"
 	"strconv"
 	"strings"
+
+	"repotory/internal/domain"
 )
 
 // migrationVersionKey is the app_config key tracking the applied schema version.
@@ -331,6 +333,73 @@ func upgradeSchema(db *sql.DB) error {
 		// set. Reserving a number for a migration that may not land for months would
 		// just leave a hole; lane 2 takes v23 and docs/adr/0018 was amended to say so.
 		{id: 22, fn: EnsurePageVersions},
+		// v23: the page vector space + its incremental queue (ADR-0018 lane 2,
+		// first half). note_embeddings is notes-only (vecindex.go: KnnNoteIDs and
+		// PutNoteEmbedding are keyed by note rowid), so wiki_pages had no vector
+		// face and semantic recall could never reach compiled pages. This adds the
+		// page-embed dirty queue and triggers (page_embed_dirty.go); the vec0 table
+		// itself (page_embeddings) is created lazily by the service layer's rebuild
+		// once it has learned the embedding dim, exactly like note_embeddings, so a
+		// database that never enables semantic search never pays for it. The queue
+		// and its triggers are part of the wiki layer's derived structure:
+		// DropWikiSchema drops them (dropPageEmbedDirty) and InitDB re-asserts
+		// EnsurePageEmbedDirty on every open, exactly as page_versions (v22) is
+		// handled — its trigger is also ON wiki_pages, so it cannot outlive a drop.
+		//
+		// It is physically SEPARATE from note_embeddings on purpose: hybrid.FuseRRF
+		// merges bare int64 ids, and wiki_pages.id / project_notes.id are independent
+		// sequences, so sharing one index would fuse page #7 with note #7. The queue
+		// marks a page dirty on any text change or approved-ness change; the drainer
+		// decides re-embed vs remove, and only approved pages are ever embedded
+		// (ADR-0015).
+		{id: 23, fn: pageEmbedDirtyMigration},
+		// v24: project origin/role classification + the seeded default project
+		// (ADR-0023). External-knowledge imports used to silently DROP any note
+		// that matched no project (runtime.go's `ProjectID<=0 -> Skipped++`),
+		// because project_notes.project_id is NOT NULL + FK and there was no
+		// "headless note" state and no default/placeholder landing project. This
+		// adds project_kind (scanned / import_placeholder / default) and seeds the
+		// single default row, so a later importer can land an unmatched note on a
+		// placeholder (named for its repo) or the default instead of discarding it.
+		//
+		// Purely additive: one ALTERed column with a constant default (pre-v24 rows
+		// read 'scanned') + one idempotent INSERT guard, both re-asserted on every
+		// open via EnsureProjectKind — the same "ensure object on open, not just at
+		// migration" contract as v22/v23 (whose functions are both the migration fn
+		// and an InitDB self-heal call). Enum values are checked in Go, never with
+		// an inline CHECK: adding a table CHECK would force a projects rebuild.
+		{id: 24, fn: EnsureProjectKind},
+		// v25: drop mining caches poisoned by the single-repo grouping case.
+		//
+		// v13 dropped repo_meta for MULTI-repo projects, because mining ran git in
+		// the project root and a container of sibling repos is not a git repository;
+		// its comment reasoned that "single-repo projects mined their actual
+		// repository and keep their cache". That assumption was wrong: a project can
+		// be single-repo and still have a container root (/x/MiddlePlatform holding
+		// /x/MiddlePlatform/<repo>), which is the ordinary shape after a scan of a
+		// group directory. Those rows cached a zeroed activity too — 4 of the 5
+		// repo_meta rows on a real library, one of them a repository with 6,660
+		// commits — and nothing invalidates repo_meta, so they stayed broken even
+		// after the aggregation condition was widened to one-or-more repositories.
+		//
+		// The predicate is structural rather than evidence-based on purpose: gating on
+		// "daily_stats proves this repo has commits" would repair only 1 of the 4 rows,
+		// because daily_stats covers 63 of 140 repositories here. `project root <>
+		// repository path` is exactly the condition that produces the bad mining, so it
+		// catches every affected row; a legitimately zero-commit project among them
+		// costs one re-mine, the same trade v13 already accepted.
+		{id: 25, fn: DropPoisonedActivityMeta},
+		// v26: access reinforcement foundation for the wiki layer — how often a
+		// page has been USED (surfaced into an answer's evidence) and when that
+		// last happened. Pure signals: nothing reads them to change behaviour
+		// yet, so the migration is purely additive and every pre-v26 page reads
+		// as never-accessed, which is the truth. Ranking/decay policies are
+		// separate decisions and must not silently start depending on these
+		// columns.
+		{id: 26, sql: []string{
+			"ALTER TABLE wiki_pages ADD COLUMN access_count INTEGER DEFAULT 0",
+			"ALTER TABLE wiki_pages ADD COLUMN last_accessed_at TEXT",
+		}},
 	}
 
 	for _, m := range migrations {
@@ -521,6 +590,55 @@ func migrateV13NormalizeTagsAndDropMultiRepoMeta(db *sql.DB) error {
 	return tx.Commit()
 }
 
+// EnsureProjectKind is migration v24 (ADR-0023). It re-asserts two things and is
+// idempotent on both, so it runs both as the migration body and from InitDB on
+// every open:
+//   - the projects.project_kind column. The constant DEFAULT makes every pre-v24
+//     row read back as 'scanned'; once the column exists the ALTER is a "duplicate
+//     column name" error that isAlreadyExistsErr tolerates as already-applied.
+//   - the single project_kind='default' "Uncategorized" landing project, inserted
+//     only when it is absent (WHERE NOT EXISTS), so re-running never duplicates it.
+//
+// The enum values are validated in Go (domain.ProjectKind*), never with a SQL
+// CHECK: attaching a CHECK to the existing projects table would force a full
+// rebuild (see ADR-0021 implementation corrections).
+func EnsureProjectKind(db *sql.DB) error {
+	if _, err := db.Exec(
+		"ALTER TABLE projects ADD COLUMN project_kind TEXT NOT NULL DEFAULT '" + domain.ProjectKindScanned + "'",
+	); err != nil && !isAlreadyExistsErr(err) {
+		return fmt.Errorf("add project_kind column: %w", err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO projects (name, root_path, level_override, is_auto_grouped, project_kind) "+
+			"SELECT ?, ?, 0, 0, ? "+
+			"WHERE NOT EXISTS (SELECT 1 FROM projects WHERE project_kind = ?)",
+		domain.DefaultProjectName, domain.DefaultProjectRootPath,
+		domain.ProjectKindDefault, domain.ProjectKindDefault,
+	); err != nil {
+		return fmt.Errorf("seed default project: %w", err)
+	}
+	return nil
+}
+
+// GetDefaultProjectID returns the id of the seeded default ("Uncategorized")
+// project, or 0 if it is somehow absent. Used by the importer landing path
+// (ADR-0023 decision 3) to place repo-pathless notes without duplicating the
+// seed lookup.
+func GetDefaultProjectID(db *sql.DB) (int64, error) {
+	var id int64
+	err := db.QueryRow(
+		"SELECT id FROM projects WHERE project_kind = ? LIMIT 1",
+		domain.ProjectKindDefault,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func insertDefaults(db *sql.DB) error {
 	// `auto_import` is seeded at "0" since v15: reading another tool's memory at
 	// startup is a privacy-relevant choice and must not be something the app did
@@ -542,6 +660,37 @@ func insertDefaults(db *sql.DB) error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// DropPoisonedActivityMeta deletes repo_meta rows whose cached activity is empty or
+// zero for a project whose root directory is not the repository it was meant to mine
+// — the shape that made knowledge.Mine's git probes run in a non-git container and
+// cache the resulting zeros. See migration v25's comment in upgradeSchema.
+//
+// One-time by design rather than an InitDB self-heal: once the aggregation is fixed
+// the re-mined rows are correct, and re-running this on every open would repeatedly
+// drop and re-mine any genuinely commit-less grouping.
+func DropPoisonedActivityMeta(db *sql.DB) error {
+	res, err := db.Exec(`
+		DELETE FROM repo_meta
+		WHERE repository_id IN (
+				SELECT r.id FROM repositories r
+				JOIN projects p ON p.id = r.project_id
+				WHERE p.root_path <> r.path
+		  )
+		  AND (
+				activity IS NULL
+				OR activity = ''
+				OR activity = '{}'
+				OR activity LIKE '%"total_commits":0%'
+		  )`)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("schema migration 25: dropped %d poisoned repo_meta activity cache(s)", n)
 	}
 	return nil
 }

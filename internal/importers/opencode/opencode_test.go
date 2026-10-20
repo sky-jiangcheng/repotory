@@ -68,6 +68,59 @@ func TestImportProducesNote(t *testing.T) {
 	}
 }
 
+
+func TestImportToleratesObjectSummary(t *testing.T) {
+	root := fakeXDGData(t)
+	writeSession(t, root, "h", "real.json", `
+{
+  "id": "ses_12345678",
+  "slug": "test-engine",
+  "version": "1.0",
+  "projectID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "directory": "/some/path",
+  "title": "会话标题",
+  "time": {
+    "created": 0,
+    "updated": 0
+  },
+  "summary": {
+    "additions": 1,
+    "deletions": 2,
+    "files": 3
+  }
+}`)
+	
+	database, _ := sql.Open("sqlite", ":memory:")
+	defer database.Close()
+	
+	docs, err := New(database).Import()
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 doc, got %d", len(docs))
+	}
+	
+	d := docs[0]
+	if d.Source != "opencode" || d.Kind != "log" {
+		t.Errorf("source/kind = %q/%q", d.Source, d.Kind)
+	}
+	if !strings.Contains(d.Title, "会话标题") || !strings.Contains(d.Title, "12345678") {
+		t.Errorf("title = %q (want title + id suffix)", d.Title)
+	}
+	if !strings.Contains(d.Content, "/some/path") {
+		t.Errorf("content missing directory: %q", d.Content)
+	}
+	if strings.Contains(d.Content, "summary") {
+		t.Errorf("content should not contain summary, got: %q", d.Content)
+	}
+	if d.ProjectID != 0 {
+		t.Errorf("empty db should match no project, got %d", d.ProjectID)
+	}
+	if d.Tags != "opencode" || d.Source != "opencode" || d.Kind != "log" {
+		t.Errorf("source/kind/tags = %q/%q/%q", d.Source, d.Kind, d.Tags)
+	}
+}
 func TestImportIgnoresGarbageAndEmpty(t *testing.T) {
 	root := fakeXDGData(t)
 	writeSession(t, root, "h", "good.json", sessionFixture)

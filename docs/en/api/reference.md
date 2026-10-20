@@ -31,6 +31,21 @@ A JSON API for external runtimes such as the DeepSeek Harness dsh-plugin. It sha
 
 > **Trust boundary**: this server has **no authentication**, and everything it returns is the user's complete local knowledge base. Security relies entirely on `cmd/server` binding to `127.0.0.1` only — reachability is equivalent to "another process on this machine". **Never** change this to `0.0.0.0` or expose it to the network through a reverse proxy; for remote access, add an authentication scheme and submit an ADR first.
 
+### Optional: same-origin frontend hosting (`--web-dist`)
+
+By default the server is API-only, exactly as in production. With `--web-dist <dir>` (or the `REPOTORY_WEB_DIST` env var), the same process also serves the built frontend, so a browser reaches both the SPA and `/api/rpc` on **one origin** — no dev server or cross-origin proxy needed:
+
+```bash
+cd web && npm run build:server              # base /, outputs web/dist-server
+cd .. && go build -o repotory-server ./cmd/server
+./repotory-server --port 18766 --web-dist web/dist-server
+```
+
+- `/api/*` and `/health` always route to the API mux (`cmd/server`'s `isAPIPath` is pinned against `httpapi`'s registered routes by a test); every other path prefers a real static file and falls back to `index.html` (client-side routing)
+- A missing static asset (a path with a non-`.html` extension) is a real `404`, not an HTML fallback — missing files are never disguised as MIME errors
+- Relative paths are resolved to absolute at startup and the actual serving directory is logged; path traversal is forced back to the root, and the trust boundary is unchanged (loopback only)
+- Only the `build:server` frontend artifact works with this flag: the desktop build `npm run build` produces `web/dist` with base `./` (wails:// origin only) — mixing them blanks the page under one runtime
+
 ---
 
 ## `/api/rpc` (JSON-RPC bridge)
@@ -56,15 +71,23 @@ A JSON API for external runtimes such as the DeepSeek Harness dsh-plugin. It sha
 | `ResolveWorkspacePath` | `(path) → ProjectResolution` | read-only: resolve an absolute directory to its owning project and, when the folder sits inside a scanned repository, that repository (the four-tier path resolution). Backs the IDE's scope display; there is no MCP twin — agents pass `path` to `repotory_context` instead. See [AI Integration](../features/ai-integration.md) |
 | `SearchProjects` | `(query) → ProjectResponse[]` | fuzzy search by name/path (enriched with yesterday's stats) |
 | `ToggleStar` | `(id) → bool` | toggle star, returns the new state (atomic UPDATE) |
-| `UpdateProjectLevel` | `(id, "up"\|"down") → {success, new_level}` | merge/split projects (single transaction) |
+| `UpdateProjectLevel` | `(id, "up"\|"down", confirmed) → {success, new_level}` | merge/split projects (single transaction). `"up"` absorbs and **deletes** sibling projects (with their repos/notes/todos) and requires `confirmed=true`; an unconfirmed call errors out and changes nothing. `"down"` splits by repository and ignores the flag |
+| `PreviewProjectMergeUp` | `(id) → MergePreview` | read-only preview of which siblings `"up"` would absorb and delete, with the migrated repo/note/todo counts — the confirmation dialog's data source, sharing one sibling listing with the merge itself (`db.MergePlan`), so the preview cannot understate. No MCP twin (desktop-only, like `UpdateProjectLevel`) |
 | `RefreshProjectHistory` | `(id) → {success}` | backfill the last 365 days of stats for this project |
+| `ListOrganizeGroups` | `() → OrganizeGroup[]` | knowledge-base organize: lists landing projects (kind `import_placeholder` / `default`) that still hold unfiled notes, with their note count and whether a scanned repository points at them. Read-only, no MCP twin — organizing is a human act (see [ADR-0023](../adr/0023-note-ownership-knowledge-organize.md)) |
+| `ReassignLandingNotes` | `(sourceId, targetId) → int` | re-file every note from a landing project into a target real project (or "Uncategorized"); returns the number moved. Source must be a landing project; target must be a scanned project or the default. No MCP twin |
+| `DeleteLandingProject` | `(id, deleteNotes bool) → error` | delete an `import_placeholder` landing project; when it still holds notes `deleteNotes` must be true to confirm removing them along with it. The default and scanned projects are always refused — deletion is a confirmed action, never an automatic cascade. No MCP twin |
+
+**OrganizeGroup**: `{ project_id, name, root_path, kind, note_count, repo_bound }`.
+
+**MergePreview**: `{ target_id, target_name, new_root, siblings: MergeSibling[], repos, notes, todos }`, where `MergeSibling`: `{ id, name, root_path, repos, notes, todos }`; an empty `siblings` means there is nothing to absorb.
 
 **ProjectResponse** (excerpt):
 
 ```json
 {
   "id": 1, "name": "my-project", "root_path": "/Users/me/code/my-project",
-  "is_starred": true, "repo_count": 2,
+  "is_starred": true, "repo_count": 2, "project_kind": "scanned",
   "total_added": 1200, "total_deleted": 300,
   "my_added": 800, "my_deleted": 200, "my_files": 15,
   "is_workday": true, "below_standard": false

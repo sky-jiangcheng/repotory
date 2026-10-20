@@ -140,10 +140,21 @@ func TestGetProjectsEnrichment(t *testing.T) {
 	}
 
 	projects := svc.GetProjects("2026-08-15", false)
-	if len(projects) != 1 {
-		t.Fatalf("expected 1 project, got %d", len(projects))
+	// The dashboard list now also carries the seeded default ("Uncategorized")
+	// landing project (ADR-0023), so the result is the repo-backed project plus
+	// the default. Locate the seeded one by id rather than by index/count.
+	if len(projects) != 2 {
+		t.Fatalf("expected the seeded project plus the default landing project, got %d", len(projects))
 	}
-	p := projects[0]
+	var p ProjectResponse
+	for _, x := range projects {
+		if x.ID == pid {
+			p = x
+		}
+	}
+	if p.ID != pid {
+		t.Fatalf("seeded project %d missing from GetProjects output: %+v", pid, projects)
+	}
 	if p.RepoCount != 1 || p.MyAdded != 600 || p.TotalAdded != 600 {
 		t.Errorf("enrichment wrong: %+v", p)
 	}
@@ -196,10 +207,10 @@ func TestGetHeatmapDataProjectFilter(t *testing.T) {
 func TestUpdateProjectLevelValidation(t *testing.T) {
 	svc, _ := setupService(t)
 	pid := seedProject(t, svc.db, "p", "/tmp/p")
-	if _, err := svc.UpdateProjectLevel(pid, "sideways"); err == nil {
+	if _, err := svc.UpdateProjectLevel(pid, "sideways", false); err == nil {
 		t.Error("expected error for invalid direction")
 	}
-	if _, err := svc.UpdateProjectLevel(999, "up"); err == nil {
+	if _, err := svc.UpdateProjectLevel(999, "up", true); err == nil {
 		t.Error("expected error for missing project")
 	}
 }

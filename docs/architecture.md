@@ -73,7 +73,7 @@ flowchart TB
 
 ### 知识源运行时（ADR-0002，C11 修订）
 
-脚本插件运行时（yaegi）已移除（C11）；知识源注册表 + 幂等 upsert 管线保留，六个内置 agent 记忆源（claude/codex/opencode/openclaw/hermes/cursor）经 `RegisterSource`/`RegisterSourceManual` 注册。
+脚本插件运行时（yaegi）已移除（C11）；知识源注册表 + 幂等 upsert 管线保留，八个内置 agent 记忆源（claude/codex/opencode/openclaw/hermes/cursor/codebuddy/codebuddy-memory）经 `RegisterSource`/`RegisterSourceManual` 注册。
 
 ## 前端（web/src）
 
@@ -115,6 +115,39 @@ flowchart TB
 | `repotory-mcp` | `cmd/mcp` | MCP stdio 服务器（知识库查询 + agent-score 自检） |
 
 CI（`.github/workflows/release.yml`）多平台构建 + macOS 签名公证；文档站（`pages.yml`）由 `scripts/build-docs.mjs` 从 `docs/**/*.md` 生成后部署 GitHub Pages。
+
+## 人机双端拓扑
+
+人的一侧（桌面应用、VS Code 扩展）与 agent 的一侧（MCP、llms.txt）汇入同一个本地知识库——一个 service 层之下是一份 SQLite；`repotory-init` 一条命令完成 agent 侧注册：
+
+两条路径汇于同一个本地知识库——人这一侧（桌面应用、VS Code 扩展）、Agent 那一侧（MCP 工具、llms.txt），下面同一套 service 层，`repotory-init` 一条命令把 Agent 侧接好：
+
+```mermaid
+flowchart TB
+    subgraph HUMAN[👤 人类用户 — 在 IDE 里可见]
+        direction LR
+        DESKTOP[桌面应用]
+        VSCODE[VS Code 扩展<br/>VS Code · Cursor · Windsurf]
+    end
+    subgraph AGENT[🤖 AI Agent 用户 — 工具面]
+        direction LR
+        MCP[repotory-mcp · 13 个 MCP 工具]
+        DSH[dsh Harness 插件 · llms.txt]
+    end
+    subgraph CORE[🧠 本地知识库 — 唯一事实源]
+        direction LR
+        SVC[internal/service] --- DB[(SQLite + FTS5)]
+    end
+    HUMAN ~~~ AGENT ~~~ CORE
+    INIT[⚡ repotory-init · 一条命令完成注册]
+    INIT --> MCP
+    DESKTOP --> SVC
+    VSCODE --> SVC
+    MCP --> SVC
+    DSH --> SVC
+```
+
+> `repotory_context` 在会话开始注入、`repotory_handoff` 在会话结束沉淀——闭环跨 agent 成立的原因：handoff 存在本地 SQLite，而不是任何 agent 的私有记忆里。
 
 ## 命名分层
 

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"database/sql"
+	"errors"
 	"testing"
 
 	"repotory/internal/db"
+	"repotory/internal/domain"
 )
 
 // Regression guard for a bug where MergeProjectUp / SplitProjectDown computed
@@ -31,13 +34,13 @@ func TestUpdateProjectLevel_PersistsLevelOverride(t *testing.T) {
 	}
 
 	// Split creates per-repo projects and drops the group to -1.
-	if _, err := svc.UpdateProjectLevel(pid, "down"); err != nil {
+	if _, err := svc.UpdateProjectLevel(pid, "down", false); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	assertLevel("after down", -1)
 
 	// Merging back must climb out of -1, not stay there reporting +1 forever.
-	if _, err := svc.UpdateProjectLevel(pid, "up"); err != nil {
+	if _, err := svc.UpdateProjectLevel(pid, "up", true); err != nil {
 		t.Fatalf("up: %v", err)
 	}
 	assertLevel("after up", 0)
@@ -52,7 +55,7 @@ func TestUpdateProjectLevel_ConsecutiveUpEachAdvance(t *testing.T) {
 
 	var last int
 	for i := 1; i <= 3; i++ {
-		res, err := svc.UpdateProjectLevel(pid, "up")
+		res, err := svc.UpdateProjectLevel(pid, "up", true)
 		if err != nil {
 			t.Fatalf("up #%d: %v", i, err)
 		}
@@ -81,7 +84,7 @@ func TestUpdateProjectLevel_DownOnSingleRepoStillMovesLevel(t *testing.T) {
 	pid := seedProject(t, svc.db, "leaf", dir)
 	seedRepo(t, svc.db, dir+"/only", pid)
 
-	res, err := svc.UpdateProjectLevel(pid, "down")
+	res, err := svc.UpdateProjectLevel(pid, "down", false)
 	if err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -108,14 +111,14 @@ func TestUpdateProjectLevel_SplitThenMergeIsReversible(t *testing.T) {
 	seedRepo(t, svc.db, root+"/b", group)
 	seedRepo(t, svc.db, root+"/c", group)
 
-	if _, err := svc.UpdateProjectLevel(group, "down"); err != nil {
+	if _, err := svc.UpdateProjectLevel(group, "down", false); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	// Collect the ids that still exist: the group plus whatever the split
 	// created (the survivors keep their notes, so the group id is still live).
 	var live []int64
 	for id := int64(1); id <= 8; id++ {
-		if p, err := db.GetProjectByID(svc.db, id); err == nil && p != nil {
+		if p, err := db.GetProjectByID(svc.db, id); err == nil && p != nil && p.ProjectKind == domain.ProjectKindScanned {
 			live = append(live, p.ID)
 		}
 	}
@@ -125,13 +128,13 @@ func TestUpdateProjectLevel_SplitThenMergeIsReversible(t *testing.T) {
 
 	// Merge any of the split-off projects back up. This is the step that used
 	// to abort on the root_path unique constraint.
-	if _, err := svc.UpdateProjectLevel(live[0], "up"); err != nil {
+	if _, err := svc.UpdateProjectLevel(live[0], "up", true); err != nil {
 		t.Fatalf("up after split: %v", err)
 	}
 
 	var after []int64
 	for id := int64(1); id <= 8; id++ {
-		if p, err := db.GetProjectByID(svc.db, id); err == nil && p != nil {
+		if p, err := db.GetProjectByID(svc.db, id); err == nil && p != nil && p.ProjectKind == domain.ProjectKindScanned {
 			after = append(after, p.ID)
 		}
 	}
@@ -152,5 +155,115 @@ func TestUpdateProjectLevel_SplitThenMergeIsReversible(t *testing.T) {
 	}
 	if len(repos) != 3 {
 		t.Errorf("merged project holds %d repos, want 3", len(repos))
+	}
+}
+
+// A confirmed "merge up" deletes sibling projects and moves their notes, todos and
+// repositories into the survivor. That is deletion, so the binding must refuse an
+// unconfirmed call outright — and the refusal must not leave partial damage behind.
+// Enforced at the service layer on purpose: the same method is reachable over plain
+// HTTP by any client, so a UI-only guard would be a suggestion.
+func TestUpdateProjectLevel_UpRefusesWithoutConfirmation(t *testing.T) {
+	svc, _ := setupService(t)
+	parent := "/tmp/mergeconfirm"
+	group := seedProject(t, svc.db, "grp", parent+"/grp")
+	sibling := seedProject(t, svc.db, "sibling", parent+"/sibling")
+	seedRepo(t, svc.db, parent+"/grp/repo-a", group)
+	if _, err := db.CreateNoteEx(svc.db, sibling, "兄弟笔记", "内容", "", "knowledge", "manual"); err != nil {
+		t.Fatalf("seed note: %v", err)
+	}
+
+	if _, err := svc.UpdateProjectLevel(group, "up", false); !errors.Is(err, ErrMergeNeedsConfirmation) {
+		t.Fatalf("unconfirmed merge must be refused with ErrMergeNeedsConfirmation, got %v", err)
+	}
+	if _, err := db.GetProjectByID(svc.db, sibling); err != nil {
+		t.Fatalf("the refusal must destroy nothing, but the sibling is gone: %v", err)
+	}
+
+	if _, err := svc.UpdateProjectLevel(group, "up", true); err != nil {
+		t.Fatalf("confirmed merge: %v", err)
+	}
+	if _, err := db.GetProjectByID(svc.db, sibling); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("a confirmed merge should delete the sibling, got err=%v", err)
+	}
+}
+
+// The confirmation dialog is only worth having if what it shows is what the merge
+// does. Both go through db.MergePlan/the same sibling listing, and this pins the
+// agreement numerically: preview counts == what actually arrives.
+func TestPreviewProjectMergeUpMatchesTheMerge(t *testing.T) {
+	svc, _ := setupService(t)
+	parent := "/tmp/mergepreview"
+	group := seedProject(t, svc.db, "grp", parent+"/grp")
+	sibling := seedProject(t, svc.db, "sib", parent+"/sib")
+	seedRepo(t, svc.db, parent+"/grp/repo-a", group)
+	seedRepo(t, svc.db, parent+"/sib/repo-b", sibling)
+	for _, title := range []string{"笔记一", "笔记二"} {
+		if _, err := db.CreateNoteEx(svc.db, sibling, title, "内容", "", "knowledge", "manual"); err != nil {
+			t.Fatalf("seed note %s: %v", title, err)
+		}
+	}
+	if _, err := db.CreateTodo(svc.db, sibling, "待办一"); err != nil {
+		t.Fatalf("seed todo: %v", err)
+	}
+
+	pre, err := svc.PreviewProjectMergeUp(group)
+	if err != nil {
+		t.Fatalf("PreviewProjectMergeUp: %v", err)
+	}
+	if pre.NewRoot != parent {
+		t.Errorf("preview NewRoot = %q, want %q", pre.NewRoot, parent)
+	}
+	if len(pre.Siblings) != 1 || pre.Siblings[0].ID != sibling {
+		t.Fatalf("preview must list exactly the one absorbable sibling, got %+v", pre.Siblings)
+	}
+	if pre.Siblings[0].Name != "sib" {
+		t.Errorf("preview should name the sibling for the dialog, got %q", pre.Siblings[0].Name)
+	}
+	if pre.Notes != 2 || pre.Todos != 1 || pre.Repos != 1 {
+		t.Errorf("preview totals = notes %d todos %d repos %d, want 2/1/1", pre.Notes, pre.Todos, pre.Repos)
+	}
+
+	if _, err := svc.UpdateProjectLevel(group, "up", true); err != nil {
+		t.Fatalf("confirmed merge: %v", err)
+	}
+	// The survivor must hold exactly what the preview promised it would gain.
+	if n, err := db.CountProjectNotes(svc.db, group); err != nil || n != pre.Notes {
+		t.Errorf("notes after merge = %d (err %v), preview said %d", n, err, pre.Notes)
+	}
+	if got := len(svc.ListTodos(group)); got != pre.Todos {
+		t.Errorf("todos after merge = %d, preview said %d", got, pre.Todos)
+	}
+	repos, err := db.GetRepositoriesByProjectID(svc.db, group)
+	if err != nil {
+		t.Fatalf("repos after merge: %v", err)
+	}
+	// group kept its own repo and gained the sibling's one.
+	if len(repos) != 2 {
+		t.Errorf("repos after merge = %d, want 2 (own 1 + previewed 1)", len(repos))
+	}
+}
+
+// A missing project answers with the domain error rather than a wrapped driver
+// message, and a project with nothing to absorb previews an empty list (so the UI can
+// say "no sibling here" instead of confirming a no-op).
+func TestPreviewProjectMergeUp_Edges(t *testing.T) {
+	svc, _ := setupService(t)
+	if _, err := svc.PreviewProjectMergeUp(999999); !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("missing project: got %v, want ErrProjectNotFound", err)
+	}
+
+	root := "/tmp/mergealone"
+	lonely := seedProject(t, svc.db, "lonely", root+"/lonely")
+	seedRepo(t, svc.db, root+"/lonely/repo", lonely)
+	pre, err := svc.PreviewProjectMergeUp(lonely)
+	if err != nil {
+		t.Fatalf("preview of a lonely project: %v", err)
+	}
+	if len(pre.Siblings) != 0 {
+		t.Errorf("nothing should be absorbable here, got %+v", pre.Siblings)
+	}
+	if pre.Notes != 0 || pre.Todos != 0 || pre.Repos != 0 {
+		t.Errorf("empty preview must total zero, got %+v", pre)
 	}
 }

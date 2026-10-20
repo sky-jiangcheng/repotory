@@ -49,6 +49,20 @@ func New(database *sql.DB) *Importer {
 // Source returns the stable source identifier "opencode".
 func (i *Importer) Source() string { return SourceName }
 
+// Probe reports whether OpenCode's session storage exists on this machine:
+// <dataroot>/storage/session is a directory. Read-only stat only; the content
+// walk belongs to Import.
+func (i *Importer) Probe() plugin.ProbeResult {
+	root, ok := sessionRoot()
+	if !ok {
+		return plugin.ProbeResult{Detail: "无法解析 OpenCode 数据目录"}
+	}
+	if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		return plugin.ProbeResult{Detail: "未发现 OpenCode 会话存储（" + root + " 不存在）"}
+	}
+	return plugin.ProbeResult{Detected: true, Detail: "发现 OpenCode 会话存储：" + root}
+}
+
 // sessionFile is the subset of OpenCode's session JSON we rely on. Unknown
 // fields are ignored so schema drift in unrelated fields does not break import.
 type sessionFile struct {
@@ -57,11 +71,29 @@ type sessionFile struct {
 	Directory string `json:"directory"`
 	Title     string `json:"title"`
 	Slug      string `json:"slug"`
-	Summary   string `json:"summary"`
+	Summary   summaryField `json:"summary"`
 	Time      struct {
 		Created int64 `json:"created"`
 		Updated int64 `json:"updated"`
 	} `json:"time"`
+}
+
+// summaryField tolerates summary's two observed shapes: a one-line string in
+// older exports and an object ({"additions":..,"deletions":..,"files":..}) in
+// current ones. A strict string field made json.Unmarshal reject every real
+// session file, so the whole source silently imported 0 notes (rehearsal
+// finding, 2026-10-18). Object/null/anything-not-a-string decodes to empty;
+// the title/slug fallback chain still yields a usable note.
+type summaryField string
+
+func (f *summaryField) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = summaryField(s)
+		return nil
+	}
+	*f = ""
+	return nil
 }
 
 // Import walks the OpenCode session storage and returns one note per session.
@@ -101,7 +133,7 @@ func (i *Importer) docFor(path string, projects []db.Project, repos []db.Reposit
 	if title == "" {
 		title = strings.TrimSpace(s.Slug)
 	}
-	summary := strings.TrimSpace(s.Summary)
+	summary := strings.TrimSpace(string(s.Summary))
 	if title == "" && summary == "" {
 		return plugin.ImportDoc{}, false // nothing usable
 	}
@@ -111,6 +143,7 @@ func (i *Importer) docFor(path string, projects []db.Project, repos []db.Reposit
 	content = memsrc.ClipToBytes(content, db.MaxNoteContentLen)
 	return plugin.ImportDoc{
 		ProjectID: pid,
+		RepoPath:  s.Directory, // when pid==0 the runtime lands the note on a placeholder named for this repo (ADR-0023)
 		Title:     noteTitle(title, s.ID),
 		Content:   content,
 		Kind:      "log",

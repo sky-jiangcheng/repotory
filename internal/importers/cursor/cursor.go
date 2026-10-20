@@ -83,6 +83,21 @@ func New(database *sql.DB) *Importer { return &Importer{db: database} }
 // Source returns the stable source identifier "cursor".
 func (i *Importer) Source() string { return SourceName }
 
+// Probe reports whether Cursor's session state database exists on this
+// machine. Read-only stat only — the SQLite layout check (and its loud drift
+// error) belongs to Import, not to settings-page presence detection.
+func (i *Importer) Probe() plugin.ProbeResult {
+	statePath, ok := stateDBPath()
+	if !ok {
+		return plugin.ProbeResult{Detail: "无法解析配置目录（Cursor 会话探活）"}
+	}
+	fi, err := os.Stat(statePath)
+	if err != nil || fi.IsDir() {
+		return plugin.ProbeResult{Detail: "未发现 Cursor 会话库（state.vscdb 不存在）"}
+	}
+	return plugin.ProbeResult{Detected: true, Detail: fmt.Sprintf("发现 Cursor 会话库 state.vscdb（%.1f MB）", float64(fi.Size())/(1<<20))}
+}
+
 // composer is one Cursor session header row.
 type composer struct {
 	ComposerID  string
@@ -168,9 +183,11 @@ func (i *Importer) Import() ([]plugin.ImportDoc, error) {
 	for _, c := range composers {
 		ws, mapped := wsProjects[c.WorkspaceID]
 		if !mapped {
-			// Every entry in the map already resolved to a real project, so an
-			// absent key covers both "no workspace.json" and "no matching
-			// project": the session is skipped rather than guessed onto one.
+			// An absent key means the workspace had no resolvable folder path at
+			// all (no workspace.json), so there is nothing to land even a
+			// placeholder on — the session is skipped. A folder that exists but
+			// matches no project is present with pid=0 and is landed by the runtime
+			// (ADR-0023).
 			skippedNoProject++
 			continue
 		}
@@ -338,6 +355,7 @@ func docFor(c composer, wsPath string, pid int64, first, last string) plugin.Imp
 	content := memsrc.ClipToBytes(renderNote(c, wsPath, first, last), db.MaxNoteContentLen)
 	return plugin.ImportDoc{
 		ProjectID: pid,
+		RepoPath:  wsPath, // when pid==0 the runtime lands the note on a placeholder named for this folder (ADR-0023)
 		Title:     noteTitle(c.ComposerID),
 		Content:   content,
 		Kind:      "log",
@@ -419,9 +437,11 @@ type workspaceTarget struct {
 }
 
 // workspaceProjects maps workspaceId -> (project id, folder path) by reading
-// Cursor's per-workspace storage, the same layout VS Code uses. Unresolvable
-// ids are simply absent from the map, and their sessions get skipped — the
-// importer never attaches a session to a project it is not sure about.
+// Cursor's per-workspace storage, the same layout VS Code uses. A folder that
+// matches no existing project is kept with pid=0 so the runtime can land its
+// notes on a placeholder; only workspaces with no resolvable folder path are
+// absent from the map (ADR-0023 changed the earlier "skip anything not surely a
+// project" behaviour so imports no longer silently drop knowledge).
 func workspaceProjects(statePath string, projects []db.Project, repos []db.Repository) map[string]workspaceTarget {
 	out := map[string]workspaceTarget{}
 	root := filepath.Join(stateRoot(statePath), "workspaceStorage")
@@ -443,9 +463,11 @@ func workspaceProjects(statePath string, projects []db.Project, repos []db.Repos
 			continue
 		}
 		pid := memsrc.MatchProject(memsrc.LastPathSegment(path), projects, repos)
-		if pid == 0 {
-			continue
-		}
+		// A workspace whose folder matches no existing project is KEPT with pid=0
+		// and its real path, so the runtime lands its notes on a placeholder project
+		// (which a later scan of that folder promotes to a real one) rather than
+		// dropping them (ADR-0023). Workspaces with no resolvable folder path stay
+		// absent from the map and still skip.
 		out[e.Name()] = workspaceTarget{pid: pid, path: path}
 	}
 	return out

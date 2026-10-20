@@ -38,10 +38,32 @@ flowchart TB
 
 ## 备份
 
+### 冷备份（复制目录）
+
 1. **退出 Repotory**（数据库为 WAL 模式，运行中直接复制可能丢失未落盘的 WAL 内容）
 2. 复制整个数据目录 `repotory/`（或至少 `repotory.db` 与 `repotory.db-wal` / `repotory.db-shm`）
 
 建议在更换磁盘、大版本升级前做一次冷备份；日常也可以把数据目录纳入你的时间机 / 文件历史等整盘备份。
+
+### 内置每日快照（L1，默认开）
+
+应用启动与每小时重试时会用 `VACUUM INTO` 产出当天快照，落在数据目录的 `backups/` 下（`repotory-YYYY-MM-DD.db`，权限 0600）；每天首份成功后当天其余尝试都是 no-op。轮转默认保留 14 份（`backup_retain` 可调）。设置 → 操作里有「立即备份」按钮；`backup_enabled=0` 可整体关闭（关闭后手动/定时都会被明确拒绝）。
+
+### 远端推送（L2，默认关）
+
+可选的异地副本：在 **设置 → 操作 → 数据库备份** 里配置一个 S3 兼容对象存储（AWS S3、Cloudflare R2、NAS 上的 MinIO 均可），每日本地快照生成后会自动上传到你的桶。隐私门与 AI 功能一致——**凭据未配置 = 零外发**，且只上传快照副本，活库文件与 WAL/SHM sidecar 绝不上传。对象名就是快照文件名（`<前缀>/repotory-YYYY-MM-DD.db`，前缀默认 `repotory`），当天已存在即跳过，上传失败下一小时自动重试。
+
+配置键（设置页或 `UpdateConfig`）：`backup_remote_enabled`（开关）、`backup_remote_endpoint`、`backup_remote_bucket`、`backup_remote_prefix`（可选）、`backup_remote_access_key`、`backup_remote_secret_key`。
+
+### Docker 部署（headless，NAS/homelab）
+
+仓库根提供 `Dockerfile` 与 `docker-compose.yml`：单容器跑 `repotory-server`（同源托管前端），数据卷挂在 `/data`。数据目录由 `XDG_CONFIG_HOME=/data` 定位到卷内（`/data/repotory/repotory.db`），备份快照自然落在 `/data/repotory/backups/`——把该目录再纳入宿主机的备份计划即可。远端推送在容器内同样通过 `backup_remote_*` 配置键启用。
+
+```bash
+docker compose up -d --build     # 默认端口 18765，浏览器打开 http://localhost:18765
+```
+
+> 服务仍**只绑定容器内所有接口但无认证**——不要把端口直接暴露到公网；远程访问请先补认证（见 `docs/api/reference.md` 的信任边界说明）。
 
 ## 换机迁移
 

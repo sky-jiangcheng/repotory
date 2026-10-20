@@ -8,6 +8,7 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { accessSync } from "node:fs";
+import { exec } from "node:child_process";
 import { McpStdioClient } from "./mcpClient.js";
 import { getJson, postJson } from "./headless.js";
 import { NotesSearchProvider, parseSearchHits } from "./notesTree.js";
@@ -126,7 +127,7 @@ async function refreshScope(notes: NotesSearchProvider): Promise<void> {
           `Workspace: ${res.Project.name}${repo ? " / " + repo : ""}\n${dir}\n\nClick to load the session context`;
       }
     } else {
-      notes.setScope("not in the knowledge base yet");
+      notes.setScope("Repotory: not in the knowledge base yet");
     }
   } catch {
     // No headless service: the commands still work through repotory-mcp, so the
@@ -316,9 +317,71 @@ async function registerMcp(context: vscode.ExtensionContext): Promise<void> {
   terminal.show();
 }
 
+// 打开 Repotory 桌面应用：优先用平台原生方式启动，找不到时引导到 Releases 下载。
+async function openDesktop(): Promise<void> {
+  let cmd: string;
+  switch (process.platform) {
+    case "darwin":
+      cmd = "open -a Repotory";
+      break;
+    case "win32":
+      cmd = "start \"\" repotory.exe";
+      break;
+    default:
+      cmd = "repotory";
+      break;
+  }
+  exec(cmd, (err) => {
+    if (err) {
+      void vscode.window
+        .showErrorMessage(
+          "Repotory: 桌面应用未找到。请先从 GitHub Releases 下载并安装 Repotory 桌面应用。",
+          "打开 Releases 页面",
+        )
+        .then((choice) => {
+          if (choice === "打开 Releases 页面") {
+            void vscode.env.openExternal(
+              vscode.Uri.parse(
+                "https://github.com/sky-jiangcheng/repotory/releases",
+              ),
+            );
+          }
+        });
+    }
+  });
+}
+
+// 首次安装引导：让新用户一眼看出这是 Repotory 扩展，并知道第一步该做什么。
+async function onboard(context: vscode.ExtensionContext): Promise<void> {
+  const already = context.globalState.get<boolean>("repotory.onboarded");
+  if (already) return;
+
+  const choice = await vscode.window.showInformationMessage(
+    "👋 欢迎使用 Repotory 扩展 — 你的本地知识库已集成到 IDE。\n\n" +
+      "开始使用前，请先：\n" +
+      "1. 安装 repotory-mcp（GitHub Releases，或随桌面应用一同安装）；\n" +
+      '2. 运行 "Repotory: Register MCP Server" 把 MCP 服务器注册到你的 AI 客户端；\n' +
+      '3. 打开一个代码文件夹，点击状态栏 "Repotory" 或按 ⌘K 加载会话上下文。',
+    "安装 repotory-mcp",
+    "注册 MCP 服务器",
+    "稍后再说",
+  );
+
+  if (choice === "安装 repotory-mcp") {
+    void vscode.env.openExternal(
+      vscode.Uri.parse("https://github.com/sky-jiangcheng/repotory/releases"),
+    );
+  } else if (choice === "注册 MCP 服务器") {
+    await registerMcp(context);
+  }
+
+  await context.globalState.update("repotory.onboarded", true);
+}
+
 // ---------------------------------------------------------------- lifecycle
 
 export function activate(context: vscode.ExtensionContext): void {
+  void onboard(context);
   output = vscode.window.createOutputChannel("Repotory", { log: true });
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 60);
   statusItem.text = "$(repo) Repotory";
@@ -352,6 +415,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register("repotory.handoff", writeHandoff);
   register("repotory.search", () => searchKnowledge(notes));
   register("repotory.registerMcp", () => registerMcp(context));
+  register("repotory.openDesktop", () => openDesktop());
 
   context.subscriptions.push(
     statusItem,

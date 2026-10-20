@@ -30,7 +30,7 @@ const mockGetProjects = vi.mocked(getProjects)
 
 // The hook resolves through Promise microtasks; a nested act flush settles
 // them without relying on timers.
-const flush = async () => { await act(async () => {}) }
+const flush = async () => { await act(async () => { await Promise.resolve() }) }
 
 const proj = (id: number, name: string): Project => ({
   id,

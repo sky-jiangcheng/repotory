@@ -1,6 +1,6 @@
 # ADR-0018: 知识图谱底座——受控关系词表让图可查，图感知取证让图被读
 
-- 状态：**Lane 1 Accepted（2026-10-12）**；Lane 2 Proposed（页面向量 + 图感知取证，schema **v23**——原计划的 v22 已被 ADR-0021 的 `page_versions` 于 2026-10-13 落地时占用，尚未开工，前置 = lane 1 已 Accepted ✅ + Phase 0 delta 达标）。（lane 1 内容：schema v21 关系词表（CHECK 由 `wikiRelations` 派生，Go/DDL 单一事实源）+ 编译器选词 + approve 抽取 `mentions` + `lintRelationShape` 三查，契约测试全绿。**晋升依据**：条件 1 真库副本演练 PASS——用户于 2026-10-12 以 `cmd/wiki-rehearse` 对真实 `repotory.db` 只读副本跑通（v20→v21，2 边 0 丢 0 增，`related_to`/`used_in` 各 1 条折叠入 `ref`），产物留档 `v21-rehearse/`；条件 2-4 已随代码落地；条件 5（词表定稿 + 双语文档 + 状态行更新）随本行完成。）
+- 状态：**Lane 1 Accepted（2026-10-12）**；Lane 2 **已落码（schema v23，2026-10-14），晋升 Proposed——门槛已于 2026-10-18 强化为条件 10**（页面向量空间 `page_embeddings` + 增量队列 `page_embed_dirty`；图感知取证 `wiki_graph_search` 默认关、零回退；纯 Go PPR 定序。晋升条件 7/8/9 已随代码落地并有测试；原条件 6「真实标注 delta 为正」已于 2026-10-15 过门（+0.094 @k=10），但那次度量是在 **7 页 2 边**的稀疏图上做的、属下限，故晋升改挂条件 10 的强化门槛）。
 - 日期：2026-10-09
 - 关联：[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（本文兑现其"先补结构"承诺的下半段——结构有了但要能查询；并兑现其决策 5 lint"数据缺口"一查的具体形状、并收口其待决"语义融合是否扩到 wiki_pages"）、[ADR-0015](0015-w3-minimal-compile-loop.md)（本文不违反其"编译器永不修改已批准页"——新增只发生在边/待审面）、[ADR-0016](0016-async-batch-jobs.md)（lane 2 若慢，复用一表两内核）、[ADR-0012](0012-semantic-search.md)（RRF 语义融合）、[ADR-0013](0013-vector-database-selection.md)（零 CGO 向量存储）、[ADR-0010](0010-session-auto-capture.md)（敏感能力默认关的纪律）；TODO **M6** 的收口 + 新增 **M7**；起点 schema v20
 - 配套实施计划：`outputs/process-logs/Repotory-知识图谱实施计划-2026-10-09.md`（本 ADR = 其 Phase 1 + Phase 2；Phase 3 实体消歧、Phase 4 社区摘要与时态图各自单开 ADR-0019/0020/0021）
@@ -100,3 +100,6 @@ Phase 0——真实标注 query 集 + `abeval` delta（`cmd/queryset`/`cmd/abeva
 7. 页向量独立空间：`page#N` 与 `note#N` 同时存在时 RRF 不串号（构造专项回归）；`wiki_graph_search` 关时 `evidencePages` 结果与今天**逐条一致**（零行为回退）；
 8. PPR 纯函数单测（收敛、边权、reset 投影）+ 递归 CTE 环/深度上界测试；`vectorStore()` memo 在配置变更后对页面路径同样失效（防用旧端点）；
 9. 三重预算仍兜得住邻居扩召回（deadline 触发即停在已收集集合，不超发）。
+
+10. **（2026-10-18 用户拍板，采纳草案条款原文。它取代条件 6 的「delta 为正」下限，成为 lane 2 唯一硬门）**：Phase 0 已过的 +0.094 是在 **7 页 2 边**的稀疏图上量到的，属**下限**、不可外推为「图感知普遍优于 FTS」。故 lane 2 晋升 Accepted 的前置改为：① 图密度达 **approved 页 >= 15 且边 >= 20**；② 在该密度下复跑 `cmd/abeval -mode evidence`，delta 仍 **> +0.05** 且 **k=2..20 全区间为正**、无一例回退；③ 逐案诊断 `cmd/abevaldiag -mode evidence` 确认增益仍形如「命中种子页 -> 沿白名单边带出邻接页」。未达 ①②③，lane 2 维持 Proposed、`wiki_graph_search` 维持默认关。当前密度 6 页 / 5 边（2026-10-18），达标路径见 `TODO.md` 的「图密度欠账」条与同日拍板的路线①（BookStore 日志挂机分轮编译）。
+- **修订记录（2026-10-19）**：这条门槛此前只存在于 `TODO.md` 的一行「ADR-0018 lane 2 晋升限定（已决策 2026-10-18）」中，而本 ADR 正文的条件 6 只写「delta 为正且过 `abeval` 门」——**正文弱于实际拍板结果**，照正文执行会放行一次不满足 ①②③ 的晋升。现按草案原文回写为条件 10（英文镜像因两份编号本就不同源，落在条件 11），TODO 那行随之移除。状态行「晋升 Proposed 待 Phase 0 delta」同步更正：Phase 0 已于 2026-10-15 过门，真正待达的是本条。

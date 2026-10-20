@@ -4,9 +4,141 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
-## [Unreleased]
+## [2.9.1] - 2026-10-20
 
 ### 新增
+
+- **AI 问答证据的 L0/L1 两段式打包（学自 ai-memory 的 brief tiers）**：证据字符预算原来按整条准入——一个 600 字的页面会挤掉后面的三个候选。现改为两级：**L0 先用短摘录（页 200/笔记 140 字）把预算花在「看见更多不同证据」上，再按相关度顺序用剩余预算逐条加深到全文上限**；加深是全有或全无（半深的摘录是两种形态里最差的），预算仍是硬顶。答案引用与前端卡片行为不变——同预算下覆盖更全、头部证据更深。
+- **wiki 页访问强化信号底座（schema v26，学自 ai-memory 的 access-weighted retention）**：`wiki_pages` 新增 `access_count` / `last_accessed_at`，页面被纳入 AI 问答证据即计一次使用（**每页每分钟限频一次**，搜索突发不会刷写放大）。纯信号层：今天没有任何行为读它改判断，迁移纯增量、老页如实显示「从未使用」。衰减曲线与自动压缩**有意不做**——自动改写批准页违反人在环纪律，压缩类建议只能走 lint 待办。
+- **CONTRIBUTING 新增「默认值变更须先过评测门」惯例**：把功能从默认关改默认开（或放宽任何默认值）必须先在评测设施上跑出达标数据并贴 PR（检索类 abeval、备份类恢复演练）——把 M3 与 lane 2 两次以数据拍板的先例成文。
+- **外部竞品分析**：`docs/product-review/2026-10-20-ai-memory.md` 拆解跨 agent 会话记忆项目 ai-memory 的五层架构与优劣势，并落地其中三项可学机制（见上）。
+
+### 变更
+
+- **README 瘦身重构（433 → 339 行，中英同步）**：参照 ai-memory 的文档分层与顶流项目惯例——架构拓扑图移出 README，进 `docs/architecture.md` 新「人机双端拓扑」节；120 行功能巨表迁入新页 `docs/features-overview.md`（双语，已登记文档站侧栏），README 收成 6 条分组 bullets；快速开始前置到定位陈述之后。深度归 docs、门面归 README 的分工就此定型；文档站构建与双语镜像校验通过。
+
+## [2.8.0] - 2026-10-19
+
+### 新增
+
+- **知识源导入 dry-run 预览（ADR-0011 决策 4 收口）**：设置 → 插件的每个知识源新增「预览」按钮——复用导入器自身的输出跑一次**只读**分类，按与真实导入相同的幂等键 `(project, source, title)` 判定将**新建**几条、**更新**几条并列出标题，全程零写入（不建笔记、不建占位项目、不计入导入统计、不发导入事件）；落点按只读方式解析（已有项目归其下、无项目的路径保持 project 0、空路径落「未分类」）。实现链：runtime `PreviewImport`（与 `TriggerImport` 同一把 `importMu` 串行）→ 服务 `PreviewKnowledgeImport` → 桌面绑定 `PreviewKnowledgeImport`（desktop-only，`surface.go` 登记理由与触发器同门），db 层新增 `FindProjectIDByRootPath` 只读助手（`EnsureImportPlaceholder` 查找半的读侧）。回归 `TestPreviewImportWritesNothing` 钉「零写入」不变量（对比预览前后 notes/projects 计数、断言无主路径的条目 project 0），`TestPreviewImportUnknownSource` 钉未知源报错。ADR-0011 由此晋升 Accepted，双语手册同步。
+- **RunBackupNow 设置页按钮（ADR-0025 L1 收尾）**：v2.6.0 落地了每日本地快照与 `RunBackupNow` 绑定，但设置页一直没有入口（注释原话「设置页按钮未接，脚本可调」）。现补上：设置 → 操作新增「数据库备份」组——「立即备份」按钮调用既有绑定，完成后报出快照落盘路径；当天已有快照时后端本就是 no-op，文案如实说明。新端点 `runBackupNow()` 沿既有 `call` 通道。
+- **wiki lint 新增 community-incoherent 模型检查（ADR-0020 收尾）**：`synthesis` 综述页此前只有结构性体检（孤页/链接），「综述是否忠实于其成员页」无人看。现把该检查并入 `wiki_lint_llm` 的模型半：payload 里 synthesis 页附上经 `page_links` 解析出的 members 成员页清单，提示词新增第三类发现 `community-incoherent`（综述与成员页明显不一致/遗漏/歪曲关键结论）。信任规则与既有两类一致——模型只能建议（findings 落 `[lint]` 待办，绝不改页）、page_id 必须能在库里查到、回复解析不出 JSON 就一条不采信；未知类型仍按既有口径降级为 stale。门不变：`wiki_lint_llm` 默认关。
+
+- **数据库快照远端推送（[ADR-0025](docs/adr/0025-backup-recovery.md) L2 落码，默认关）**：每天本地快照生成后，可选推送到你自己的 S3 兼容对象存储（AWS S3 / Cloudflare R2 / NAS 上的 MinIO 均可，`minio-go` 纯 Go 零 CGO 实现）。隐私门与 AI 功能同款：六键 `backup_remote_*` 默认全空 = **零外发**——开关未开或凭据不全时客户端根本不被构造（回归把「零外发」钉在行为上）；只上传快照副本，活库与 WAL/SHM sidecar 永无对象名（对象键正则回归钉死）。对象名即快照文件名（前缀默认 `repotory`），当天已存在即跳过、失败下一小时自动重试；`RunBackupNow` 返回契约不变（仍是本地路径）。设置 → 操作 → 数据库备份提供开关与五项表单（密钥输入框走密码型）。决策 3 的「只定型不落码」就此收口，形态二（快照上传）实现、形态一（Litestream sidecar）降为部署文档可选项。
+- **Docker 部署档（ADR-0025，NAS/homelab）**：仓库根新增 `Dockerfile`（三段构建：web `build:server` → CGO_ENABLED=0 的 `repotory-server` → alpine 运行层）与 `docker-compose.yml`（单容器 + 数据卷，宿主侧默认只绑 loopback）。数据目录经 `XDG_CONFIG_HOME=/data` 定位到卷内，`repotory.db` 与每日快照 `backups/` 都在卷上，可整目录纳入宿主备份计划；远端推送在容器内用同一组 `backup_remote_*` 键启用。手册「数据与备份」新增 L1/L2/Docker 三节（中英）。
+
+### 修复
+
+- **审核页滚动时整个外壳（含导航栏）被滚出视野、视口下半部落入空白（用户实测三连截图定位）**：根滚动器被撑到了文档深度——`.visually-hidden` 等绝对定位元素以初始包含块为包含块（`.app` 与 body 均非定位元素），把根画布顶到 1822px（视口 745px），`html` 因此可滚；滚轮一旦路由到根滚动器（悬浮按钮上方、overscroll 链、WKWebView 根偏好），整个 `.app` 连导航栏一起滚走，滚过头后视口落在应用之外只剩背景色与悬浮 FAB——「顶部被遮盖」「内容被截断」「整页空白」三种报告同源。双层修复：`html, body { overflow: hidden }` 把根滚动结构性关死（应用外壳是固定 100vh 框架，一切滚动都发生在 `#main-content` 内），`.app { position: relative }` 收容绝对定位后代使其在壳内裁剪。headless Chrome + CDP 实测回归：根画布 1822→745、强制滚根 navTop 恒 0、内层滚动 900px 时导航满格且工具栏冻结在导航正下方、FAB 上滚轮不再拖动外壳（诊断法沿用 v2.6.0 布局实测先例；jsdom 断不了布局）。
+- **仪表盘摘要条与收藏筛选列表完全对不上（同一批截图）**：摘要条恒为全库口径，而列表切「关注」后只显示收藏项目——真库 2026-10-18 只有 `Script/repotory`（未收藏）一个仓库有变更（+2313/-362），于是「顶部 +2313 / 列表全 0」读起来像内部算错，实为两套口径同屏。现给 `GetSummary` 增加 `starredOnly` 作用域（db 层 `GetStatsByDateScope` JOIN 收藏项目），前端把筛选状态传进去，待办计数同口径（关注时只数收藏项目的待办）；`useDashboardData` 的刷新 effect 本就依赖筛选开关，只是参数断在最后一环。RPC 双口径实测：全库 +2313 / 收藏 +0，与列表行严格一致；服务层新回归 `TestGetSummaryScope` 钉住两套口径。摘要条手册（中英）补口径说明。
+
+## [2.7.0] - 2026-10-19
+
+### 变更
+
+- **「向上合并」从此要先确认——因为它会删除项目（项目详情页分组控件）**：复核 `Overview` 页 RPC 面时实测发现，`+`（`MergeProjectUp`）不是"调个数字"：它吸收同一父目录下的全部兄弟项目，把它们的仓库/笔记/待办迁入存活项目，然后**删除这些项目行**，全程零确认、且不可自动撤销（`−` 是按仓库重新拆分，不是 undo）。副本实测：一次 `+` 点掉 12 个同级项目（33 → 21）。现改为服务端强制两步——新增只读绑定 `PreviewProjectMergeUp` 返回"将被吸收删除哪些项目 + 随迁的仓库/笔记/待办计数"（与合并共用同一份兄弟清单 `db.MergePlan`，预览无法少报），UI 先取预览、有可删项才弹确认并展示这些数字；`UpdateProjectLevel` 增加 `confirmed` 形参，未确认的 `up` 直接返回"需要明确确认"而**不产生任何改动**（拦在服务层，不在 UI——同一绑定任何 HTTP 客户端都能调）。该绑定与 `UpdateProjectLevel` 同为 desktop-only，agent 侧本就碰不到。顺带修正两份语言里方向写反的提示（原文"数字越小范围越大"，实际级别越大聚合越宽），并把 `−` 的文案从"降低分组级别"改成语义准确的"按仓库拆分"。手册 `docs/features/project-detail.md`（中英）同步。副本端到端复验：未确认调用后项目数 33→33（零删除）；预览报 12 siblings / 16 notes / 18 todos / 112 repos，确认后实际删除的正是预览点名的 12 个、129 收到 16 条笔记——报数与现实一致。
+- **状态栏「最近提交」从逐仓串行 `git log -1` 改为 16 路并发 + 5 秒总预算**：每个仓库 fork 一次 git、严格串行，实测 140 个已知仓库的冷启动要 2.58s 才出结果（此后才有服务端 TTL 缓存兜住）；单个挂死的仓库（无响应的挂载卷是现实场景）还会把 30s 单仓超时线性堆上来。现改为 16 路并发扇出、总预算 5s——预算 context 同时就是每个 git 调用的硬上界，预算耗尽即停止派发、在途任务随同一 context 收口，早停写日志不静默。对状态栏而言「有界延迟」比「集齐每一个仓库」更对。配套新测试顺带钉死一个环境陷阱：git 身份环境变量（`GIT_AUTHOR_NAME` 等）优先级高于 `-c user.name`，agent 宿主可能进程级导出它们（实测 `GIT_AUTHOR_NAME=zwork`）——测试建仓现在先剥离全部环境 `GIT_*` 再显式钉身份，否则作者过滤用例在宿主机上确定性失败、在开发者机器上却全绿。
+
+### 修复
+
+- **分组容器根的单仓项目 activity 恒为零，且写坏一次永不自愈（schema v24 → v25）**：`mineAndCache` 的聚合守卫 `len(repos) > 1` 只覆盖多仓分组——单仓项目若项目根是容器目录（`<项目根>/<仓库>`，扫描组目录后的常态形状）就由 knowledge.Mine 在非 git 容器里跑 git 探针，静默返回零并缓存进 repo_meta：真库 5 行 repo_meta 中 4 行被污染，其中一行是 6,660 commits 的仓库，activity 显示 0；而没有任何失效机制，修好挖掘也救不回已写坏的行。两步修复：①聚合条件放宽为 `len(repos) >= 1`，沿真实仓库聚合（语言/技术栈本就走工作树、容器安全，不受影响）；②迁移 v25 按**结构性谓词**（`project root <> repository path` 且 activity 为空/`{}`/全零）删除被污染行让既有库重挖——刻意不用证据门（daily_stats 只覆盖 140 仓中的 63 个，按证据只能救回 1/4），合法零提交分组的最坏代价是一次重挖，与 v13 当年接受的代价同款。防漂移测试一并解硬编码：v25 一升就绊了三处钉死 v24 的断言，改为 `currentSchemaVersion(t)` 从新库实读 schema_version，后续迁移不再连环改测试。回归：`TestDropPoisonedActivityMeta` 钉三种形状（污染 / 根即仓库 / 修复后健康），service 层用真 git 仓库复现「容器根单仓」形状验证聚合后计数非零。
+- **「按仓库拆分」撞上已被占用路径即整笔失败，并把裸 SQL 抛到界面**：`SplitProjectDown` 为每个仓库 INSERT 一个新项目，却从不检查该 `root_path` 是否已被别的项目占用——而"每仓库项目"在早先一次向上合并后常常正好残留着（它们各自的父目录与被合并的根不同，从未被吸收）。结果 `UNIQUE constraint failed: projects.root_path (2067)` 让整笔事务回滚，项目卡在合并层级，UI 里显示的是 SQLite 原文。现改为：路径已有 owner 时把仓库**改指向既有项目**（不再造重复行），存活项目的改名同样防撞（被占则保留自身根路径，层级与分组标志照常更新）。同批把三处裸错误换成域错误并在前端翻译：`CreateTodo` 打到不存在的项目（原 `FOREIGN KEY constraint failed (787)`）、`MoveNote` 两侧缺失（原 `sql: no rows in result set`），新增 `ErrNoteNotFound`；前端新增 `web/src/utils/apiError.ts` 的 `describeApiError()` 统一映射双语 `errors.*` 文案（未识别的错误原样透出不吞），接入笔记写路径、笔记/待办加载与分组层级操作；`split` 的回归测试在还原修复后会精确复现那条 2067，确认它有牙齿。
+- **前端测试装上形态守卫，并清掉它翻出的 69 条既有账（[ADR-0026](docs/adr/0026-frontend-test-async-readiness.md) 条件 4）**：接入 `eslint-plugin-testing-library@7.16.2`（devDependency；v7 已无 `flat/recommended`，取 `flat/dom` + `flat/react`），范围只限定在真正用 testing-library 的文件——默认 glob 会把纯逻辑测试里的 `const result = renderMarkdown(...)` 当成 RTL 的 `render`，`src/utils/markdown.test.ts` 零 RTL 引用却中 16 条。逐条处置：16 条误报随范围收窄消失；真修 5 条（`prefer-find-by`、`no-unnecessary-act` ×2、两处可用 role 查询表达的 `no-node-access`——NotFound 改 `getAllByRole('link')`、Home 的下拉改 role 查询）；`render-result-naming-convention` 12 条**有意不采**并写明理由（纯命名、不承载正确性、且已证会误报）；其余 16 条 per-file/per-line 登记（BrandMark 测的是 `aria-hidden` 的装饰性 SVG、Search 断言的是 class 派生、App.smoke 判缺席元素——都没有可查语义）。副产品：`no-manual-cleanup` 把 vitest 的 `test.globals` 推到 `true`，**7 处手写 `afterEach(cleanup)` 与其注释一并删除**（自动 cleanup 由 Review 连续 12 次 render 无重复匹配、及 AiTab 的缺席断言钉住）。一条实测事实值得记住：同一句 `heading.closest('section')` 写在用例里会被报，挪进 helper 函数后完全不报——规则看上下文，所以它只能是形态守卫，不能当时序保证。收尾后 `npm run lint` 零问题、tsc 干净、145 例在探针 300ms 档仍全绿。**注意：从此不要再手写 cleanup。**
+- **前端测试的异步落地竞态收口（[ADR-0026](docs/adr/0026-frontend-test-async-readiness.md)，A2 + A1 已落码）**：承接下一条 `pickProject` 那次就地修复——复核发现竞态类不止 select。`findBy*` 若等的是一个**无条件挂载**的锚点（如审核页「合并建议」标题，其 `<section>` 刻意常驻），它会立刻 resolve、什么也没等，随后同步读 effect 填的状态就是在拿时序赌绿红。实测：把 `getProjects`/`listPendingWikiPages`/`findMergeCandidates` 三条 promise 各延后 300ms，`Review.test.tsx` 12 例红 3，且红的都与 select 无关（它们在数 `<li>`）。修法分两层：新增 `web/src/test/renderReady.tsx`，`renderReady()` 在 `render` 后跨一次宏任务（微任务会先全部排空）作默认地板，`Review`/`Home`/`Dashboard`/`Search` 四个组件测试文件接入；`Review.test.tsx` 三处列表/空态断言改为等「就是数据的那个元素」。附可重跑探针 `REPO_TEST_LAG_MS`：300ms 与 700ms 两档 145 例全绿（修复前同一探针打红 3 例），另跑 6 轮顺序 + 8 路并发（且争抢 CPU）全通过。按晋升条件 2 补了首页知识助手「检索范围」下拉的首例交互测试——它与当初 flake 的写法同形、此前无人碰过；把它退回「等 combobox」，探针下报 `expected '0' to be '7'`，与审核页当初同一签名。同时钉死两条边界：`settle()` 在 `vi.useFakeTimers()` 下会死锁（现用假计时器的都是 `renderHook` 测试，不经此路径）；`AiTab`/`NotFound`/`App.smoke` 有意**不在**保护范围内（两种 i18n 断言口径不塞进同一 helper）。「`beforeEach` 默认给非空 mock 列表」这一路已实测否证并写进 CONTRIBUTING 防复发——踩中的用例本就喂了非空数据（病因是何时落地，不是是否存在），且该法会破 `Home`/`Search`/`useKnowledgePage` 三处空态用例。纯测试与文档面，生产行为零变化；守卫用的 `eslint-plugin-testing-library` 见上一条目（条件 4 已于 2026-10-19 接入）。
+- **审核页项目筛选测试的装配竞态（CI 偶发红、本地恒绿）**：`Review.test.tsx` 三处用例在 `<select>` 首次渲染时就取到 combobox 并直接改值，而 option 列表来自 `projects`，要等 `getProjects()` 的 promise 在 effect 回调里落地才渲染。踩空这个窗口时，jsdom 对无匹配 option 的受控 select 赋值交给 change 处理器的是空值，`Number('')` 为 0，`projectFilter` 停在 0 并被 React 写回节点，项目门控按钮保持禁用——失败表现为远离根因的 `expected true to be false` 超时，且绿红随 runner 负载漂移。改为 `pickProject()` helper：先等目标 option 出现再改值，随后断言值确实落地，使复发时失败钉在 select 而非下游超时。以延迟 300ms 的 `getProjects()` 做 A/B：旧写法确定性复现故障、新写法同条件下确定性通过。纯测试稳定性修复，`Review.tsx` 生产逻辑未改。
+
+## [2.6.0] - 2026-10-18
+
+### 新增
+
+- **内置每日本地数据库快照（[ADR-0025](docs/adr/0025-backup-recovery.md) L1，默认开）**：应用启动即拍 + 每小时重试，当天首份成功后同日全部 no-op；快照以 `VACUUM INTO` 在活连接上产出（含 WAL、写入中状态一致），落 `<数据目录>/backups/repotory-YYYY-MM-DD.db`、权限 0600；轮转默认保留 14 份、只清理 `repotory-*.db` 前缀。纯本地零外发、无需任何配置；`backup_enabled=0` 可关（手动/定时同一条明确拒绝），`backup_retain` 调轮转深度；`RunBackupNow` 绑定已注册（设置页按钮未接，脚本可调）。源自 10-14 事故教训与「没人再买移动硬盘」的现实——现代解法（MySQL 系）是数据库自产快照 + 日志归档上对象存储，SQLite 的对应物（Litestream）留作 L2 opt-in，本版先落地零操作的本地层。
+
+### 修复
+
+- **CodeBuddy 会话导入器对本机真实数据静默 0 导入（三处布局漂移，2026-10-18 重导演练发现）**：①登录态 profile 把 history 藏在 `Data/<uid>/<IDE>/<inner>/history` 一层之下，`sessionRoots` 只扫浅层——浅层的 12 个会话全是空索引，真数据（15 会话/1.6 万消息文件）全在深层；②消息正文藏在转义的 `message` 字符串（内层 JSON 的 `content[].text`）里，导入器只读顶层 `content`，即使扫到也提成空文本；③首条提问以 `<user_info>`/`<git_status>`/`<project_context>` 等信封链开头，固定标签剥离后会泄漏进标题（如「CodeBuddy · <git_status> · 088c8c98」）。现改为：深层根一并扫描；`message` 内层 JSON 解码取 text 块（`<answer>` 是回复本体标记，取内文而非剥离）；前置信封链通用剥离；多 fork 会话取消息文件最多的一份（hex 文件名序与时间无关，「第一个可解析」可能选中早期残片）。附 codebuddy 包首批测试（此前零测试）。重导实测：15 会话全部找回（此前 0），重跑幂等（created=0/updated=15）。
+- **opencode 会话导入器对本机真实数据静默 0 导入（summary 字段对象形态）**：真实会话文件的 `summary` 是对象 `{"additions":…,"deletions":…,"files":…}` 而非字符串，严格 `Summary string` 使 `json.Unmarshal` 整文件失败、31 个会话全部被拒（v2.1.0 那次「类型漂移宽容」未覆盖对象形态）。改为 `summaryField` 容忍 string/object/null（非字符串一律视为空，标题/目录链路不受影响），附真实形态回归用例。重导实测：31 条全部找回，重跑幂等（created=0/updated=31）。
+- **首页「重点项目速览」的规模提示改为如实口径**：原「45 个本地项目」数的是 `projects` 表全部行——含 41 个零仓库零活动的知识导入落地项目与无仓库绑定扫描残留，与仪表盘仓库区（只显示有仓库/有活动/被关注的项目，实测 4 个）读起来像数据不一致。现显示「N 个项目 · M 个含仓库」两个数字（全部含仓库时只显示总数）。
+- **首页知识助手卡片滚动时，头部（标题/检索范围/清空）被滚动边界拦腰切断**：`mainContent` 是独立滚动容器，页面一滚卡片头部就在导航下沿被硬切——用户实测截到的正是这个状态。现改为 sticky 停靠：滚动时头部钉在导航正下方（与导航同底色无缝衔接），聊天内容从其背后滚过；容器 `overflow: hidden` → `clip`（保留圆角裁切且不再阻断 sticky；不支持 clip 的 WKWebView/Safari 15 回退为原静态头部，不劣于现状）。头部停靠位用负 `top` 抵消 `mainContent` 的 padding，保持与导航贴平。
+- **欢迎区灯泡图标被裁两处叠加**：①挂载时自动滚动效应在无消息时也会把流区滚到底部，欢迎屏顶部被切；②空状态 `margin: auto` 居中在内容高于流区时顶部不可达（越窄的窗口裁得越多）。现自动滚动仅在有消息时触发；空状态改 `justify-content: safe center`（老引擎退化为顶部对齐，内容始终可达）并收紧垂直间距。
+- **AI 问答等待零反馈**：本地大模型（如 LM Studio 27B）首 token 可达分钟级，流式期间只有三个跳点没有任何进度信息。打字指示器现显示「思考中 · Ns」计时（停止按钮不变）；端到端 SSE 链路已实测完整返回。
+
+### 变更
+
+- **CI `docs-mirror` job 的 `setup-node` SHA 钉成 38 位短 SHA，首个运行即在 Set up job 被 GitHub 拒绝**：该 job 随 v2.5.0 的 bump 提交进入 `ci.yml`，v2.5.0 发布当天的 CI run 是它的第一次运行——结果从未真正跑到镜像比对，就在解析 action 时报「the provided ref is the shortened version of a commit SHA」。修复为与其余 5 处引用一致的完整 40 位 SHA（与 release.yml / pages.yml 同值）。
+
+## [2.5.0] - 2026-10-16
+
+### 新增
+
+- **导航栏主题切换器（moon/dark/system 三态）**：顶栏新增主题下拉，可在「跟随系统 / 亮色 / 暗色」间切换，选择经 `storeTheme` 持久化、刷新后保留；`utils/theme` 导出 `ThemeMode` 与 `storeTheme`，图标映射 sun/moon/monitor。
+- **主题命名统一 + 首页 UI 精修**：`App.tsx`/`App.module.css` 梳理主题相关命名（旧 `moon` 语义与 `dark` 归一），首页（`Home.module.css`）补 tooltip 与 `:focus-visible` 焦点样式，可访问性改善；中/英 `common.json` 文案随主题命名同步。
+
+### 变更
+
+- **CI 新增 `docs-mirror` 硬门（双语文档 1:1 守卫）**：`scripts/check-docs-mirror.mjs` 递归比对 `docs/**/*.md`（中文源）与 `docs/en/**/*.md`（英文源），任何「只改一边」的漂移直接拦下——这正是 2026-10 英文站曾讲出不存在产品架构的根因；有意只出中文的研究文档（`competitive-positioning` / `positioning-brief` / `product-review/*`）走脚本内 `ZH_ONLY` 白名单。纯 node 零依赖，接入 `ci.yml` 新 job。
+- **补齐双语文档镜像（消除既有漂移）**：补上缺失的 `docs/en/adr/0022`（agent 记忆自动发现与定时同步）与 `docs/en/adr/0024`（首页工作台化）两份英文镜像，并同步中英文 `adr/index.md`（0022/0024 两行、递增号推进到 0025）。
+
+### 修复
+
+- **`AGENTS.md` 高频陷阱指针修正**：`ExpectedSchemaVersion` 实际位于 `internal/integrity/checks.go`（非 `migrate.go`），A 计数 21→24 份；双语漂移陷阱条新增「已有 CI `docs-mirror` 守卫」指引。
+- **`.gitignore` 补 `.zwork/`**：本地 agent 会话产物目录（与 `.easyclaw/` `.workbuddy/` `.zcode/` 同类）此前未忽略，有误提交风险；一并把 `CONTRIBUTING.md` 登记新守卫门与本地校验命令。
+
+## [2.4.0] - 2026-10-16
+
+### 新增
+
+- **首页演进为知识库智能对话工作台，与仪表盘权责分离**：此前 `/` 直接完整嵌入仪表盘，造成「首页即仪表盘+1」的严重功能冗余。现重新理清两端定位：
+  - **仪表盘 (`/dashboard`)** 恢复为独立顶级页与主导航直达项，专注呈现开发动态统计、热力图日历、工作日新增行数目标、全量代码扫描与项目列表多维过滤；
+  - **首页 (`/`)** 聚焦为 **人与知识库的智能交互中心**：顶部保留记忆环条（最近 handoff 状态与快捷恢复），主体接入全新 **知识库智能助手工作台（`HomeKnowledgeAssistant`）**，底部提供重点项目速览与今日动态卡片（并附「进入完整仪表盘」直达链接）。
+- **人与知识库流式对话与项目/知识卡片联动交互**：
+  - **检索范围切换**：支持「全库知识与全部项目」跨项目检索与「指定单个项目」问答无缝切换；
+  - **流式问答与本地弹性兜底**：配置 AI 端点时走 `askAIWithEvidenceStream` 逐字流式回复；未配置时无缝回退为本地 FTS5 全量索引匹配，保障开箱即用；
+  - **对话嵌入项目卡片 (`ProjectCard`)**：回答中自动识别涉及项目，渲染带仓库数、活动动态与路径的项目卡片，**点击卡片直接跳转进入项目详情页 (`/project/:id`)**；
+  - **对话嵌入引用知识卡片 (`KnowledgeCard`)**：回答中引用的知识笔记与 Wiki 页面渲染为卡片，标明 `[N#]/[P#]` 引用代号、所属项目与文本摘要，**点击卡片直接跳转并定位进入项目笔记或知识详情页 (`/project/:id?tab=notes&noteId=N`)**；
+  - **回答一键沉淀**：支持复制回复、一键「存为知识笔记」（保存至关联项目）、一键「存为 Wiki 页面」（严格继承本次引用的证据链）；
+  - **快捷探索预设**：空闲态提供多维度快捷提问卡片（梳理项目架构依赖、最近交接记录、最佳实践参考等），点击一键提问。
+- **全局搜索独立成页与热门推荐（`/search`，ADR-0024）**：单输入框检索全部项目的笔记、待办与项目名，结果按「项目 / 笔记 / 待办」分组，查询同步 `?q=` 可深链；空闲态推荐热门项目 top 6 与热门标签 top 12。
+- **后端证据项扩展所属项目元数据**：`internal/service/wiki_evidence.go` 的 `EvidenceItem` 补充 `ProjectID` 与 `ProjectName`，取证层（页面与笔记）在召回时自动注入项目归属，为跨项目对话与精准跳转提供底层数据支撑。
+
+## [2.3.0] - 2026-10-16
+
+### 新增
+
+- **headless 服务可同源托管构建的前端（`cmd/server --web-dist`）**：headless 此前纯 API，浏览器要看到页面只能另起 Vite 代理——而本运行时的 node 出站被 shim 注入代理后连 `127.0.0.1` 都 ECONNREFUSED，演练链路卡死在「页面打不开」。现在 `--web-dist <目录>`（或 `REPOTORY_WEB_DIST`）让同一进程把构建产物一并服务：`/api/*` 与 `/health` 仍路由到 API mux（`cmd/server` 的 `isAPIPath` 与 `httpapi` 注册面由测试钉住同步——`/health` 不带 `/api` 前缀，曾被 SPA 兜底吞成 index.html），其余路径静态文件 + `index.html` SPA 回退，路径穿越强制回落根；缺失的静态资源（非 `.html` 扩展名）返回真 404 而非兜成 HTML——资源缺失不再伪装成前端 MIME 幻影。默认空 = 纯 API，生产行为不变；相对路径在启动时解析为绝对路径并打印实际服务目录。配套 web 侧新增 `npm run build:server`（`--mode server`，base `/`，输出 `web/dist-server`）：深链接（如 `/project/1`）直达不再因相对 `./assets` 落进 SPA 回退而白屏；桌面构建（base `./`，`web/dist`）不受影响，两产物隔离。手册新增「同源托管前端」节（中英双份）
+
+- **笔记归属与知识库整理（ADR-0023，schema v24）**：外部知识导入此前匹配不到项目就**静默丢弃**（`project_notes.project_id` 是 NOT NULL 外键，匹配不到 → runtime `Skipped++`），所谓「无头笔记」其实从未入库（2026-10-14 事故里 AI1 丢的一批即此类）。现在 `projects` 加 `project_kind`（`scanned` / `import_placeholder` / `default`）：匹配不到时按**仓库名自动建「未归类仓库」占位项目**（源有真实路径 → 日后扫描到同路径会自动转正）、或落到恒在的**「未分类」默认项目**（无仓库路径的全局记忆源），知识不再丢。知识库新增**「整理」子视图**：一键把某占位/未分类下的全部笔记**归口**到真实项目，或**二次确认后**删除空/失主的占位（默认项目永不可删；删除是手动确认，不自动级联）。三处入口（笔记卡 / 搜索结果 / 最近笔记）点击改为**直达该项目笔记 tab 并定位高亮该条**（`/project/:id?tab=notes&noteId=N`）。项目卡/详情显示关联仓库路径并以徽标区分占位/未分类。新增桌面专属 RPC `ListOrganizeGroups` / `ReassignLandingNotes` / `DeleteLandingProject`（无 MCP 孪生）。真库迁移 v24 的副本演练由用户执行
+
+### 变更
+
+- **导入匹配不到项目不再丢弃**：`plugin.ImportDoc` 加 `RepoPath` / `RepoName`，`runtime` 把「匹配不到 → skip」改为「落占位 / 未分类」；openclaw / hermes / **codebuddy-memory** 这类无仓库路径的全局记忆在未配置目标项目时也落「未分类」（取代 codebuddy-memory 此前「未配置即早退丢弃」的有意行为）。历史上被丢弃的那批，重跑「设置 → 立即导入」会以占位项目重新入库
+- **AI 上下文解析器与 MCP `repotory_projects_list` 只列扫描项目**：`ResolveProject` 与 `ListProjects` 过滤到 `project_kind='scanned'`——未分类 / 占位是整理暂存桶、无仓库可建上下文，留着会让「唯一项目自动解析」失效、agent 挑到会落空的 id；桌面仪表盘 `GetProjects` 仍展示这些桶（带徽标）。integrity 的 scan_coverage 也按 kind 过滤，合成桶不再计入「已发现未采集」告警
+
+### 修复
+
+- **浏览器（非 Wails）模式健康检查恒真**：`checkHealth()` 在无 Wails 绑定时直接 `Promise.resolve(true)`——headless/自托管场景下后端已停，连接横幅却永远绿色。现改为走真实 `/api/rpc` Health 探活，失败如实标记 `backend-down`
+
+## [2.2.0] - 2026-10-15
+
+### 新增
+
+- **图感知取证的 delta 门禁有了跑法（`abeval -mode evidence`，M7 lane 2 硬门）**：lane 2 的核心主张「图感知取证 > 纯 FTS 取证」此前无法度量——`cmd/abeval` 只量 notes 的 lexical vs hybrid，`GatherEvidence` 的图扩展走的是另一条路。新增 evidence 模式：两臂都走**真实** `GatherEvidence`（含三重预算与 pages/notes 位置交织），唯一差异是 `wiki_graph_search` 0/1。同时报告图密度（页数/边数）——扩展只能带出种子的邻居，零边时 delta 0 是结构必然而非检索失败，不打印这行，读者只能靠猜看到底是哪种。配套 `internal/search/abeval` 泛型化为 `Case[T comparable]` 并新增 `DocID{Type,ID}`：`wiki_pages.id` 与 `project_notes.id` 是独立自增序列，用裸 int64 打分会让 **page #7 满足标注的 note #7**——正是 `wiki_evidence.go` 注释反复警告的 RRF 串号陷阱；`wiki_evidence_test.go` 原有的 `pageIDEpoch = 1_000_000` 手工编码随之删除，装载器主动拒绝裸数字 `relevant`，让类型系统在入口拒绝歧义。新增 `cmd/abevaldiag -mode evidence` 逐案诊断（哪些 query 靠图拿到分、增益形如什么）。**如实记录门的强度**：真库 7 页仅 2 条边（都是 `ref`，4 页孤立），16 条人工标注 query 上 k=10 delta **+0.094**、k=2..20 全区间为正、无一例回退，增益可完全归因于「命中一页 → 沿边带出邻接页」；但这是**在这个稀疏图上的下限**，不能外推为「图感知取证普遍优于 FTS」——要真正兑现 lane 2，需先让编译产出更多页与边再复跑本门
+
+### 变更
+
+- **`queries.jsonl` 不再进入版本库**：它的 `relevant` 就是 `project_notes.id` 映射，与 `.annotation-prep/` 同属本地标注中间物（工作表、真库一次性副本、生成脚本），已一并加入 `.gitignore`
+
+### 修复
+
+- **中文查询在词法检索上几乎零召回（三条独立路径，均已修复）**：① `escapeFTSOR` 对单段 CJK 死路——中文无空格，整句是一个 term，`len(parts) < 2` 直接返回 `""`，OR 松弛永不触发；现改为把纯 CJK run 切成**重叠 3-rune trigram**（正是 trigram 索引的存储粒度），配 `isCJKRun` 只认纯 CJK run（`FastAPI登录` 这类混合串不猜边界），bm25 让含 5 个 trigram 的笔记排在含 1 个的之前——不需要词典，也不需要 CGO 分词器。② LIKE 回退把整句当一个 `%...%` 匹配——`ftsUsable` 因短 term（如「里」）否决整句后走此路，而带空格的 query 永不命中；现改为整句空结果时按 term OR 重试，**只在空结果时触发**，与 FTS 路径同守「绝不顶掉已有答案」。③ 一条坏时间戳藏掉全部结果——导入笔记可能带 `updated_at = ''`（空串非 NULL），`julianday('')` 为 NULL 使整个 rank 表达式 NULL，scan 进 float64 失败，`SearchNotes` 吞掉 error 返回空集；该 bug 一直存在，只是此前没有 query 触及那条笔记，OR 松弛让它浮出水面。现以 `COALESCE(julianday(updated_at), julianday('now'))` 兜底。另修 OR 表达式无上限（600 个互异汉字会膨胀出 598 个 OR phrase），加 `maxFTSORTerms = 32`（真实问句实测 17）。**门禁结论因此改变**：修前 M3 门 lexical 0.392 / delta +0.338，其中约六成是「CJK 词法坏了」的假信号；修后 lexical 0.608 / hybrid 0.735 / **delta +0.127**，k=3/5/10/20/50 全区间 PASS——hybrid 从「大幅碾压」回到「稳定小幅领先」，这才是语义检索的真实增益。回归 7 例，每例都验证过「回退修复即失败」
+
+## [2.1.0] - 2026-10-14
+
+### 新增
+
+- **自动发现并定时同步 agent 记忆，来源类型用户可见（[ADR-0022](docs/adr/0022-agent-memory-discovery-sync.md)）**：此前各 agent 的记忆导入靠设置页手动填 `*_project` 目标项目，来源是「黑盒」——导入后只见笔记，说不清每条来自谁。现在来源类型本身成为一等公民：新增 CodeBuddy 记忆/会话导入源（官方 `_memery.md` 持久层 + MCP transcript 两路，沿用只读纪律与无 workspace 即 skip 口径），插件运行时暴露 `source_type`，前端设置页逐源展示发现状态、来源类型与同步开关；新增 `knowledge_sync` 定时同步服务（复用幂等 upsert 路径，键 `(project_id, source, title)`，重复导是更新不是堆叠）。同批修掉 claude/codex/opencode/hermes/cursor 各源边界：超大 rollout（>32MB）跳过、cwd containment 误匹配纠偏（`he`→HengTian、`ni`→CBiUnion 之类按"cwd 必须是项目根/repo 前缀"判定）、opencode 会话 JSON `summary` 字段类型漂移宽容处理。
+
+- **图感知取证 + 页面向量空间（[ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) lane 2，schema v23）**：取证从此**读图**。此前 `GatherEvidence` 只跑页面 FTS + 笔记检索，`WikiEdgesFrom/To` 从未被取证调用——Obsidian 里看得见图，AskAI 却把图当不存在。两半落地：**页面向量空间**——`note_embeddings` 是 notes-only（`KnnNoteIDs`/`PutNoteEmbedding` 按笔记 rowid 键控），编译出的页面从来没有向量面，语义召回永远到不了页面；新增 `page_embeddings` vec0 + `page_embeddings_meta`（`internal/db/pagevec.go`），**物理独立于 `note_embeddings`**——`hybrid.FuseRRF` 融合的是裸 int64 id，而 `wiki_pages.id` 与 `project_notes.id` 是独立自增序列，共用一张表会把 page #7 和 note #7 融成同一个对象（正是证据交织注释反复警告的串号陷阱）。增量队列 `page_embed_dirty` 由 `wiki_pages` 上三个触发器维护（正文/标题真变、或 approved 状态迁移时置脏；`IS NOT` 值判定而非 `AFTER UPDATE OF` 语法判定，避免每次改状态都白付一次 embedding），drainer 每 5s 排空：页还在且 approved 就 embed + Upsert，已删或已退出 approved 就删向量（**只嵌 approved 页**，ADR-0015 边界）。整条路径挂在既有 `semantic_search` 之后（那是用户同意把文本发往端点的显式授权），**不新开第二个开关**——否则会出现"主开关开着、页嵌却静默不更新"的陈旧索引。分享同一个 embedding provider（endpoint/model/dim），但向量存储各走各的表。**图感知取证**——新门 `wiki_graph_search`（默认关）：关时 `evidencePages` 走**与今天逐条一致**的 FTS 顺序（零行为回退，`TestEvidencePages_GraphOffIsFTSPure` 钉住）；开时以 FTS 命中页为种子，`WITH RECURSIVE` 沿关系白名单（`ref`/`part-of`/`documents`，**不含 `contradicts`**——矛盾是给用户看的、不是喂进同一份证据的）扩 1 跳召回邻居，再用纯 Go PPR（`internal/search/graph`，带 reset 的随机游走，reset 向量 = 检索命中页）替 bm25 定序，让"结构上邻近命中页、却从未匹配查询"的页面也能被引用。递归 CTE 用 path 串 + 跳数双重上界防环逃逸，两端都只走 approved 页（pending 邻居绝不进证据）。结果是 FTS 命中的**超集**（命中永远是命中），开图检索不会减少页面命中。**晋升仍待 Phase 0**：lane 2 的核心主张"图感知取证 > 纯 FTS 取证"必须在一份真实标注 `queries.jsonl` 上量出 evidence+graph 相对 evidence 的正向 delta 才算兑现——机制正确不等于收益真实，这一条是硬门。
 
 - **Hermes 会话导入（[ADR-0011](docs/adr/0011-multi-agent-memory-importers.md) 实现修正节）**：`hermes` 源此前只读 curated 记忆（`memories/*.md`），会话一直因「schema 无文档且本机无样例，不猜活格式」而 defer。TencentDB-Agent-Memory（腾讯云开源）的 shipped asset importer 恰好构成一个已发布消费者：其 `agents/asset-import.ts#scanSessions` 读的正是 `$HERMES_HOME/state.db` 的 `messages(session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp)`，defer 条件因此满足（真实样例或 shipped consumer 二选一）。每会话→一条 log 笔记（首条提问 + 末条回复各截 3000 字符，同 codex 口径），幂等键 `(project, "hermes", title)` 不变；schema 无 cwd/workspace 线索，故沿用 `hermes_project` 配置归属，未设仍计入 skipped。安全纪律照旧：`memsrc.OpenReadOnly`（`mode=ro` + WAL 兜底，单连接）只查 `messages` 表，`.env` / `mcp-tokens/` 绝不触碰；表/列结构不认识时**整源报错**而非安静导入 0 条（`probeSessionsLayout`）。附带把 cursor 包内的 `openReadOnly` 下沉为 `memsrc.OpenReadOnly`（第 3 个 sqlite-backed importer，符合 ADR-0011 决策 2 的抽取时机）。双语手册的源清单同批更新。
 
@@ -22,6 +154,8 @@
 - **IDE 扩展不再要求手填数字项目号**：`repotory_handoff` 的 `project_id` 从必填改为可由 `path` 在服务端解析（显式 id 仍是优先项）；`repotory_context` 与 `repotory_notes_search` 新增可选 `path`；侧边栏空闲态显示解析到的"项目 · 仓库"而非一句"去运行搜索命令"；状态栏 tooltip 显示工作区归属。新增只读绑定 `ResolveWorkspacePath` 供界面显示——匹配规则只住在服务端，避免扩展与 agent 对同一目录给出不同答案。
 
 ### 变更
+- **检索标注工作流成文（Phase 0 门禁，用户手册）**：`docs/features/ai-integration.md` 新增「检索真实标注工作流」节（英文镜像同批）：五步流程——充实语料（验收 ≥10 条笔记、目标 ≥15；先批 pending 页、点各知识源导入、`repotory_integrity` 排索引漂移）→ `-seed` 导出工作表（一份副本、不碰真库）→ **人工标注**（每题真问题、`relevant` 1–3 行号、不凑数；工具猜的草稿必须经人逐条核对才能用）→ `-emit` 生成长期资产 `queries.jsonl`（行号与工作表文件绑定，勿跨文件混行号）→ `-abeval` 跑 GATE PASS/FAIL。两道门（M3 语义检索默认上线需 hybrid−lexical recall@10 ≥ 0.05；M7 Lane 2 需 evidence+graph 相对 evidence delta 为正 + 串号回归）复用同一份标注集。
+
 
 - **移除 VS Code 扩展的 `repotory.projectId` 设置**：该设置在 README 里已自称「a numeric id is no longer a prerequisite」（服务端路径解析已取代它），但代码仍在读它，且**优先级高于** `path`——也就是说一旦手填过一次，它就会永久盖掉路径解析，与文档所说的正好相反，且这种不一致不会有任何报错。连同 `PROJECT_ID_KEY` 常量与 `configuredProjectId()` 一并删除，三个调用点改为只用工作区路径：`loadContext` / `writeHandoff` 只发 `path`，`writeHandoff` 的守卫从「id 与路径二选一」收紧为「必须有打开的文件夹」。`refreshLastHandoff` 原先取 `configuredProjectId() ?? 0`，现直接传 `0`（未设置时本就是 0 = 跨项目取最近一条，状态栏只是「上次什么时候交接过」的提示位，语义不变）。`package.json` 的 `configuration.properties` 现只剩 `repotory.serverUrl` 一项，扩展 README 与 docs/en ↔ docs 双语手册同批更新；文档里两处**历史叙述**刻意保留「曾要求手填数字 id」的说法，只去掉已不存在的设置名。这是**对外可配置项的删除**：Settings 里手填过该值的用户，其值会被忽略而非报错——这正是被删掉的那个行为。
 - **VS Code 扩展的 `Register MCP Server` 命令此前在真实用户机器上永远是死代码**：它硬编码去**当前工作区**找 `scripts/repotory-init/index.mjs`，而 `repotory-init` 是 `"private": true`、既没发布到 npm 也没被任何安装脚本/包管理器装到全局——于是只有「在 Repotory 仓库里自己打开工作区」才找得到，其余任何人都会收到一句「安装脚本在 Repotory 仓库里」。安装器现在随 VSIX 打包：新增 `ide/vscode/scripts/sync-init.mjs`，由 `compile`（`tsc -p ./ && node scripts/sync-init.mjs`）把唯一事实源拷到打包目录，`vsce package` 实测产出 `extension/repotory-init/index.mjs`（11555 字节，与源逐字节相同）。命令改为优先读随扩展打包的那份，仅在开发本仓库时回退到工作区里的活源；同时补上终端调用时的路径加引号（扩展目录含空格时原写法会把一条命令拆成多个参数）。**CI 新增 `vscode-extension-test` 门禁**：`ide/vscode` 此前完全不在 `ci.yml` 里（`release.yml` 只在 tag 上编译），TypeScript 写坏可以在 master 上静躺到下一次发版；新门禁跑 `npm ci && npm run compile`，再用 `git diff --exit-code` 钉住打包副本与事实源一致——命令是运行时读它，副本过期等于静默发出一个旧安装器（该断言双向验证过：手工制造漂移时非零退出，干净状态下通过）。
@@ -149,7 +283,12 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/sky-jiangcheng/repotory/compare/v1.16.2...v2.0.0
 [1.16.2]: https://github.com/sky-jiangcheng/repotory/compare/v1.16.1...v1.16.2
 [1.16.1]: https://github.com/sky-jiangcheng/repotory/compare/v1.16.0...v1.16.1

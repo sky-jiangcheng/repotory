@@ -52,13 +52,20 @@ export function useDashboardData() {
     [setShowStarredOnly]
   )
 
+  // The summary strip must aggregate the SAME scope the list filters by:
+  // passing the starred filter through to GetSummary keeps header and rows in
+  // lockstep (they read as two different products otherwise). A ref keeps
+  // fetchSummary's identity stable for the polling hook while staying fresh.
+  const starredScopeRef = useRef(showStarredOnly)
+  starredScopeRef.current = showStarredOnly
+
   const fetchSummary = useCallback(async (selectedDate: string, silent = false) => {
     const seq = ++fetchSeq.current
     if (!silent) setSummaryLoading(true)
     setSummaryError('')
     try {
       const [sumData, counts, noteCountsData] = await Promise.all([
-        getSummary(selectedDate),
+        getSummary(selectedDate, starredScopeRef.current),
         getTodoCounts(),
         getNoteCounts(),
       ])
@@ -175,7 +182,13 @@ export function useDashboardData() {
     return map
   }, [noteCounts])
 
-  const globalTodoCount = useMemo(() => todoCounts.reduce((sum, c) => sum + c.count, 0), [todoCounts])
+  // The todo counter follows the same scope as the strip: under the starred
+  // filter it counts only starred projects' open todos.
+  const globalTodoCount = useMemo(() => {
+    if (!showStarredOnly) return todoCounts.reduce((sum, c) => sum + c.count, 0)
+    const starredIds = new Set(projects.filter(p => p.is_starred).map(p => p.id))
+    return todoCounts.filter(c => starredIds.has(c.project_id)).reduce((sum, c) => sum + c.count, 0)
+  }, [todoCounts, projects, showStarredOnly])
 
   const myAdded = summary?.my_added || 0
   const isWorkday = summary?.is_workday ?? false

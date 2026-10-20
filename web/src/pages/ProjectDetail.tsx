@@ -30,7 +30,7 @@ function ProjectDetailPage() {
 
   const {
     project, overview, loading, error, setError,
-    scope, setScope, trendData, totals, retry, handleLevelChange,
+    scope, setScope, trendData, totals, retry, handleLevelChange, previewMergeUp,
   } = useProjectDetail(id)
 
   // The page's sections live behind tabs instead of one long scroll: the
@@ -39,7 +39,9 @@ function ProjectDetailPage() {
   // mirrored into ?tab= so a section is linkable; ?newNote=1 (Knowledge page
   // jump) lands on the notes tab where the create form actually lives.
   const initialTab = (): DetailTab => {
-    if (searchParams.get('newNote') === '1') return 'notes'
+    // A ?noteId= deep link (from the Knowledge page) must open on the notes tab
+    // so the target note is visible and can be highlighted.
+    if (searchParams.get('newNote') === '1' || searchParams.get('noteId')) return 'notes'
     const raw = searchParams.get('tab')
     // 'repos' merged into 'commits': the per-repo breakdown IS the commit
     // view — heatmap/trends project-wide, breakdown by repository below.
@@ -51,11 +53,16 @@ function ProjectDetailPage() {
   }
   const [tab, setTab] = useState<DetailTab>(initialTab)
 
+  // The note a deep link asked to focus (Knowledge page → this project). Passed
+  // to NoteSection, which scrolls to it and flashes it once.
+  const focusNoteId = Number(searchParams.get('noteId') || '') || undefined
+
   const selectTab = (next: DetailTab) => {
     setTab(next)
     const params = new URLSearchParams(searchParams)
     params.set('tab', next)
     params.delete('newNote')
+    params.delete('noteId')
     setSearchParams(params, { replace: true })
   }
 
@@ -70,12 +77,43 @@ function ProjectDetailPage() {
   }
 
   const onLevelChange = async (direction: 'up' | 'down') => {
-    const r = await handleLevelChange(direction)
+    let confirmed = false
+    if (direction === 'up') {
+      // A merge is destructive: it deletes every sibling project it absorbs, along
+      // with their notes and todos. The counts come from the server, so what the
+      // user approves is what the merge will do. No preview means no merge.
+      const pre = await previewMergeUp()
+      if (!pre) return
+      if (pre.siblings.length > 0) {
+        const shown = pre.siblings.slice(0, 8).map(s => `• ${s.name}`).join('\n')
+        const more = pre.siblings.length > 8
+          ? `\n${t('project.levelUpMore', { n: pre.siblings.length - 8, defaultValue: '' })}`
+          : ''
+        const ok = window.confirm(t('project.levelUpConfirm', {
+          count: pre.siblings.length,
+          target: pre.target_name,
+          names: shown + more,
+          repos: pre.repos,
+          notes: pre.notes,
+          todos: pre.todos,
+          defaultValue: '',
+        }))
+        if (!ok) return
+        confirmed = true
+      } else {
+        // Nothing is absorbed, so no project disappears: the click only moves the
+        // root up one level. No dialog, and the backend's explicit-intent flag is
+        // set because a human did ask for this.
+        confirmed = true
+      }
+    }
+    const r = await handleLevelChange(direction, confirmed)
     if (r.ok) {
       flashAction(t('project.levelChanged'))
-    } else if (r.error && r.error.toLowerCase().includes('not found')) {
+    } else if (r.raw && /not found/i.test(r.raw)) {
       // MergeProjectUp/SplitProjectDown surface "no sibling here" as 404 —
-      // translate it or the button reads as dead.
+      // translate it or the button reads as dead. Matched on the backend sentence
+      // because r.error is already localized for display.
       flashAction(t('project.levelNoSibling'))
     } else {
       flashAction(r.error || t('common.failed'))
@@ -193,6 +231,16 @@ function ProjectDetailPage() {
               &larr; {t('project.backToDashboard')}
             </button>
             <h1>{project.name}</h1>
+            {project.project_kind === 'import_placeholder' && (
+              <span className="badge" title={t('project.kindPlaceholderTip', { defaultValue: '导入时未匹配到项目，按仓库名自动创建的落点项目' })}>
+                {t('project.kindPlaceholder', { defaultValue: '未归类仓库' })}
+              </span>
+            )}
+            {project.project_kind === 'default' && (
+              <span className="badge" title={t('project.kindDefaultTip', { defaultValue: '无对应仓库的全局记忆落点，可在知识库「整理」里归口' })}>
+                {t('project.kindDefault', { defaultValue: '未分类' })}
+              </span>
+            )}
             <span className={s.headPath} title={project.root_path}>{project.root_path}</span>
             <span className={s.levelControl} title={t('project.groupLevelHint')}>
               <button className="btn btn-sm btn-icon" onClick={() => onLevelChange('down')} aria-label={t('project.levelDown')}><Icon name="minus" size={14} /></button>
@@ -321,7 +369,7 @@ function ProjectDetailPage() {
                 reuses this page instance, and without the key the previous
                 project's open draft was persisted into the new project's
                 localStorage key — and could be saved there. */
-            <NoteSection key={`notes-${id}`} projectId={Number(id)} autoNew={searchParams.get('newNote') === '1'} />
+            <NoteSection key={`notes-${id}`} projectId={Number(id)} autoNew={searchParams.get('newNote') === '1'} focusNoteId={focusNoteId} />
           )}
 
           {tab === 'todos' && (

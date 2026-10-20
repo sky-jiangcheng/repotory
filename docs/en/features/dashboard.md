@@ -7,24 +7,31 @@ order: 2
 
 The dashboard shows daily commit statistics, goal progress, and a year-long commit heatmap across all projects.
 
+> **Standalone page (`/dashboard`)**: the dashboard is a separate top-level route, reached from the "Dashboard" item in the main navigation; the home page (`/`) is a separate single-column workbench (knowledge-base assistant, memory-ring strip, featured projects, today's activity), and its "Open full dashboard" link jumps here. Dashboard panels (goal ring, heatmap, project grid, starred stats) keep full functionality — not hidden by default, not merged into Home — they simply live under their own route.
+
 ## Page structure (top to bottom)
 
 ```mermaid
 flowchart TB
-    RING["① Goal progress<br/>progress ring · summary bar"] --> HEAT["② Commit heatmap<br/>last 52 weeks · click to jump to a day"]
+    STRIP["Memory-ring strip<br/>recent handoffs · global search entry"] --> RING["① Goal progress<br/>progress ring · summary bar"]
+    RING --> HEAT["② Commit heatmap<br/>last 52 weeks · click to jump to a day"]
     HEAT --> CTRL["③ Controls<br/>date switch · combined search<br/>filters · sorting · rescan"]
     CTRL --> GRID["④ Project grid"]
     GRID --> STAR["Starred: full stat card<br/>goal bar · team total"]
     GRID --> PLAIN["Unstarred: minimal card<br/>name + star button"]
 ```
 
-How to read it: the page is a **vertical reading order** in four bands. The heatmap (②) is the global time view, the control bar (③) is its operating panel (switching the date changes both the heatmap and the project cards at once), and the project grid (④) splits cards by starred state — unstarred shows only the name, and you have to star a repository before it shows statistics. All three bands follow the **git author setting** (see [Settings](settings.md#author-configuration)).
+How to read it: the page is a **vertical reading order** with a memory-ring strip on top, then four bands. The heatmap (②) is the global time view, the control bar (③) is its operating panel (switching the date changes both the heatmap and the project cards at once), and the project grid (④) splits cards by starred state — unstarred shows only the name, and you have to star a repository before it shows statistics. All three bands follow the **git author setting** (see [Settings](settings.md#author-configuration)).
+
+### Memory-ring strip (page top)
+
+A horizontal memory band at the very top of the home screen: the "Memory Ring" label on the left, **recent session handoffs** in the middle (click to open the owning project; auto-captured ones carry an "Auto" badge), and the **global search entry** on the right — it opens the standalone [global search page](search.md). With no handoffs yet, a placeholder hint is shown; on narrow screens the band wraps.
 
 ### Goal progress
 
 - **Progress ring**: today's (or the selected date's) personal added lines vs the daily goal; no goal is shown on non-workdays
 - **Subtitle**: how far you are from the goal, personal additions / file count / repos involved
-- **Summary bar**: team additions / deletions, personal additions / files, total todo count
+- **Summary bar**: team additions / deletions, personal additions / files, total todo count. The strip's **scope follows the list filter**: under "Starred" it aggregates only starred projects' repositories (todos included), so the header numbers always match the project rows below; "All" is the whole-library scope
 
 ### Commit heatmap
 

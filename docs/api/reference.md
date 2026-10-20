@@ -31,6 +31,21 @@ Repotory 的对外接口是 **Wails 绑定面**：Go 方法经 Wails Bind 暴露
 
 > **信任边界**：该服务**无认证**，返回内容即用户完整本地知识库。安全性完全依赖 `cmd/server` 只绑定 `127.0.0.1`——可达性等价于「本机上的另一个进程」。**禁止**改为 `0.0.0.0` 或经反代暴露到网络；需要远程访问时应先补认证方案并提交 ADR。
 
+### 可选：同源托管前端（`--web-dist`）
+
+默认纯 API，与生产一致。加 `--web-dist <目录>`（或环境变量 `REPOTORY_WEB_DIST`）后，同一进程把构建好的前端一并服务，浏览器即可**单源**访问页面与 `/api/rpc`，无需另起开发服务器或跨域代理：
+
+```bash
+cd web && npm run build:server              # base /，输出 web/dist-server
+cd .. && go build -o repotory-server ./cmd/server
+./repotory-server --port 18766 --web-dist web/dist-server
+```
+
+- `/api/*` 与 `/health` 永远路由到 API mux（`cmd/server` 的 `isAPIPath` 与 `httpapi` 注册面由测试钉住同步）；其余路径优先匹配静态文件，未命中回退 `index.html`（客户端路由）
+- 缺失的静态资源（带非 `.html` 扩展名的路径）返回真 `404`，不回退 HTML——资源缺失不会被伪装成 MIME 错误
+- 相对路径在启动时解析为绝对路径，并在日志打印实际服务目录；路径穿越强制回落根，信任边界不变（仍仅 loopback）
+- 前端配套只有 `build:server` 一种产物可配合此开关：桌面构建 `npm run build` 的 `web/dist` 是 base `./`（wails:// origin 专用），混用会让页面在一种运行时下白屏
+
 ---
 
 ## `/api/rpc`（JSON-RPC 桥）
@@ -56,15 +71,23 @@ Repotory 的对外接口是 **Wails 绑定面**：Go 方法经 Wails Bind 暴露
 | `ResolveWorkspacePath` | `(path) → ProjectResolution` | 只读：把一个绝对目录解析为归属 project，以及当该目录落在被扫描仓库内时对应的 repository（四层路径解析）。供 IDE 侧栏显示命中范围；无 MCP 对应面，agent 改为把 `path` 传给 `repotory_context`。见 [AI 集成](../features/ai-integration.md) |
 | `SearchProjects` | `(query) → ProjectResponse[]` | 名称/路径模糊搜索（含昨日统计增强） |
 | `ToggleStar` | `(id) → bool` | 切换收藏，返回新状态（原子 UPDATE） |
-| `UpdateProjectLevel` | `(id, "up"\|"down") → {success, new_level}` | 合并/拆分项目（单事务） |
+| `UpdateProjectLevel` | `(id, "up"\|"down", confirmed) → {success, new_level}` | 合并/拆分项目（单事务）。`"up"` 会吸收并**删除**同级项目（连带其仓库/笔记/待办），必须 `confirmed=true`，未确认直接报错且零改动；`"down"` 按仓库拆分，忽略该参 |
+| `PreviewProjectMergeUp` | `(id) → MergePreview` | 只读预览：`"up"` 将吸收删除哪些同级项目及随迁的仓库/笔记/待办计数——确认弹窗的数据源，与合并共用同一份兄弟清单（`db.MergePlan`），预览无法少报。无 MCP 对应面（与 `UpdateProjectLevel` 同为 desktop-only） |
 | `RefreshProjectHistory` | `(id) → {success}` | 回填该项目近 365 天统计 |
+| `ListOrganizeGroups` | `() → OrganizeGroup[]` | 知识库整理：列出仍是落点（`import_placeholder` / `default`）、还挂着未归类笔记的项目，含笔记数与「是否有被扫描仓库指向它」。只读，无 MCP 对应面（整理是人的动作，见 [ADR-0023](../adr/0023-note-ownership-knowledge-organize.md)） |
+| `ReassignLandingNotes` | `(sourceId, targetId) → int` | 把某落点项目的全部笔记归口到目标真项目（或「未分类」），返回移动条数。源必须是落点项目，目标必须是扫描项目/默认。无 MCP 对应面 |
+| `DeleteLandingProject` | `(id, deleteNotes bool) → error` | 删除一个 `import_placeholder` 落点项目；仍带笔记时须 `deleteNotes=true` 显式确认（连带删除其笔记）。默认项目与扫描项目一律拒绝——删除是确认动作，不自动级联。无 MCP 对应面 |
+
+**OrganizeGroup**：`{ project_id, name, root_path, kind, note_count, repo_bound }`。
+
+**MergePreview**：`{ target_id, target_name, new_root, siblings: MergeSibling[], repos, notes, todos }`，其中 `MergeSibling`：`{ id, name, root_path, repos, notes, todos }`；空 `siblings` 表示没有可吸收的同级项目。
 
 **ProjectResponse**（节选）：
 
 ```json
 {
   "id": 1, "name": "my-project", "root_path": "/Users/me/code/my-project",
-  "is_starred": true, "repo_count": 2,
+  "is_starred": true, "repo_count": 2, "project_kind": "scanned",
   "total_added": 1200, "total_deleted": 300,
   "my_added": 800, "my_deleted": 200, "my_files": 15,
   "is_workday": true, "below_standard": false

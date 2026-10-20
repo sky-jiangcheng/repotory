@@ -69,6 +69,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"GetRepoCommits":        {SurfaceDesktopOnly, "", "commit table for the detail page"},
 	"GetProjectCommits":     {SurfaceDesktopOnly, "", "commit table for the detail page"},
 	"UpdateProjectLevel":    {SurfaceDesktopOnly, "", "project grouping is a human organising act"},
+	"PreviewProjectMergeUp": {SurfaceDesktopOnly, "", "read-only half of the destructive merge-up confirmation flow; grouping is human-only, so its preview has no MCP twin either"},
 	"ToggleStar":            {SurfaceDesktopOnly, "", "collection is UI state"},
 	"RefreshProjectHistory": {SurfaceDesktopOnly, "", "long-running git refresh driven from the detail page"},
 	"SearchProjects":        {SurfaceDesktopOnly, "", "project picker in the UI"},
@@ -120,10 +121,13 @@ var bindingSurfaces = map[string]BindingSurface{
 	"GenerateLLMsTxt":      {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
 	"ExportNoteAsMarkdown": {SurfaceDesktopOnly, "", "writes to a path chosen in a native save dialog; an agent should not pick where user files land"},
 	"ExportMemoryJSON":     {SurfaceDesktopOnly, "", "file save; OMP export is provisional (ADR-0011)"},
+	"RunBackupNow":         {SurfaceDesktopOnly, "", "writes a local snapshot file; the hourly ticker already covers the cadence (ADR-0025 L1)"},
 
 	// ---- knowledge sources / memory -----------------------------------------
 	"GetKnowledgeSources":        {SurfaceDesktopOnly, "", "plugins settings tab"},
+	"GetKnowledgeSyncStatus":     {SurfaceDesktopOnly, "", "periodic-sync status row in the plugins settings tab"},
 	"TriggerKnowledgeImport":     {SurfaceDesktopOnly, "", "importing another tool's memory is an explicit human opt-in (ADR-0011 privacy gate)"},
+	"PreviewKnowledgeImport":     {SurfaceDesktopOnly, "", "read-only dry-run of one import; same human opt-in surface as the trigger it previews (ADR-0011 privacy gate)"},
 	"TriggerAllKnowledgeImports": {SurfaceDesktopOnly, "", "batch import of other tools' memory files; same per-click consent as the single-source triggers"},
 	"ImportClaudeMemory":         {SurfaceDesktopOnly, "", "reads another tool's memory files off disk; the explicit per-click consent is the point (ADR-0011 decision 4)"},
 	"CaptureClaudeHandoff":       {SurfaceDesktopOnly, "", "reads another tool's session transcript; consent is per-click in settings"},
@@ -140,6 +144,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"LayeredProjectContext": {SurfaceDesktopOnly, "", "agent-side assembly is repotory_context; this binding is the UI/CLI preview"},
 	"ListAIModels":          {SurfaceDesktopOnly, "", "model picker in the settings tab; it enumerates a configured endpoint and is not a knowledge capability"},
 	"TestAIChat":            {SurfaceDesktopOnly, "", "settings 'test connection' button"},
+	"RebuildPageEmbeddings": {SurfaceDesktopOnly, "", "admin re-embed of approved pages (ADR-0018 lane 2); same endpoint-spend rationale as RebuildEmbeddings"},
 
 	// ---- wiki compile & review (the human gate) ------------------------------
 	"CompileNote":           {SurfaceDesktopOnly, "", "an agent able to write pending knowledge would bypass the human gate the whole design rests on (ADR-0015)"},
@@ -162,6 +167,11 @@ var bindingSurfaces = map[string]BindingSurface{
 	"ResolveWorkspacePath": {SurfaceDesktopOnly, "", "agents pass `path` to repotory_context instead; a second client-side matcher is the disagreement this avoids"},
 	"ListWikiPageVersions": {SurfaceDesktopOnly, "", "the page history panel (ADR-0021); snapshots exist so a HUMAN can notice stale approved content, not so an agent can act on it"},
 	"DiffWikiPageVersion":  {SurfaceDesktopOnly, "", "snapshot-vs-current diff on the review page; it supports a human approve/reject decision"},
+
+	// ---- organize (ADR-0023) -------------------------------------------------
+	"ListOrganizeGroups":   {SurfaceDesktopOnly, "", "read-only, but it is the surface a person looks at to decide where unfiled notes belong; an agent choosing for the user is the curation this feature deliberately leaves to a human"},
+	"ReassignLandingNotes": {SurfaceDesktopOnly, "", "re-filing notes between projects is a human organising act, like MoveNote which also has no MCP twin"},
+	"DeleteLandingProject": {SurfaceDesktopOnly, "", "deletes a landing placeholder and may delete its notes; deletion is human-only and is a confirmed action, never an agent-callable cascade"},
 }
 
 // mcpBackedBindings returns the bindings that claim an MCP twin, for the

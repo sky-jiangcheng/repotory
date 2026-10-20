@@ -3,7 +3,28 @@ package db
 import (
 	"database/sql"
 	"testing"
+
+	"repotory/internal/domain"
 )
+
+// scannedProjects returns only the scanner-origin projects, excluding the seeded
+// default ("Uncategorized") landing project (ADR-0023) that otherwise inflates
+// every whole-table project count and would be mistaken for a split child in the
+// "any project that isn't the original" loops below.
+func scannedProjects(t *testing.T, database *sql.DB) []Project {
+	t.Helper()
+	all, err := GetAllProjects(database)
+	if err != nil {
+		t.Fatalf("GetAllProjects: %v", err)
+	}
+	out := make([]Project, 0, len(all))
+	for _, p := range all {
+		if p.ProjectKind == domain.ProjectKindScanned {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
 // mustExecProject inserts a project and returns its id.
 func mustExecProject(t *testing.T, database *sql.DB, name, rootPath string) int64 {
@@ -49,7 +70,7 @@ func TestSplitProjectDownMultiRepo(t *testing.T) {
 		t.Errorf("expected new level -1, got %d", newLevel)
 	}
 
-	projects, _ := GetAllProjects(database)
+	projects := scannedProjects(t, database)
 	if len(projects) != 2 {
 		t.Fatalf("expected 2 projects after split, got %d", len(projects))
 	}
@@ -85,7 +106,7 @@ func TestSplitProjectDownSingleRepo(t *testing.T) {
 	if _, err := SplitProjectDown(database, pid); err != nil {
 		t.Fatalf("SplitProjectDown on single-repo project failed: %v", err)
 	}
-	projects, _ := GetAllProjects(database)
+	projects := scannedProjects(t, database)
 	if len(projects) != 1 {
 		t.Errorf("single-repo split must not create projects, got %d", len(projects))
 	}
@@ -111,7 +132,7 @@ func TestMergeProjectUp(t *testing.T) {
 		t.Errorf("expected new level 1, got %d", newLevel)
 	}
 
-	projects, _ := GetAllProjects(database)
+	projects := scannedProjects(t, database)
 	if len(projects) != 2 {
 		t.Fatalf("expected 2 projects after merge (workspace + elsewhere), got %d", len(projects))
 	}
@@ -225,4 +246,69 @@ func TestMergeProjectUpWithMetacharactersInPath(t *testing.T) {
 	if n != 2 {
 		t.Errorf("both repos should belong to the merged project, got %d", n)
 	}
+}
+
+// A merged project can end up holding repos whose paths are already owned by
+// other projects — those per-repo projects survive an earlier "merge up" because
+// their own parent directory differs from the merged root, so the merge never
+// absorbed them. Split used to INSERT blindly and die on
+// `UNIQUE constraint failed: projects.root_path`, rolling the whole change back
+// and surfacing raw SQLite text in the UI while leaving the project stuck at the
+// merged level. Both the moved repo and the surviving project's rename must
+// tolerate an already-owned path.
+func TestSplitProjectDownRepoPathAlreadyOwned(t *testing.T) {
+	database := setupTestDB(t)
+
+	merged := mustExecProject(t, database, "cbibank", "/tmp/cbibank")
+	repoA := mustExecRepo(t, database, "/tmp/cbibank/group/repo-a", merged)
+	repoB := mustExecRepo(t, database, "/tmp/cbibank/group/repo-b", merged)
+	// Both repo paths are already projects in their own right.
+	ownerA := mustExecProject(t, database, "repo-a", "/tmp/cbibank/group/repo-a")
+	ownerB := mustExecProject(t, database, "repo-b", "/tmp/cbibank/group/repo-b")
+
+	newLevel, err := SplitProjectDown(database, merged)
+	if err != nil {
+		t.Fatalf("split must tolerate owned repo paths, got: %v", err)
+	}
+
+	var gotB int64
+	if err := database.QueryRow("SELECT project_id FROM repositories WHERE id = ?", repoB).Scan(&gotB); err != nil {
+		t.Fatalf("scan repo-b owner: %v", err)
+	}
+	if gotB != ownerB {
+		t.Errorf("repo-b should be re-pointed at its existing owner %d, got %d", ownerB, gotB)
+	}
+	if n := countProjectsAt(database, "/tmp/cbibank/group/repo-b"); n != 1 {
+		t.Errorf("split must not create a duplicate project for an owned path, found %d", n)
+	}
+
+	// The survivor keeps repo-a but cannot claim a root path somebody else owns.
+	var gotA int64
+	if err := database.QueryRow("SELECT project_id FROM repositories WHERE id = ?", repoA).Scan(&gotA); err != nil {
+		t.Fatalf("scan repo-a owner: %v", err)
+	}
+	if gotA != merged {
+		t.Errorf("repo-a should stay with the original project %d, got %d", merged, gotA)
+	}
+	p, err := GetProjectByID(database, merged)
+	if err != nil {
+		t.Fatalf("reload merged project: %v", err)
+	}
+	if p.RootPath != "/tmp/cbibank" {
+		t.Errorf("merged project must keep its own root when repo-a's path is taken, got %q", p.RootPath)
+	}
+	if p.LevelOverride != newLevel || p.IsAutoGrouped {
+		t.Errorf("level/grouping must still update: level_override=%d returned=%d auto=%v", p.LevelOverride, newLevel, p.IsAutoGrouped)
+	}
+	if ownerAfter, err := GetProjectByID(database, ownerA); err != nil || ownerAfter.ID != ownerA {
+		t.Errorf("the pre-existing owner of repo-a must survive untouched: %v", err)
+	}
+}
+
+func countProjectsAt(database *sql.DB, rootPath string) int {
+	var n int
+	if err := database.QueryRow("SELECT count(*) FROM projects WHERE root_path = ?", rootPath).Scan(&n); err != nil {
+		return -1
+	}
+	return n
 }

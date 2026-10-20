@@ -7,6 +7,12 @@
 // mark a hard dependency, so swapping it back out breaks a test rather than
 // shipping silently.
 
+// 本文件的 DOM 访问是**显式登记**而非疏漏（ADR-0026 条件 4）：被测对象是装饰性
+// SVG——`aria-hidden` 正是设计意图，所以没有任何 role/name 可查。断言的是
+// `<rect>/<path>` 的几何数量、`<linearGradient>` 的 id 跨实例唯一性与 `aria-hidden`
+// 本身，三者都只能从 DOM 拿；换成 role 查询等于假装 logo 有可访问语义，会把要测的
+// 东西测没。testing-library 其余规则在本文件仍然生效。
+/* eslint-disable testing-library/no-container, testing-library/no-node-access */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import BrandMark from './BrandMark'

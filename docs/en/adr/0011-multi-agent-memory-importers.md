@@ -1,6 +1,6 @@
 # ADR-0011: Multi-agent memory importers — reusable pipeline + per-source feasibility
 
-- Status: Proposed (framework + five sources landed: claude AUTO; codex / opencode / openclaw / hermes (curated + sessions) as opt-in MANUAL. Cursor deferred after verification — see decision 3)
+- Status: Accepted (2026-10-19: framework + all five sources landed — claude AUTO; codex / opencode / openclaw / hermes (curated + sessions) as opt-in MANUAL; Cursor deferred after verification, see decision 3. Decision 4's dry-run preview shipped: PreviewKnowledgeImport classifies a source's documents against the real idempotency key with zero writes.)
 - Date: 2026-10-03
 - Relates to: ADR-0002 (in-process plugin runtime), ADR-0007, ADR-0010, TODO M2. (Chinese original: `docs/adr/0011-*.md`.)
 
@@ -25,3 +25,5 @@ Repotory already has a clean pipeline: a `plugin.KnowledgeImporter` yields `[]pl
 
 - Positive: multi-agent memory flows into one KB via a pattern every source reuses.
 - Risk: each source is maintenance debt bound to an upstream format; mitigated by golden-file tests + lenient parse + verify-first gate.
+
+> **Real-machine verification (2026-10-20): the Hermes sessions chain works end to end; the schema evidence is upgraded to the official documentation.** `hermes-agent` is an open-source (MIT) Nous Research project, and the official developer doc `session-storage.md` documents the `state.db` layout directly (`sessions` / `messages` / FTS5 / `schema_version`, WAL mode) — `messages(session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp)` matches this ADR's read columns exactly, upgrading the "TencentDB-Agent-Memory shipped-consumer" evidence to "official docs + real-machine data". v0.22.2 was installed on this machine via the official install.sh (the HTTPS clone timed out → `HERMES_REPO_URL` pointed at the SSH remote), configured against LM Studio (`model.provider=lmstudio`, bonsai-27b), and `hermes chat --oneshot` produced the first real `state.db` (`source='oneshot'` — the importer does not filter by source, so oneshot sessions are read like any other). Sandbox-database import against the real data: detection ✓ (state.db alone marks the source detected), first import created=1, re-run idempotent updated=1, and a missing memories/ directory degrades to a graceful no-op. No layout drift was observed.

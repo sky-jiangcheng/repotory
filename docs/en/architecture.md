@@ -73,7 +73,7 @@ How to read it: **one write, two read paths**. When a note is persisted, trigger
 
 ### Knowledge-source runtime (ADR-0002, amended by C11)
 
-The script-plugin runtime (yaegi) has been removed (C11); the knowledge-source registry and the idempotent upsert pipeline remain, with the six built-in agent-memory sources (claude/codex/opencode/openclaw/hermes/cursor) registered via `RegisterSource`/`RegisterSourceManual`.
+The script-plugin runtime (yaegi) has been removed (C11); the knowledge-source registry and the idempotent upsert pipeline remain, with the eight built-in agent-memory sources (claude/codex/opencode/openclaw/hermes/cursor/codebuddy/codebuddy-memory) registered via `RegisterSource`/`RegisterSourceManual`.
 
 ## Frontend (web/src)
 
@@ -115,6 +115,39 @@ How to read it: two artifact lines — the desktop app inlines `web/dist` into t
 | `repotory-mcp` | `cmd/mcp` | MCP stdio server (knowledge base queries + agent-score self-check) |
 
 CI (`.github/workflows/release.yml`) builds for multiple platforms plus macOS signing and notarization; the docs site (`pages.yml`) is generated from `docs/**/*.md` by `scripts/build-docs.mjs` and deployed to GitHub Pages.
+
+## Human and agent topology
+
+The human side (desktop app, VS Code extension) and the agent side (MCP tools, llms.txt) meet at one local knowledge base — one service layer over a single SQLite; `repotory-init` wires the agent side in one command:
+
+Both paths meet at one local knowledge base — the human side (desktop app, VS Code extension), the agent side (MCP tools, llms.txt), one service layer underneath, and `repotory-init` wiring the agent side in one command:
+
+```mermaid
+flowchart TB
+    subgraph HUMAN[👤 Human user — visible in the IDE]
+        direction LR
+        DESKTOP[Desktop App]
+        VSCODE[VS Code extension<br/>VS Code · Cursor · Windsurf]
+    end
+    subgraph AGENT[🤖 AI agent user — tool surface]
+        direction LR
+        MCP[repotory-mcp · 13 MCP tools]
+        DSH[dsh Harness plugin · llms.txt]
+    end
+    subgraph CORE[🧠 Local knowledge base — single source of truth]
+        direction LR
+        SVC[internal/service] --- DB[(SQLite + FTS5)]
+    end
+    HUMAN ~~~ AGENT ~~~ CORE
+    INIT[⚡ repotory-init · one-command registration]
+    INIT --> MCP
+    DESKTOP --> SVC
+    VSCODE --> SVC
+    MCP --> SVC
+    DSH --> SVC
+```
+
+> `repotory_context` injects at session start, `repotory_handoff` captures at session end — the loop closes across agents because handoffs live in local SQLite, not in any agent's private memory.
 
 ## Naming layering
 

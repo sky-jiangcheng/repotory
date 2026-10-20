@@ -26,6 +26,11 @@ var ErrRepoNotFound = errors.New("repository not found")
 
 var ErrProjectNotFound = errors.New("project not found")
 
+// ErrNoteNotFound is the domain answer for "that note is gone" — callers used to
+// receive the driver's `sql: no rows in result set`, which then reached the UI
+// verbatim in the middle of a Chinese sentence.
+var ErrNoteNotFound = errors.New("note not found")
+
 // GetProjectDetail returns a project with all its repositories and stats.
 func (s *Service) GetProjectDetail(id int64) (*ProjectDetailResponse, error) {
 	project, err := db.GetProjectByID(s.db, id)
@@ -153,13 +158,64 @@ func (s *Service) GetProjectCommits(projectID int64, limit int) ([]stats.RecentC
 	return commits, nil
 }
 
-func (s *Service) UpdateProjectLevel(id int64, direction string) (*LevelUpdateResult, error) {
+// ErrMergeNeedsConfirmation guards the destructive half of the grouping control. A
+// "merge up" does not just change a number: it absorbs sibling projects — moving
+// their repositories, notes and todos into the surviving project — and then DELETES
+// those rows. That is deletion, and deletion in this product is an explicit,
+// human-confirmed act, so the merge refuses to run until the caller says so
+// deliberately. The refusal is enforced here, not in the UI, because the same
+// binding is reachable from any HTTP client.
+var ErrMergeNeedsConfirmation = errors.New("merge up requires explicit confirmation")
+
+// MergePreview is what PreviewProjectMergeUp reports and what the confirmation
+// dialog is built from: the sibling rows that would disappear, with the counts of
+// what goes with them. The numbers come from db.MergePlan, i.e. from the very
+// listing the merge consumes, so a preview cannot understate the damage.
+type MergePreview struct {
+	TargetID   int64                 `json:"target_id"`
+	TargetName string                `json:"target_name"`
+	NewRoot    string                `json:"new_root"`
+	Siblings   []domain.MergeSibling `json:"siblings"`
+	Repos      int                   `json:"repos"`
+	Notes      int                   `json:"notes"`
+	Todos      int                   `json:"todos"`
+}
+
+// PreviewProjectMergeUp answers "what would + do right now?" without changing
+// anything. An empty NewRoot means there is nothing above this project to merge into.
+func (s *Service) PreviewProjectMergeUp(id int64) (*MergePreview, error) {
+	project, parentDir, siblings, err := db.MergePlan(s.db, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrProjectNotFound
+		}
+		return nil, err
+	}
+	out := &MergePreview{
+		TargetID: project.ID, TargetName: project.Name, NewRoot: parentDir,
+		Siblings: siblings,
+	}
+	if out.Siblings == nil {
+		out.Siblings = []domain.MergeSibling{}
+	}
+	for _, sib := range out.Siblings {
+		out.Repos += sib.Repos
+		out.Notes += sib.Notes
+		out.Todos += sib.Todos
+	}
+	return out, nil
+}
+
+func (s *Service) UpdateProjectLevel(id int64, direction string, confirmed bool) (*LevelUpdateResult, error) {
 	var newLevel int
 	var err error
 	switch direction {
 	case "down":
 		newLevel, err = db.SplitProjectDown(s.db, id)
 	case "up":
+		if !confirmed {
+			return nil, ErrMergeNeedsConfirmation
+		}
 		newLevel, err = db.MergeProjectUp(s.db, id)
 	default:
 		return nil, fmt.Errorf("direction must be 'up' or 'down'")
@@ -333,12 +389,16 @@ func (s *Service) mineAndCache(cacheRepoID int64, rootPath string, repos []domai
 	if err != nil || k == nil {
 		return
 	}
-	// For a multi-repo grouping the container directory is not a git
+	// The project root of a grouping is a container directory, not a git
 	// repository, so Mine's per-path git probes (activity, top contributors)
-	// silently returned zero. Aggregate across the actual repositories
-	// instead — languages/tech stack walk the working tree and are already
-	// container-safe.
-	if len(repos) > 1 {
+	// silently return zero — they only succeed where `git` itself works. Aggregate
+	// across the actual repositories instead. This applies to a single repository
+	// too, and that is the common case, not an edge: one repo under
+	// <projectRoot>/<repo> leaves `len(repos) > 1` false, so the old guard cached a
+	// zeroed activity for every such project (4 of the 5 repo_meta rows on a real
+	// library, one of them a repository with 6,660 commits). Languages/tech stack
+	// walk the working tree and are already container-safe.
+	if len(repos) >= 1 {
 		paths := make([]string, 0, len(repos))
 		for _, r := range repos {
 			paths = append(paths, r.Path)
@@ -391,6 +451,12 @@ func (s *Service) ListProjects() []domain.Project {
 		log.Printf("list projects error: %v", err)
 		return []domain.Project{}
 	}
+	// The agent-facing list offers only scanner-backed projects: the seeded
+	// default ("Uncategorized") and any import-placeholder landing bucket have no
+	// repository to act on, and this must match the context resolver's candidate
+	// set so an id picked here also resolves in repotory_context (ADR-0023). The
+	// desktop dashboard uses GetProjects, which still surfaces these buckets.
+	projects = filterRealProjects(projects)
 	if projects == nil {
 		return []domain.Project{}
 	}

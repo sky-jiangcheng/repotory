@@ -10,6 +10,11 @@ export interface Project {
   is_auto_grouped: boolean
   is_starred: boolean
   created_at: string
+  // 'scanned' | 'import_placeholder' | 'default' (ADR-0023). The dashboard shows
+  // placeholder/default buckets with a badge so unfiled knowledge is visible.
+  // Optional only so pre-existing test mocks keep compiling — the Go binding
+  // always sends it (json tag, no omitempty), so runtime values are never absent.
+  project_kind?: string
   repo_count: number
   total_added: number
   total_deleted: number
@@ -20,13 +25,48 @@ export interface Project {
   below_standard: boolean
 }
 
+export interface MergeSibling {
+  id: number
+  name: string
+  root_path: string
+  repos: number
+  notes: number
+  todos: number
+}
+
+// What a "merge up" would swallow. Built server-side from the same listing the
+// merge consumes, so the confirmation dialog cannot understate the damage.
+export interface MergePreview {
+  target_id: number
+  target_name: string
+  new_root: string
+  siblings: MergeSibling[]
+  repos: number
+  notes: number
+  todos: number
+}
+
 export interface ProjectDetail {
   id: number
   name: string
   root_path: string
   level_override: number
   is_auto_grouped: boolean
+  // See Project.project_kind — always present from Go, optional for mocks.
+  project_kind?: string
   repos: RepoInfo[]
+}
+
+// OrganizeGroup mirrors internal/domain.OrganizeGroup (ADR-0023): a landing
+// project (import placeholder / the default bucket) that still holds unfiled
+// notes, offered for reassignment in the knowledge-base organize view.
+export interface OrganizeGroup {
+  project_id: number
+  name: string
+  root_path: string
+  kind: string
+  note_count: number
+  repo_bound: boolean
 }
 
 export interface RepoInfo {
@@ -229,13 +269,41 @@ export interface ScanStatus {
 export interface SourceStatus {
   name: string
   plugin: string
+  detected: boolean
   enabled: boolean
+  detail: string
+  // Derived display bucket: 'agent-import' | 'user-conversation' |
+  // 'project-extract' | 'manual' (mirrors runtime.SourceType).
+  type: string
 }
 
 export interface ImportRun {
   created: number
   updated: number
   skipped: number
+}
+
+export interface ImportPreviewItem {
+  title: string
+  action: 'create' | 'update' | 'skip'
+  project_id: number
+}
+
+// What a knowledge source WOULD import, classified without writing anything
+// (ADR-0011 decision 4 dry-run).
+export interface ImportPreview {
+  source: string
+  created: number
+  updated: number
+  skipped: number
+  items: ImportPreviewItem[]
+}
+
+// KnowledgeSyncStatus reports the periodic knowledge sync's last round
+// (matches Go service.KnowledgeSyncStatus).
+export interface KnowledgeSyncStatus {
+  last_run: string
+  last_error: string
 }
 
 // HandoffEntry is one row of the first-screen memory ring (D25): a handoff
@@ -270,6 +338,8 @@ export interface EvidenceItem {
   ref: string // "P1" / "N2" — positional label from this retrieval only
   type: 'page' | 'note'
   id: number
+  project_id?: number
+  project_name?: string
   title: string
   slug?: string
   kind: string

@@ -24,8 +24,11 @@ type SummaryData struct {
 	IsWorkday    bool   `json:"is_workday"`
 }
 
-// GetSummary returns aggregated stats for all repositories on a given date.
-func (s *Service) GetSummary(date string) (*SummaryData, error) {
+// GetSummary returns aggregated stats for a given date. With starredOnly the
+// aggregation covers only the repositories of starred projects — the same set
+// the dashboard's starred-filtered list shows, so the header strip and the
+// rows can never disagree about scope.
+func (s *Service) GetSummary(date string, starredOnly bool) (*SummaryData, error) {
 	if date == "" {
 		date = s.git.GetYesterdayDate()
 	}
@@ -33,7 +36,7 @@ func (s *Service) GetSummary(date string) (*SummaryData, error) {
 		return nil, fmt.Errorf("invalid date format: %w", err)
 	}
 
-	allStats, err := db.GetStatsByDate(s.db, date)
+	allStats, err := db.GetStatsByDateScope(s.db, date, starredOnly)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load summary: %w", err)
 	}

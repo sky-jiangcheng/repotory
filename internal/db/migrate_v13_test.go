@@ -11,8 +11,10 @@ import (
 //  2. repo_meta rows for multi-repo projects, whose activity/contributors
 //     were mined from the non-git container directory and are always zero.
 //
-// Single-repo projects mined their actual repository and must keep their
-// cache untouched.
+// A single-repo project whose repository IS its root mined a real repository and
+// must keep its cache untouched. (The container-root single-repo shape — project
+// root one level above the repository — was assumed safe here and turned out to be
+// the common broken case; v25 repairs it.)
 func TestInitDB_V13NormalizesTagsAndDropsMultiRepoMeta(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
@@ -38,7 +40,10 @@ func TestInitDB_V13NormalizesTagsAndDropsMultiRepoMeta(t *testing.T) {
 	}
 	r1 := insertRepo(t, "/tmp/v13-multi-a", pidMulti)
 	r2 := insertRepo(t, "/tmp/v13-multi-b", pidMulti)
-	r3 := insertRepo(t, "/tmp/v13-single-a", pidSingle)
+	// The solo project's repository IS its root (that is what "mined their actual
+	// repository" means). A single-repo project with a container root is a different
+	// shape and is repaired by v25 — see TestDropPoisonedActivityMeta.
+	r3 := insertRepo(t, "/tmp/v13-single", pidSingle)
 
 	for _, rid := range []int64{r1, r2, r3} {
 		if err := UpsertRepoMeta(db1, rid, `["Java (Maven)"]`, "readme", `{}`, `[]`, `[]`, `{"total_commits":0,"active_days":0,"last_commit_date":"","commit_rate_30d":0,"active_months":0}`); err != nil {

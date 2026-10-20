@@ -1,6 +1,6 @@
 # ADR-0020: 社区摘要——用 Label Propagation 让 synthesis 层自己长出来
 
-- 状态：Proposed（**已落码，待真库演练后升 Accepted**。`internal/graph` 的同步 Label Propagation、白名单传播、synthesis 起草成 pending、`documents` 边与来源挂接、幂等 slug、预算与 `wiki_community_summary` 门都已实现并有测试；待决 4 按推荐落地（同步 + 硬预算，不给 `compile_jobs.kind` 加值，因此没有整表重建）。晋升条件 1、2、3、5 已满足，条件 4（真库副本演练 + 人审）待用户亲自跑，故仍 Proposed。实现期得到的事实见末尾「实现修正」节——其中两条（LP 需要 self-vote 才可用、synthesis 页不得进自己的输入）是设计稿没有预见的）
+- 状态：Accepted（**真库副本端到端演练 + 人审已完成（2026-10-18）**。`internal/graph` 的同步 Label Propagation、白名单传播、synthesis 起草成 pending、`documents` 边与来源挂接、幂等 slug、预算与 `wiki_community_summary` 门都已实现并有测试；待决 4 按推荐落地（同步 + 硬预算，不给 `compile_jobs.kind` 加值，因此没有整表重建）。晋升条件 1、2、3、5 已满足——条件 4 在真库副本（VACUUM INTO 副本、不碰 live）上按序演练：门关时仅结构检测（1 社区，零外发、零写入，如实提示）；门开时产出 1 篇 pending synthesis 页（slug 决定性、3 条 documents 边、3 条 code-built note 附件），出口字节可审计；重跑更新同一 slug（未堆叠）。发现模型 slug 漂移（[[cbipay-branch-3.0.6]] 与实际 cbipay-branch-306 不符），人审可拦；另补演练所用模拟边（直接 SQL）形成 ≥3 人社区，验证门控逻辑。）
 - 日期：2026-10-10
 - 关联：[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（决策 1 把 synthesis 列为五类之一、决策 5 的 lint 有 `no-synthesis` 缺口检查）、[ADR-0015](0015-w3-minimal-compile-loop.md)（"MVP 不做 synthesis 自动重写"、只新建 pending 不改批准页、审核隔离）、[ADR-0016](0016-async-batch-jobs.md)（长任务 job 化，但 `compile_jobs.kind` 加值=整表重建）、[ADR-0018](0018-knowledge-graph-foundation.md)（lane 1 受控关系词表 = 本 ADR 传播所沿的边；lane 2 PPR 是"第一次读图"，本 ADR 是"第二次"）、[ADR-0019](0019-entity-resolution-merge.md)（合并让社区更干净，但本 ADR 不阻塞在其后：分裂也能摘要，只是质量打折）；TODO **M7** 后续；起点 schema v21
 - 配套：`outputs/process-logs/Repotory-知识图谱实施计划-2026-10-09.md` 的 Phase 4a
@@ -92,3 +92,5 @@ ADR-0015 当时明确"MVP 不做 synthesis 自动重写"，ADR-0018 又把它推
 6. **一处 lint 语义松动，记录以免被当成已收紧**：`no-synthesis` 经 `WikiPageCount` 统计**所有状态**，因此一张 pending 的 synthesis 就能让它转绿。本 ADR 的验收按「批准后转绿」测（`TestCommunitySynthesisClosesTheNoSynthesisGap`），但这个检查衡量的是「存在」而不是「已审」。收紧它等于改动 W4 既有检查的语义，不在本次范围内。
 
 **晋升状态**：条件 1（`internal/graph` 纯单测：链/两团一桥/碎片/巨块/阈值，含「同图重跑逐字节一致」的输入顺序置换测试）、条件 2（生成契约：空回复仍建页与边、重跑幂等、撞已批准降级待办、预算触顶即停）、条件 3（`wiki_community_summary` 关时零外发零写库，开时报告带外发字节数）与条件 5（批准 synthesis 后 `no-synthesis` 转绿）均已满足；条件 4（真库副本端到端演练 + 人审一轮）需用户亲自跑。故本 ADR 维持 Proposed。
+
+> **注记（2026-10-19）：综述一致性检查已并入 lint。** 本 ADR 产出的 synthesis 页此前只有结构性体检（孤页/链接形状），「综述是否忠实于成员页」无人看。现把 `community-incoherent` 作为第三类发现并入 `wiki_lint_llm` 的模型半（ADR-0014 决策 5 的模型检查清单）：payload 里 synthesis 页附上经 `page_links` 解析的 members 清单，模型判定综述与成员页明显不一致/遗漏/歪曲即产 `[lint]` 待办。信任规则与既有两类完全一致——只建议不改页、page_id 必须可查、JSON 解析不出即整轮不采信；门不变（`wiki_lint_llm` 默认关），本 ADR 的门 `wiki_community_summary` 与之正交。

@@ -31,6 +31,9 @@ import (
 // Desktop-only (no MCP equivalent by design — GUI state, admin, or file UX):
 //   Projects: UpdateProjectLevel, ToggleStar, RefreshProjectHistory,
 //             GetRepoCommits, GetProjectCommits
+//   Organize (ADR-0023): ListOrganizeGroups, ReassignLandingNotes,
+//             DeleteLandingProject — human curation of landing buckets; the
+//             delete is a confirmed action, never an automatic cascade.
 //   AI: AskAIWithEvidence, FileAnswerAsPage, StartAskStream (evidence-gated Q&A,
 //       its query-loop filing, and the streaming variant; desktop UI consumers by
 //       design — StartAskStream rides Wails events, so no MCP/HTTP twin)
@@ -65,7 +68,8 @@ import (
 //   Todos: ListTodos, CreateTodo, ToggleTodo, DeleteTodo, ReorderTodos
 //   Config: GetConfig, UpdateConfig, UpdateScanRoots
 //   Exports: GenerateLLMsTxt, ExportNoteAsMarkdown, ExportMemoryJSON
-//   Plugins/knowledge sources: GetKnowledgeSources, TriggerKnowledgeImport,
+//   Plugins/knowledge sources: GetKnowledgeSources, GetKnowledgeSyncStatus,
+//                              TriggerKnowledgeImport, PreviewKnowledgeImport,
 //                              TriggerAllKnowledgeImports, ImportClaudeMemory,
 //                              CaptureClaudeHandoff
 //   Memory ring (D25 first screen): ListRecentHandoffs — content-free
@@ -107,13 +111,46 @@ func (a *App) GetProjectCommits(projectID int64, limit int) ([]stats.RecentCommi
 	return a.svc.GetProjectCommits(projectID, limit)
 }
 
-// UpdateProjectLevel adjusts a project's grouping level up or down.
-func (a *App) UpdateProjectLevel(id int64, direction string) (*service.LevelUpdateResult, error) {
-	return a.svc.UpdateProjectLevel(id, direction)
+// PreviewProjectMergeUp is the read-only half of the destructive "merge up" action:
+// it reports which sibling projects would be absorbed and deleted, with their
+// repository/note/todo counts. The UI shows this before it is allowed to ask for
+// confirmation.
+func (a *App) PreviewProjectMergeUp(id int64) (*service.MergePreview, error) {
+	return a.svc.PreviewProjectMergeUp(id)
+}
+
+// UpdateProjectLevel adjusts the grouping level. `confirmed` must be true for
+// direction "up", which absorbs and deletes sibling projects along with their notes
+// and todos; the service refuses otherwise. "down" splits by repository (it is not an
+// undo of a merge) and ignores the flag.
+func (a *App) UpdateProjectLevel(id int64, direction string, confirmed bool) (*service.LevelUpdateResult, error) {
+	return a.svc.UpdateProjectLevel(id, direction, confirmed)
 }
 
 // ToggleStar flips the starred status of a project.
 func (a *App) ToggleStar(projectID int64) (bool, error) { return a.svc.ToggleStar(projectID) }
+
+// --- Organize (ADR-0023) ----------------------------------------------------
+// Desktop-only: these back the knowledge-base "organize" surface that lands
+// unfiled notes (import placeholders / the default bucket) onto real projects.
+// Deliberately no MCP twin — organizing is a human curation act, and Delete-
+// LandingProject is the user-confirmed "delete this placeholder and its notes".
+
+// ListOrganizeGroups returns the landing projects (placeholders / default) that
+// still hold notes, for the organize view.
+func (a *App) ListOrganizeGroups() []domain.OrganizeGroup { return a.svc.ListOrganizeGroups() }
+
+// ReassignLandingNotes moves every note from a landing project to a target real
+// (or default) project and returns the count moved.
+func (a *App) ReassignLandingNotes(sourceID, targetID int64) (int, error) {
+	return a.svc.ReassignLandingNotes(sourceID, targetID)
+}
+
+// DeleteLandingProject removes an import-placeholder project; deleteNotes confirms
+// removing the notes still in it. The default and scanned projects are rejected.
+func (a *App) DeleteLandingProject(id int64, deleteNotes bool) error {
+	return a.svc.DeleteLandingProject(id, deleteNotes)
+}
 
 // RefreshProjectHistory triggers a full 365-day stats backfill for a single
 // project's repositories.
@@ -148,8 +185,12 @@ func (a *App) GetScanStatus() *service.ScanStatus { return a.svc.GetScanStatus()
 
 // --- Summary / heatmap / status ----------------------------------------------
 
-// GetSummary returns aggregated stats for all repositories on a given date.
-func (a *App) GetSummary(date string) (*service.SummaryData, error) { return a.svc.GetSummary(date) }
+// GetSummary returns aggregated stats for a given date; starredOnly restricts
+// the aggregation to starred projects' repositories so the dashboard header
+// matches the filtered list's scope.
+func (a *App) GetSummary(date string, starredOnly bool) (*service.SummaryData, error) {
+	return a.svc.GetSummary(date, starredOnly)
+}
 
 // GetHeatmapData returns daily commit stats for the past year. A positive
 // projectID restricts the aggregation to that project's repositories.
@@ -283,14 +324,32 @@ func (a *App) ExportNoteAsMarkdown(noteID int64) string { return a.svc.ExportNot
 // JSON array (ADR-0013 interop seam; provisional, OMP is pre-v1). limit<=0 = all.
 func (a *App) ExportMemoryJSON(limit int64) string { return a.svc.ExportMemoryJSON(int(limit)) }
 
+// RunBackupNow produces today's local database snapshot immediately (VACUUM
+// INTO, ADR-0025 L1) and rotates old ones. The hourly ticker calls the same
+// path; this binding exists for a settings-page button and scripted runs.
+func (a *App) RunBackupNow() (string, error) { return a.svc.RunBackupNow() }
+
 // --- Plugins / knowledge sources ----------------------------------------------
 
 // GetKnowledgeSources returns registered knowledge importers with their state.
 func (a *App) GetKnowledgeSources() []pluginruntime.SourceStatus { return a.svc.GetKnowledgeSources() }
 
+// GetKnowledgeSyncStatus returns the periodic knowledge sync's last round
+// (when it ran and whether any source in that round failed), for the plugins
+// settings tab's sync status row.
+func (a *App) GetKnowledgeSyncStatus() service.KnowledgeSyncStatus {
+	return a.svc.KnowledgeSyncStatus()
+}
+
 // TriggerKnowledgeImport runs one knowledge source and returns its statistics.
 func (a *App) TriggerKnowledgeImport(name string) (pluginruntime.ImportRun, error) {
 	return a.svc.TriggerKnowledgeImport(name)
+}
+
+// PreviewKnowledgeImport runs one knowledge source in read-only preview mode
+// and reports what it WOULD import, writing nothing (ADR-0011 决策 4 dry-run).
+func (a *App) PreviewKnowledgeImport(name string) (pluginruntime.ImportPreview, error) {
+	return a.svc.PreviewKnowledgeImport(name)
 }
 
 // TriggerAllKnowledgeImports runs every registered knowledge source.
@@ -329,6 +388,16 @@ func (a *App) LatestHandoff(projectID int64) (*service.HandoffStatus, error) {
 // embedding endpoint (both default off — ADR-0012).
 func (a *App) RebuildEmbeddings() (int, error) {
 	return a.svc.RebuildEmbeddings()
+}
+
+// RebuildPageEmbeddings (re)embeds every APPROVED wiki page into the page vector
+// index (ADR-0018 lane 2, schema v23). Desktop-only admin twin of
+// RebuildEmbeddings: same semantic_search + endpoint gate, but it fills the
+// separate page_embeddings index so graph-aware evidence can recall compiled
+// pages. Kept as its own action because pages and notes embed in different index
+// spaces and a user who only wants pages should not re-pay for every note.
+func (a *App) RebuildPageEmbeddings() (int, error) {
+	return a.svc.RebuildPageEmbeddings()
 }
 
 // AskAI forwards the question (with generated project context for projectID>0)
