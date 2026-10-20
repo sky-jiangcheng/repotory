@@ -59,3 +59,5 @@ M2 要把同一管线扩展到 Cursor / Codex / OpenCode 等。但 2026-10 现�
 - 读取沿用 cursor 的 best-effort 纪律：`memsrc.OpenReadOnly`（`mode=ro`，WAL 兜底 `immutable=1`，单连接）+ 只查 `messages` 表；表/列缺失时**整源报错**而非安静导入 0 条（`probeSessionsLayout`）。`.env` / `mcp-tokens/` 仍绝不触碰。
 - 提炼方式与 codex 同构：每会话→一条 log 笔记（首条提问 + 末条回复各截 3000 字符），幂等键 `(project, \"hermes\", title)`，标题 = 首条提问截断 + session id 尾 8 位。
 - 附带下沉：cursor 包内的 `openReadOnly` 抽取为 `memsrc.OpenReadOnly`（第 3 个 sqlite-backed importer 出现，符合决策 2「第 2、3 个源落地时才抽」）。
+
+> **真机核验（2026-10-20）：Hermes sessions 链路跑通，schema 证据升级为官方文档。** `hermes-agent` 为 Nous Research 开源项目（MIT），官方开发者文档 `session-storage.md` 直接记载 `state.db` 架构（`sessions` / `messages` / FTS5 / `schema_version`，WAL 模式）——`messages(session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp)` 与本文读取列逐一致，原「Tencent 消费者侧证」升级为「官方文档 + 真机数据」双证。本机按官方 install.sh 安装 v0.22.2（HTTPS 克隆超时 → `HERMES_REPO_URL` 走 SSH 源），配 LM Studio（`model.provider=lmstudio`，bonsai-27b）以 `hermes chat --oneshot` 产出首份真 `state.db`（`source='oneshot'`——导入器不按 source 过滤，oneshot 照读）。沙箱库 + 真数据导入实测：探活（state.db 单独判活）、首导 created=1、复跑幂等 updated=1、memories/ 缺失优雅 no-op。未见任何布局漂移。
