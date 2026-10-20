@@ -101,7 +101,7 @@ Launch opens a desktop window directly (a Wails app — no browser needed):
 
 More in [Getting Started](docs/en/getting-started.md).
 
-> **CLI tools** (opt-in, advanced): `repotory vector-init` — guided setup of the vector store (local default / remote Qdrant/Weaviate) + embedding provider; `repotory-capture` — the Claude Code SessionEnd hook target that auto-captures a closed session; `go run ./cmd/abeval -cases queries.jsonl` — the A/B gate that decides whether semantic search earns enabling. All read the same local database; see [ADR-0013](docs/adr/0013-vector-database-selection.md).
+> **CLI tools** (opt-in, advanced): `go run ./cmd/vector-init` — guided setup of the vector store (local default / remote Qdrant / Weaviate) + embedding provider; `repotory-capture` — the Claude Code SessionEnd hook target that auto-captures a closed session; `go run ./cmd/abeval -cases queries.jsonl` — the A/B gate that decides whether semantic search earns enabling. All read the same local database; see [ADR-0013](docs/adr/0013-vector-database-selection.md).
 
 ### Set Up the AI Execution Interface (`repotory-mcp`)
 
@@ -216,13 +216,13 @@ The extension (VS Code / Cursor / Windsurf — one VSIX covers all three) is a *
 git clone https://github.com/sky-jiangcheng/repotory.git
 cd repotory/ide/vscode
 npm install
-npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.6.0.vsix
+npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.9.0.vsix
 ```
 
 Then install the produced `.vsix`:
 
 - **UI**: Extensions view → `⋯` menu → **Install from VSIX…**
-- **CLI**: `code --install-extension repotory-vscode-2.6.0.vsix` (use `cursor` / `windsurf` for the forks)
+- **CLI**: `code --install-extension repotory-vscode-2.9.0.vsix` (use `cursor` / `windsurf` for the forks)
 
 The extension is a thin client: commands call `repotory-mcp` over stdio (install it first — brew / scoop / [Releases](https://github.com/sky-jiangcheng/repotory/releases)), and all answers come from the same `internal/service` layer as the desktop app. Capability details in [`ide/vscode/README.md`](ide/vscode/README.md).
 

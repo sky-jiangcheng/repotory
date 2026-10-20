@@ -100,7 +100,7 @@ scoop bucket add repo https://github.com/sky-jiangcheng/scoop-repo && scoop inst
 
 更多见[快速上手](docs/getting-started.md)。
 
-> **CLI 工具**（可选，进阶）：`repotory vector-init` —— 引导式配置向量库（默认本地 / 远端 Qdrant/Weaviate）与 embedding 提供方；`repotory-capture` —— Claude Code SessionEnd hook 的目标，自动捕获已关闭的会话；`go run ./cmd/abeval -cases queries.jsonl` —— 决定语义检索是否够格开启的 A/B 门。全部读同一个本地数据库；见 [ADR-0013](docs/adr/0013-vector-database-selection.md)。
+> **CLI 工具**（可选，进阶）：`go run ./cmd/vector-init` —— 引导式配置向量库（默认本地 / 远端 Qdrant/Weaviate）与 embedding 提供方；`repotory-capture` —— Claude Code SessionEnd hook 的目标，自动捕获已关闭的会话；`go run ./cmd/abeval -cases queries.jsonl` —— 决定语义检索是否够格开启的 A/B 门。全部读同一个本地数据库；见 [ADR-0013](docs/adr/0013-vector-database-selection.md)。
 
 ### 配置 AI 执行接口（`repotory-mcp`）
 
@@ -215,13 +215,13 @@ flowchart TB
 git clone https://github.com/sky-jiangcheng/repotory.git
 cd repotory/ide/vscode
 npm install
-npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.6.0.vsix
+npx @vscode/vsce package --no-dependencies   # → repotory-vscode-2.9.0.vsix
 ```
 
 然后安装产出的 `.vsix`：
 
 - **界面**：扩展视图 → `⋯` 菜单 → **Install from VSIX…**
-- **命令行**：`code --install-extension repotory-vscode-2.6.0.vsix`（分叉编辑器用 `cursor` / `windsurf`）
+- **命令行**：`code --install-extension repotory-vscode-2.9.0.vsix`（分叉编辑器用 `cursor` / `windsurf`）
 
 扩展是瘦客户端：命令通过 stdio 调用 `repotory-mcp`（先装好——brew / scoop / [Releases](https://github.com/sky-jiangcheng/repotory/releases)），所有回答来自与桌面应用相同的 `internal/service` 层。能力细节见 [`ide/vscode/README.md`](ide/vscode/README.md)。
 

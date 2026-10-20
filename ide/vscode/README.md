@@ -11,7 +11,7 @@ One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 | Command `Repotory: Load Session Context` | Pulls the working context for your project (tech stack, README excerpt, recent commits, open todos, the last session handoff) via `repotory_context`, sending the current workspace path so a subdirectory resolves to the repository it belongs to; shows it in the Repotory output channel |
 | Command `Repotory: Write Session Handoff` | Prompts for summary / changes / next steps, then records a structured handoff (`repotory_handoff`) — the project is resolved from the workspace path — the next session, yours or any agent's, starts from it |
 | Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar and open read-only |
-| Sidebar "Knowledge Search" | Idle state shows the resolved `project · repository` (or "not in the knowledge base yet"), then the search results |
+| Sidebar "Repotory: Knowledge Search" | Idle state shows the resolved `project · repository` (or "Repotory: not in the knowledge base yet"), then the search results. Title bar also carries **"Repotory: Open Desktop App"** to launch the Repotory desktop app from the IDE |
 | Status bar `$(repo) Repotory` | Click = load context; the tooltip names the resolved workspace (project / repository and its path) once resolved |
 | Command `Repotory: Register MCP Server` | Runs the bundled `repotory-init --with-hook` in a terminal: registers the MCP server for Claude Code / Cursor / VS Code / Windsurf and installs the SessionEnd hook. The installer ships inside the extension, so this works in any project — it is not limited to the Repotory repository |
 
@@ -29,6 +29,10 @@ The sidebar's title bar also carries a search button. All four commands remain i
 
 - The [`repotory-mcp`](https://github.com/sky-jiangcheng/repotory#quick-start) binary on your PATH — install it via Homebrew, Scoop or the GitHub Releases page. The desktop app is optional; the MCP server alone is enough.
 - Optional: a running `repotory server` for the status-bar health check (set `repotory.serverUrl` if you changed the port).
+
+## First launch
+
+On first activation the extension shows a welcome prompt: install `repotory-mcp`, run **"Repotory: Register MCP Server"** to register the MCP server with your AI clients, or dismiss. You can always re-run registration from the Command Palette later.
 
 ## Settings
 

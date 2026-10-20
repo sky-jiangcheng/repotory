@@ -2,7 +2,7 @@
   "name": "repotory-vscode",
   "displayName": "Repotory",
   "publisher": "sky-jiangcheng",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Repotory inside your IDE: load session context, write session handoffs and search your local knowledge base from the command palette, status bar and sidebar. One VSIX covers VS Code, Cursor and Windsurf.",
   "license": "MIT",
   "engines": {
@@ -33,6 +33,10 @@
       {
         "command": "repotory.registerMcp",
         "title": "Repotory: Register MCP Server (repotory-init)"
+      },
+      {
+        "command": "repotory.openDesktop",
+        "title": "Repotory: Open Desktop App"
       }
     ],
     "keybindings": [
@@ -58,6 +62,11 @@
           "command": "repotory.search",
           "when": "view == repotory.notesSearch",
           "group": "navigation"
+        },
+        {
+          "command": "repotory.openDesktop",
+          "when": "view == repotory.notesSearch",
+          "group": "navigation"
         }
       ]
     },
@@ -75,7 +84,7 @@
       "repotory-explorer": [
         {
           "id": "repotory.notesSearch",
-          "name": "Knowledge Search"
+          "name": "Repotory: Knowledge Search"
         }
       ]
     },

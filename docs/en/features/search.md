@@ -5,7 +5,7 @@ order: 3
 
 # Global Search
 
-Global search is a top-level page (ADR-0024): one input that searches **notes, todos, and project names across all projects**, with results grouped into Projects / Notes / Todos. Both the "Search" item in the navigation bar and the entry on the right of the home memory-ring strip lead here; the ⌘K / Ctrl+K command palette remains the keyboard-first quick switcher (its first action is still "new handoff") — the two coexist.
+Global search is a top-level page: one input that searches **notes, todos, and project names across all projects**, with results grouped into Projects / Notes / Todos. Both the "Search" item in the navigation bar and the entry on the right of the home memory-ring strip lead here; the ⌘K / Ctrl+K command palette remains the keyboard-first quick switcher (its first action is still "new handoff") — the two coexist.
 
 ## Page structure
 
@@ -20,7 +20,7 @@ With an empty input, the page shows two recommendation groups (instead of a blan
 - **Hot projects** (top 6): ranked by **recent personal added lines** (`GetProjects`'s default yesterday anchor), with starred state and repo count as tiebreakers; click to open the project
 - **Hot tags** (top 12): tags from all notes; **clicking one fills the input and runs the search**
 
-"Hot" is a client-side heuristic (ADR-0024); the ranking basis is labelled on the page itself.
+"Hot" is a client-side heuristic; the ranking basis is labelled on the page itself.
 
 ## How it relates to the other search entries
 

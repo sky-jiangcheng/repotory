@@ -67,7 +67,7 @@ The project detail page auto-extracts: README summary, tech stack list (20+ mani
 
 ### Dashboard & Stats (Support)
 
-> Home is the fused workbench ([ADR-0024](adr/0024-home-workbench-merge-search-page.md)): assistant, memory ring, featured projects and today's stats on one page; `/search` is a dedicated page; nav order home → dashboard → search → knowledge → review → settings.
+> Home is a single-column workbench: knowledge-base assistant, memory-ring strip (recent handoffs + global-search entry), featured projects and today's activity on one page; `/search` is a dedicated search page; nav order home → dashboard → search → knowledge → review → settings.
 
 | Feature | Description |
 |---------|-------------|
