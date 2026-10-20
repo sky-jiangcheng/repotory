@@ -116,7 +116,11 @@ func (s *Service) GetStatusBar() *StatusBarData {
 		CurrentTime: now.Format("2006-01-02 15:04:05"),
 	}
 
-	recent, err := s.git.GetRecentCommit(repoPaths, s.gitUser())
+	// Not filtered by gitUser: the strip's label is "Last commit", not "my last
+	// commit" — and the author filter blanked it entirely whenever git user.name
+	// was unset (the OS-username fallback) or simply never matched a committer,
+	// showing "no commits" over repositories that were actively committing.
+	recent, err := s.git.GetRecentCommit(repoPaths, "")
 	if err == nil && recent != nil {
 		data.LastCommitTime = recent.Time
 		data.LastCommitRepo = filepath.Base(recent.Repo)

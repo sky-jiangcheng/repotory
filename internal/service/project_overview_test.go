@@ -12,12 +12,19 @@ import (
 // the project detail page read `overview.recent_commits.length` directly,
 // throwing "e.recent_commits is null" and crashing the whole page.
 func TestGetProjectOverview_EmptyArraysNotNil(t *testing.T) {
-	svc, _ := setupService(t)
+	svc, fg := setupService(t)
 	pid := seedProject(t, svc.db, "proj", "/tmp/proj")
 
 	ov, err := svc.GetProjectOverview(pid)
 	if err != nil {
 		t.Fatalf("GetProjectOverview: %v", err)
+	}
+
+	// The recent-commits section feeds the copied AI context: it must carry the
+	// repos' latest commits, not only the "mine" author's (see service_test.go
+	// fakeGit for the blanking defect this pins).
+	if fg.recentCommitsAuthor != "" {
+		t.Errorf("recent commits queried with author filter %q; want none (repo-wide)", fg.recentCommitsAuthor)
 	}
 
 	if ov.TechStack == nil {
