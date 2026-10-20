@@ -4,7 +4,7 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
-## [Unreleased]
+## [2.9.1] - 2026-10-20
 
 ### 新增
 
