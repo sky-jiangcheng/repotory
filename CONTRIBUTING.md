@@ -66,6 +66,10 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 - 品牌文案写 `Repotory`，完整展示名 `Repotory: Local Git Knowledge Base`，仓库/包标识写 `repotory`
 - **不要「顺手统一」冻结标识**：二进制/命令名 `repotory`、数据目录 `repotory`（`internal/platform` 的 `dirName`）、MCP server 名 `repotory-mcp` 与工具前缀 `repotory_*`。它们绑定用户数据迁移史与 AI 客户端对外契约，改名是破坏性变更
 
+## 默认值变更须先过评测门
+
+把一个功能从「默认关」改为「默认开」（或收紧/放宽任何面向用户的默认值），必须先在对应评测设施上跑出达标数据并在 PR 里贴结果（检索类用 `internal/search/abeval` + 标注集，编译类用审核留存率，备份类用恢复演练）。理由：默认值是产品行为，「感觉更好」不是证据——2026-10 起 M3（语义检索默认关）与 M7 lane 2（图检索强化门槛）两次拍板均以 delta 数据为准，此惯例成文以防回退。
+
 ## 提交与版本
 
 - 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)（`feat:` / `fix:` / `docs:` / `refactor:` …），scope 用受影响的域（如 `feat(server):`、`fix(kb):`）

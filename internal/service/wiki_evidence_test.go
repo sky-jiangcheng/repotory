@@ -404,3 +404,91 @@ func TestFileAnswerAsPageClosesTheLoop(t *testing.T) {
 	}
 	_ = pageIDs
 }
+
+// L0/L1 two-phase packing (adapted from ai-memory's brief tiers): the character
+// budget first buys DISTINCT evidence at a short excerpt, then deepens the best
+// items toward the upstream ceiling. The old single-tier admission spent ~600
+// runes on the first page and dropped every candidate behind it; the same
+// budget must now see the full candidate set.
+func TestEvidenceL0L1Packing(t *testing.T) {
+	svc, _ := setupService(t)
+	projectID := seedProject(t, svc.db, "l0l1", "/tmp/l0l1")
+
+	const n = 12
+	for i := 0; i < n; i++ {
+		body := fmt.Sprintf("深度主题%d %s", i, strings.Repeat("细节段落内容用于测试深度截断行为", 30))
+		if _, err := db.CreateWikiPage(svc.db, db.WikiKindConcept,
+			fmt.Sprintf("l0l1-page-%d", i), fmt.Sprintf("深度主题 %d", i), projectID, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ev := svc.GatherEvidence(projectID, "深度主题", EvidenceBudget{MaxChars: 4000})
+
+	if len(ev.Items) != n {
+		t.Fatalf("L0 admission produced %d items; want all %d distinct candidates", len(ev.Items), n)
+	}
+	used := 0
+	for _, it := range ev.Items {
+		used += len([]rune(it.Title)) + len([]rune(it.Snippet))
+	}
+	if used > 4000 {
+		t.Fatalf("packed %d chars over the 4000 budget", used)
+	}
+	// Deepening runs best-ranked first: item 0 must carry the FULL body (~454
+	// runes), the last admitted item must still be at its L0 clip (200).
+	first := len([]rune(ev.Items[0].Snippet))
+	last := len([]rune(ev.Items[n-1].Snippet))
+	if first <= last {
+		t.Fatalf("deepening order wrong: first item %d runes <= last item %d runes", first, last)
+	}
+	if first < 400 {
+		t.Fatalf("rank-1 snippet = %d runes; want the deepened full body (>=400)", first)
+	}
+	if last > 220 {
+		t.Fatalf("last snippet = %d runes; want it untouched at L0 (<=200)", last)
+	}
+	// All-or-nothing upgrades: every snippet is either the full body or the exact
+	// L0 clip — nothing in between.
+	for i, it := range ev.Items {
+		l := len([]rune(it.Snippet))
+		if l > 220 && l < 400 {
+			t.Fatalf("item %d snippet = %d runes: a half-deepened snippet slipped through", i, l)
+		}
+	}
+}
+
+// Access reinforcement: a page surfaced into an answer's evidence has been USED.
+// The bump lands on the page row (schema v26) and is the foundation for any
+// later ranking/decay policy; nothing else changes about the answer.
+func TestEvidenceReinforcesAccess(t *testing.T) {
+	svc, _ := setupService(t)
+	projectID, _, pageIDs := buildGateCorpus(t, svc)
+
+	before := map[int64]int64{}
+	for _, id := range pageIDs {
+		var c int64
+		if err := svc.db.QueryRow(`SELECT COALESCE(access_count, 0) FROM wiki_pages WHERE id = ?`, id).Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		before[id] = c
+	}
+
+	svc.GatherEvidence(projectID, "payment gateway retry idempotency backoff", EvidenceBudget{})
+
+	touched := 0
+	for _, id := range pageIDs {
+		var c int64
+		if err := svc.db.QueryRow(`SELECT COALESCE(access_count, 0) FROM wiki_pages WHERE id = ?`, id).Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		if c == before[id]+1 {
+			touched++
+		} else if c != before[id] {
+			t.Fatalf("page %d access_count jumped from %d to %d; want +1 or +0", id, before[id], c)
+		}
+	}
+	if touched == 0 {
+		t.Error("no page was reinforced by evidence admission; the access signal is dead")
+	}
+}

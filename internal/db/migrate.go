@@ -389,6 +389,17 @@ func upgradeSchema(db *sql.DB) error {
 		// catches every affected row; a legitimately zero-commit project among them
 		// costs one re-mine, the same trade v13 already accepted.
 		{id: 25, fn: DropPoisonedActivityMeta},
+		// v26: access reinforcement foundation for the wiki layer — how often a
+		// page has been USED (surfaced into an answer's evidence) and when that
+		// last happened. Pure signals: nothing reads them to change behaviour
+		// yet, so the migration is purely additive and every pre-v26 page reads
+		// as never-accessed, which is the truth. Ranking/decay policies are
+		// separate decisions and must not silently start depending on these
+		// columns.
+		{id: 26, sql: []string{
+			"ALTER TABLE wiki_pages ADD COLUMN access_count INTEGER DEFAULT 0",
+			"ALTER TABLE wiki_pages ADD COLUMN last_accessed_at TEXT",
+		}},
 	}
 
 	for _, m := range migrations {

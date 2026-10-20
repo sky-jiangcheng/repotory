@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The wiki layer (ADR-0014 决策 1: 先补结构，再让 LLM 写).
@@ -143,16 +144,16 @@ func ValidRelation(r string) bool { return validRelationSet[r] }
 // accident) means the intent survives: an existing "cites" edge still lands in
 // ref because a citation IS a reference, not because the system gave up on it.
 var relationAlias = map[string]string{
-	"compiled-from": RelationRef,
-	"cites":         RelationRef,
-	"references":    RelationRef,
-	"related":       RelationRef,
-	"related-to":    RelationRef,
-	"see-also":      RelationRef,
-	"depends-on":    RelationDepends,
-	"part_of":       RelationPartOf,
-	"replaces":      RelationSupersedes,
-	"conflicts":     RelationContradicts,
+	"compiled-from":  RelationRef,
+	"cites":          RelationRef,
+	"references":     RelationRef,
+	"related":        RelationRef,
+	"related-to":     RelationRef,
+	"see-also":       RelationRef,
+	"depends-on":     RelationDepends,
+	"part_of":        RelationPartOf,
+	"replaces":       RelationSupersedes,
+	"conflicts":      RelationContradicts,
 	"conflicts-with": RelationContradicts,
 }
 
@@ -226,6 +227,11 @@ type WikiPage struct {
 	// wiki-compile | import:<source>. It is what makes "the compiler may only
 	// touch its own pending output" a checkable property instead of a promise.
 	Source string `json:"source"`
+	// Access reinforcement signals (schema v26): how often the page has been
+	// surfaced into an answer's evidence and when that last happened. Pure
+	// telemetry today — no behaviour reads them yet.
+	AccessCount    int64  `json:"access_count"`
+	LastAccessedAt string `json:"last_accessed_at,omitempty"`
 }
 
 // scanPageFields is the single Scan counterpart for the page projection. Every
@@ -234,22 +240,24 @@ type WikiPage struct {
 // this package already did once when updated_at went in.
 func scanPageFields(rows interface{ Scan(dest ...any) error }, p *WikiPage) error {
 	return rows.Scan(&p.ID, &p.Slug, &p.Title, &p.Kind, &p.ProjectID, &p.Content,
-		&p.UpdatedAt, &p.Status, &p.Source)
+		&p.UpdatedAt, &p.Status, &p.Source, &p.AccessCount, &p.LastAccessedAt)
 }
 
 // pageColumns is the projection used by queries against wiki_pages directly.
 const pageColumns = "id, slug, title, kind, COALESCE(project_id, 0), content, " +
-	"COALESCE(updated_at, ''), COALESCE(status, 'approved'), COALESCE(source, 'manual')"
+	"COALESCE(updated_at, ''), COALESCE(status, 'approved'), COALESCE(source, 'manual'), " +
+	"COALESCE(access_count, 0), COALESCE(last_accessed_at, '')"
 
 // pageColumnsP is the same projection for queries that alias wiki_pages as p.
 const pageColumnsP = "p.id, p.slug, p.title, p.kind, COALESCE(p.project_id, 0), p.content, " +
-	"COALESCE(p.updated_at, ''), COALESCE(p.status, 'approved'), COALESCE(p.source, 'manual')"
+	"COALESCE(p.updated_at, ''), COALESCE(p.status, 'approved'), COALESCE(p.source, 'manual'), " +
+	"COALESCE(p.access_count, 0), COALESCE(p.last_accessed_at, '')"
 
 // scanPageFieldsWithRank is the rank-carrying variant, kept adjacent to
 // scanPageFields so the column order remains one fact rather than two.
 func scanPageFieldsWithRank(rows interface{ Scan(dest ...any) error }, p *WikiPage, rank *float64) error {
 	return rows.Scan(&p.ID, &p.Slug, &p.Title, &p.Kind, &p.ProjectID, &p.Content,
-		&p.UpdatedAt, &p.Status, &p.Source, rank)
+		&p.UpdatedAt, &p.Status, &p.Source, &p.AccessCount, &p.LastAccessedAt, rank)
 }
 
 // WikiPageStatus values (ADR-0015 决策 1).
@@ -658,6 +666,35 @@ func GetWikiPageByID(db *sql.DB, id int64) (*WikiPage, error) {
 // GetWikiPageBySlug loads one page by its canonical slug.
 func GetWikiPageBySlug(db *sql.DB, slug string) (*WikiPage, error) {
 	return scanPage(db.QueryRow("SELECT "+pageColumns+" FROM wiki_pages WHERE slug = ?", slug))
+}
+
+// TouchWikiPages reinforces the access signals of the given pages: access_count
+// +1 and last_accessed_at stamped, throttled to one bump per page per minute by
+// the last_accessed_at < cutoff predicate (a burst of searches must not flood
+// the write path with redundant reinforcement). Counting starts at the FIRST
+// touch: an untouched page (access_count 0) is exactly "never used", so the
+// migration leaves the columns at their defaults rather than backfilling.
+func TouchWikiPages(db *sql.DB, ids []int64, now time.Time) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	in := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	// Bind in SQL text order: the SET stamp first, then the IN ids, then the
+	// throttle cutoff (it appears after the IN list in the statement).
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, now.UTC().Format(time.RFC3339))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	args = append(args, now.Add(-time.Minute).UTC().Format(time.RFC3339))
+	res, err := db.Exec(
+		"UPDATE wiki_pages SET access_count = access_count + 1, last_accessed_at = ? "+
+			"WHERE id IN ("+in+") AND (last_accessed_at IS NULL OR last_accessed_at < ?)",
+		args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func scanPage(row *sql.Row) (*WikiPage, error) {

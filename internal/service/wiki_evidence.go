@@ -51,6 +51,18 @@ type EvidenceBudget struct {
 // which leaves the conversation room on an 8k model.
 var DefaultEvidenceBudget = EvidenceBudget{MaxItems: 12, MaxChars: 4000, Deadline: 3 * time.Second}
 
+// L0/L1 two-phase packing, adapted from ai-memory's brief tiers: the budget
+// first buys DISTINCT evidence at a short excerpt (L0), then deepens what was
+// admitted toward the upstream ceiling (L1) in relevance order. A candidate is
+// never admitted at full depth — a 600-rune page would crowd out three other
+// items before the second candidate is seen — and an upgrade is all-or-nothing:
+// a half-deepened snippet is the worst of both shapes. Upstream caps stay the
+// depth ceiling (pages 600 / notes 400 runes).
+const (
+	evidenceL0PageRunes = 200
+	evidenceL0NoteRunes = 140
+)
+
 func (b EvidenceBudget) withDefaults() EvidenceBudget {
 	if b.MaxItems <= 0 {
 		b.MaxItems = DefaultEvidenceBudget.MaxItems
@@ -108,37 +120,88 @@ func (s *Service) GatherEvidence(projectID int64, query string, budget EvidenceB
 	// note #7 and page #7 would score as the same object. That collision is a
 	// known trap in this codebase (it is why SearchAll never went through fuse), so
 	// position interleaving is used until pages have their own vector space.
+	type cand struct {
+		item EvidenceItem
+		full string
+	}
+	cands := make([]cand, 0, len(pages)+len(notes))
 	pi, ni := 0, 0
-	for len(ev.Items) < budget.MaxItems {
-		advanced := false
+	for pi < len(pages) || ni < len(notes) {
 		if pi < len(pages) {
-			// Spelled out deliberately, NOT `advanced = advanced || tryAdd(...)`:
-			// once the page branch sets advanced, || short-circuits and the note is
-			// never attempted — which silently dropped every note from evidence
-			// whenever any page matched, i.e. the normal case.
-			if ev.tryAdd(pages[pi], "P", budget) {
-				advanced = true
-			}
+			cands = append(cands, cand{item: pages[pi], full: pages[pi].Snippet})
 			pi++
 		}
-		if len(ev.Items) >= budget.MaxItems {
-			break
-		}
 		if ni < len(notes) {
-			if ev.tryAdd(notes[ni], "N", budget) {
-				advanced = true
-			}
+			cands = append(cands, cand{item: notes[ni], full: notes[ni].Snippet})
 			ni++
 		}
-		if !advanced && pi >= len(pages) && ni >= len(notes) {
+	}
+
+	// Phase L0: admit at a short excerpt so coverage (how many DISTINCT items the
+	// budget can see) is maximised before any single item gets depth.
+	fulls := make([]string, 0, len(cands))
+	admitted := 0
+	for _, c := range cands {
+		if admitted >= budget.MaxItems {
 			break
 		}
+		it := c.item
+		if it.Type == "page" {
+			it.Snippet = clipRunes(c.full, evidenceL0PageRunes)
+		} else {
+			it.Snippet = clipRunes(c.full, evidenceL0NoteRunes)
+		}
+		prefix := "N"
+		if it.Type == "page" {
+			prefix = "P"
+		}
+		if ev.tryAdd(it, prefix, budget) {
+			fulls = append(fulls, c.full)
+			admitted++
+		}
 	}
-	ev.Dropped = max0(len(pages)-pi) + max0(len(notes)-ni)
+	ev.Dropped = max0(len(cands) - admitted)
+
+	// Phase L1: deepen what was admitted, best-ranked first, skipping any single
+	// upgrade that does not fit so a late cheap upgrade is not blocked by an
+	// early expensive one. The budget stays a hard ceiling; deepening shortfall
+	// is NOT truncation — no candidate was dropped for it.
+	used := 0
+	for _, it := range ev.Items {
+		used += len([]rune(it.Title)) + len([]rune(it.Snippet))
+	}
+	for i := range ev.Items {
+		full := fulls[i]
+		delta := len([]rune(full)) - len([]rune(ev.Items[i].Snippet))
+		if delta <= 0 {
+			continue // upstream already gave this item its full depth
+		}
+		if used+delta > budget.MaxChars {
+			continue
+		}
+		used += delta
+		ev.Items[i].Snippet = full
+	}
 	if ev.Dropped > 0 {
 		ev.Truncated = true
 	}
 	ev.ElapsedMS = time.Since(start).Milliseconds()
+
+	// Access reinforcement (schema v26 foundation, adapted from ai-memory's
+	// access-weighted retention): a page that surfaced into an answer's evidence
+	// has been USED — recording that is what later lets ranking or decay treat
+	// used pages differently. The db layer throttles to one bump per page per
+	// minute; failures are non-fatal and deliberately silent (a metrics write
+	// must never turn into "AI 问答不可用").
+	pageIDs := make([]int64, 0, len(ev.Items))
+	for _, it := range ev.Items {
+		if it.Type == "page" {
+			pageIDs = append(pageIDs, it.ID)
+		}
+	}
+	if len(pageIDs) > 0 {
+		_, _ = db.TouchWikiPages(s.db, pageIDs, time.Now())
+	}
 
 	// Populate project names for evidence items where project ID is known
 	if projs, err := db.GetAllProjects(s.db); err == nil {
