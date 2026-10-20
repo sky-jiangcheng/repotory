@@ -4,38 +4,99 @@
       "title": "入门",
       "title_en": "Getting Started",
       "items": [
-        { "file": "getting-started", "label": "快速开始", "label_en": "Getting Started" },
-        { "file": "data-management", "label": "数据与备份", "label_en": "Data & Backup" }
+        {
+          "file": "getting-started",
+          "label": "快速开始",
+          "label_en": "Getting Started"
+        },
+        {
+          "file": "data-management",
+          "label": "数据与备份",
+          "label_en": "Data & Backup"
+        }
       ]
     },
     {
       "title": "功能手册",
       "title_en": "Features",
       "items": [
-        { "file": "features/knowledge", "label": "知识库与笔记", "label_en": "Knowledge Base & Notes" },
-        { "file": "features/dashboard", "label": "仪表盘", "label_en": "Dashboard" },
-        { "file": "features/project-detail", "label": "项目详情", "label_en": "Project Detail" },
-        { "file": "features/settings", "label": "设置", "label_en": "Settings" },
-        { "file": "features/command-palette", "label": "命令面板与快捷键", "label_en": "Command Palette & Shortcuts" }
+        {
+          "file": "features-overview",
+          "label": "功能总览",
+          "label_en": "Features Overview"
+        },
+        {
+          "file": "features/knowledge",
+          "label": "知识库与笔记",
+          "label_en": "Knowledge Base & Notes"
+        },
+        {
+          "file": "features/dashboard",
+          "label": "仪表盘",
+          "label_en": "Dashboard"
+        },
+        {
+          "file": "features/project-detail",
+          "label": "项目详情",
+          "label_en": "Project Detail"
+        },
+        {
+          "file": "features/settings",
+          "label": "设置",
+          "label_en": "Settings"
+        },
+        {
+          "file": "features/command-palette",
+          "label": "命令面板与快捷键",
+          "label_en": "Command Palette & Shortcuts"
+        }
       ]
     },
     {
       "title": "进阶",
       "title_en": "Advanced",
       "items": [
-        { "file": "features/ai-integration", "label": "AI 集成（CLI/MCP/llms.txt）", "label_en": "AI Integration (CLI/MCP/llms.txt)" },
-        { "file": "plugins/overview", "label": "插件手册", "label_en": "Plugins" }
+        {
+          "file": "features/ai-integration",
+          "label": "AI 集成（CLI/MCP/llms.txt）",
+          "label_en": "AI Integration (CLI/MCP/llms.txt)"
+        },
+        {
+          "file": "plugins/overview",
+          "label": "插件手册",
+          "label_en": "Plugins"
+        }
       ]
     },
     {
       "title": "参考",
       "title_en": "Reference",
       "items": [
-        { "file": "architecture", "label": "架构说明", "label_en": "Architecture" },
-        { "file": "storage-optimization", "label": "存储结构优化与 AI 价值", "label_en": "Storage Optimization & AI Value" },
-        { "file": "api/reference", "label": "API 参考", "label_en": "API Reference" },
-        { "file": "troubleshooting", "label": "故障排查", "label_en": "Troubleshooting" },
-        { "file": "adr/index", "label": "架构决策（ADR）", "label_en": "Architecture Decisions (ADR)" }
+        {
+          "file": "architecture",
+          "label": "架构说明",
+          "label_en": "Architecture"
+        },
+        {
+          "file": "storage-optimization",
+          "label": "存储结构优化与 AI 价值",
+          "label_en": "Storage Optimization & AI Value"
+        },
+        {
+          "file": "api/reference",
+          "label": "API 参考",
+          "label_en": "API Reference"
+        },
+        {
+          "file": "troubleshooting",
+          "label": "故障排查",
+          "label_en": "Troubleshooting"
+        },
+        {
+          "file": "adr/index",
+          "label": "架构决策（ADR）",
+          "label_en": "Architecture Decisions (ADR)"
+        }
       ]
     }
   ]

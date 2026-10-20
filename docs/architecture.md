@@ -116,6 +116,39 @@ flowchart TB
 
 CI（`.github/workflows/release.yml`）多平台构建 + macOS 签名公证；文档站（`pages.yml`）由 `scripts/build-docs.mjs` 从 `docs/**/*.md` 生成后部署 GitHub Pages。
 
+## 人机双端拓扑
+
+人的一侧（桌面应用、VS Code 扩展）与 agent 的一侧（MCP、llms.txt）汇入同一个本地知识库——一个 service 层之下是一份 SQLite；`repotory-init` 一条命令完成 agent 侧注册：
+
+两条路径汇于同一个本地知识库——人这一侧（桌面应用、VS Code 扩展）、Agent 那一侧（MCP 工具、llms.txt），下面同一套 service 层，`repotory-init` 一条命令把 Agent 侧接好：
+
+```mermaid
+flowchart TB
+    subgraph HUMAN[👤 人类用户 — 在 IDE 里可见]
+        direction LR
+        DESKTOP[桌面应用]
+        VSCODE[VS Code 扩展<br/>VS Code · Cursor · Windsurf]
+    end
+    subgraph AGENT[🤖 AI Agent 用户 — 工具面]
+        direction LR
+        MCP[repotory-mcp · 13 个 MCP 工具]
+        DSH[dsh Harness 插件 · llms.txt]
+    end
+    subgraph CORE[🧠 本地知识库 — 唯一事实源]
+        direction LR
+        SVC[internal/service] --- DB[(SQLite + FTS5)]
+    end
+    HUMAN ~~~ AGENT ~~~ CORE
+    INIT[⚡ repotory-init · 一条命令完成注册]
+    INIT --> MCP
+    DESKTOP --> SVC
+    VSCODE --> SVC
+    MCP --> SVC
+    DSH --> SVC
+```
+
+> `repotory_context` 在会话开始注入、`repotory_handoff` 在会话结束沉淀——闭环跨 agent 成立的原因：handoff 存在本地 SQLite，而不是任何 agent 的私有记忆里。
+
 ## 命名分层
 
 品牌展示层与机器标识层**有意不一致**——标识层（URL、包名、数据目录、对外契约）不随品牌措辞变化，保证升级链与数据迁移稳定：

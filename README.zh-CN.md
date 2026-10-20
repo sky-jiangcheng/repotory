@@ -45,10 +45,10 @@
 
 ## 目录
 
+- [快速开始](#快速开始)
 - [闭环](#闭环)
 - [截图](#截图)
 - [功能](#功能)
-- [快速开始](#快速开始)
 - [VS Code 扩展（预览）](#vs-code-扩展预览)
 - [从源码构建](#从源码构建)
 - [项目结构](#项目结构)
@@ -56,150 +56,6 @@
 - [文档](#文档)
 - [贡献](#贡献)
 - [许可证](#许可证)
-
-## 闭环
-
-整个产品就是一个闭环——会话边界上的三次工具调用，之后每一个接手的 Agent 都复用上一个留下的东西：
-
-```mermaid
-flowchart TB
-    SCAN["① repotory_scan<br/>首次运行 · 发现仓库"] --> CTX["② repotory_context<br/>会话开始 · 完整上下文"]
-    CTX --> WORK(["…干活…"])
-    WORK --> HAND["③ repotory_handoff<br/>会话结束 · 交接笔记"]
-    HAND -.->|"下一个会话从这里开始"| CTX
-    classDef entry fill:#eff6ff,stroke:#3b82f6,color:#1e3a5f
-    classDef ctx fill:#f0fdf4,stroke:#22c55e,color:#14532d
-    classDef rec fill:#fdf2f8,stroke:#ec4899,color:#831843
-    class SCAN entry
-    class CTX ctx
-    class HAND rec
-```
-
-那条虚线是重点：交接存在本地 SQLite 里，不在任何 Agent 的私有记忆中，所以闭环能跨 Agent 合上——Claude Code 写的交接，Cursor 直接读。
-
-两条路径汇于同一个本地知识库——人这一侧（桌面应用、VS Code 扩展）、Agent 那一侧（MCP 工具、llms.txt），下面同一套 service 层，`repotory-init` 一条命令把 Agent 侧接好：
-
-```mermaid
-flowchart TB
-    subgraph HUMAN[👤 人类用户 — 在 IDE 里可见]
-        direction LR
-        DESKTOP[桌面应用]
-        VSCODE[VS Code 扩展<br/>VS Code · Cursor · Windsurf]
-    end
-    subgraph AGENT[🤖 AI Agent 用户 — 工具面]
-        direction LR
-        MCP[repotory-mcp · 13 个 MCP 工具]
-        DSH[dsh Harness 插件 · llms.txt]
-    end
-    subgraph CORE[🧠 本地知识库 — 唯一事实源]
-        direction LR
-        SVC[internal/service] --- DB[(SQLite + FTS5)]
-    end
-    HUMAN ~~~ AGENT ~~~ CORE
-    INIT[⚡ repotory-init · 一条命令完成注册]
-    INIT --> MCP
-    DESKTOP --> SVC
-    VSCODE --> SVC
-    MCP --> SVC
-    DSH --> SVC
-```
-
-> **为什么需要 Repotory？** 编程 Agent 不保留*你跨多个仓库积累的判断*：为什么这样设计、上次踩了什么坑、下一个 todo 是什么。每个 Agent 各有一套私有记忆格式，换工具等于从零开始。Repotory 把它们全部沉淀进一个本地、可搜索的记忆层，任何 Agent 都能读写——`repotory_context` 在会话开始时注入，`repotory_handoff` 在会话结束时捕获，其间按需检索。
-> 关于产品定位优先级、功能分级与范围冻结，见 [ADR-0006](docs/adr/0006-scope-freeze.md) 与[定位简报](docs/positioning-brief.md)（仅中文）。
-
-## 截图
-
-<table>
-  <tr>
-    <td width="50%"><img src="assets/screenshots/zh/knowledge.png" alt="知识库——107 条笔记，来源涵盖导入的 Agent 记忆与手写知识" /></td>
-    <td width="50%"><img src="assets/screenshots/zh/project.png" alt="项目详情——某个仓库的技术栈、动态、笔记与历史" /></td>
-  </tr>
-  <tr>
-    <td align="center"><sub><b>知识库</b>——导入笔记、交接记录与你自己的写作，一条可搜索的流</sub></td>
-    <td align="center"><sub><b>项目详情</b>——每个仓库的挖掘结果、动态与积累的知识</sub></td>
-  </tr>
-</table>
-
-## 功能
-
-> 分级图例：**Core**（完成「发现 → 理解 → 记录 → 检索 → AI」闭环）| **Support**（让闭环可读可感）| **Experimental**（保留但不扩展）| **Paused**（不再投入）。见 [ADR-0006](docs/adr/0006-scope-freeze.md)。
-
-### 知识库（Core）
-
-| 功能 | 说明 |
-|------|------|
-| Markdown 笔记 | 标题 / 标签 / 分类（knowledge · journal · ideas · other）/ 置顶 / 跨项目移动；草稿自动保存 |
-| 块编辑器 | 输入 `/` 打开块面板，插入 callout、标签页、折叠块、代码、Mermaid、数学、表格……拖拽排序；输出仍是纯 Markdown（**Experimental**：复杂块暂停扩展） |
-| 富文本渲染 | highlight.js 代码高亮、Mermaid 图表、KaTeX 数学、GFM callout 与任务列表 |
-| FTS5 全文搜索 | trigram + bm25 相关度排序、片段高亮，覆盖笔记与待办；短 CJK 查询自动回退 LIKE |
-| 版本历史 | 每次保存自动快照；任意版本与当前版本行级 diff，一键恢复 |
-| 全局搜索 | ⌘/Ctrl+K 命令面板 + 独立搜索页（联邦检索：仓库 / 笔记 / 待办） |
-
-### AI 就绪接口（Core）
-
-| 通道 | 说明 |
-|------|------|
-| MCP 服务器 | `repotory-mcp` stdio 服务器，13 个工具（仓库扫描 + 上下文注入 + 会话交接 + 笔记 CRUD + 项目查询 + 搜索 + 两项自检）；可接入 Claude Code / Cursor 等（AI 执行动作的唯一通道） |
-| `repotory_scan` | 一次冷启动：播种默认扫描根并同步扫描，发现本地 Git 仓库。纯 MCP 安装（无桌面应用）也能把知识库从零建起来 |
-| `repotory_context` | 会话开始一次调用拉齐项目全貌：技术栈 / README 摘要 / 依赖 / 最近提交 / 未完成待办 / 高相关笔记（交接笔记优先）——替代 3-4 次链式查询 |
-| `repotory_handoff` | 会话结束时结构化交接：summary / changes / decisions / gotchas / next_steps 渲染统一模板并落库；下一个会话（任何 Agent）自动读到 |
-| llms.txt | `GenerateLLMsTxt` 输出面向 LLM 的知识库 Markdown 总览 |
-| 笔记导出 | 任意笔记导出为带 YAML frontmatter 的 `.md` |
-| 知识源导入 | 把其它 Agent 的记忆带进来：**Claude**、**Codex**、**OpenCode**、**CodeBuddy**（含 CodeBuddy 记忆）、**Cursor**、**OpenClaw**、**Hermes**——记忆类源按情况随启动自动导入；会话转录类源一律**显式手动触发**（白名单限定）。幂等 upsert：重跑是更新，不是堆叠 |
-| 会话自动捕获（M1） | 按需抓取项目最近一次 Claude Code 会话转录成交接笔记；`repotory-capture` CLI 承载 B 端 SessionEnd hook 自动化。**默认关**（`claude_session_capture`），隐私门控 |
-| 便携记忆导出 | `ExportMemoryJSON` 以 [Open Memory Protocol](https://github.com/SMJAI/open-memory-protocol) 风格导出知识库（临时口径；OMP 尚未 1.0） |
-| 数据完整性自检 | `repotory_integrity` 六项只读检查：FTS 索引漂移、孤儿行、schema 形状与版本戳、扫描覆盖、知识缓存新鲜度、版本快照孤儿。索引漂移会让搜索**静默漏结果**且无其它机制能发现——这是唯一的检测手段 |
-
-### 知识图谱 & LLM Wiki（Support——人把关）
-
-受控关系词表组织的编译页面，加上一道「人是闸门」的审核队列：
-
-| 功能 | 说明 |
-|------|------|
-| LLM Wiki 编译器 | 把笔记编译成结构化 wiki 页面（entity / concept / synthesis …），一律为**待审**草稿；编译器永不改已批准页（[ADR-0015](docs/adr/0015-w3-minimal-compile-loop.md)） |
-| 审核队列 | 批准 / 拒绝 / 删除待审页；被拒页保留为墓碑（`reject ≠ delete`） |
-| 页面版本 | 每次页面变更由数据库触发器快照进 append-only 的 `page_versions` 表；行级 diff 与恢复（[ADR-0021](docs/adr/0021-temporal-graph-page-versions.md)） |
-| 合并建议 | 结构候选发现（共享来源 / slug 词形 / 标题重叠 / 已互链——至少两个独立信号）；模型只加第二意见，**合并只能由人采纳**；合并留下墓碑并重指向边（[ADR-0019](docs/adr/0019-entity-resolution-merge.md)） |
-| 社区摘要 | 在已批准图上跑 Label Propagation，按主题起草 synthesis 页；**opt-in 门**（`wiki_community_summary`），硬预算，外发字节可审计（[ADR-0020](docs/adr/0020-community-synthesis.md)） |
-| 图感知取证 | `evidencePages` 沿白名单关系词表 1 跳扩召回 + 纯 Go PPR 重排；**默认关**（`wiki_graph_search`），关闭时零行为回退（[ADR-0018](docs/adr/0018-knowledge-graph-foundation.md)） |
-| 语义检索（M3） | 可选的 FTS5 + 向量混合召回（RRF 融合），**向量库可插拔**：本地 **sqlite-vec**（默认，纯 Go/零 CGO）或远端 **Qdrant** / **Weaviate**（不可达自动回退本地）。**默认关**，由 A/B 评估门（`cmd/abeval`）决定是否开启（[ADR-0012](docs/adr/0012-semantic-search.md)、[ADR-0013](docs/adr/0013-vector-database-selection.md)） |
-
-### 内置备份（Core）
-
-本地优先的数据库只躺在一块盘上，离灾难就差一个坏扇区：
-
-| 功能 | 说明 |
-|------|------|
-| 每日本地快照 | 应用每天第一次打开时用 `VACUUM INTO` 给数据库拍一份快照，落在 `<数据目录>/backups/`；保留 14 份、权限 0600，**默认开、零配置**（[ADR-0025](docs/adr/0025-backup-recovery.md)） |
-| 恢复 = 拷回一个文件 | 快照是完整独立的 SQLite 文件，恢复就是换文件；已在真库上端到端演练 |
-| 异地副本（opt-in，规划中） | Litestream 式 WAL 流式归档或快照上传 S3 兼容存储——ADR-0025 L2 只定型未实现。红线：活库永不放进云盘同步文件夹 |
-
-### 仓库挖掘（Core）
-
-项目详情页自动抽取：README 摘要、技术栈清单（识别 20+ 清单格式）、语言 LOC 占比、依赖列表（npm / go.mod 含 block require / cargo）、主要贡献者、活跃统计、最近提交流；结果缓存进 `repo_meta` 避免重复扫描。
-
-### 仪表盘与统计（Support）
-
-> 首页是融合工作台（[ADR-0024](docs/adr/0024-home-workbench-merge-search-page.md)）：助手、记忆环、重点项目与今日动态一页聚合；`/search` 是独立页面；导航顺序 首页 → 仪表盘 → 搜索 → 知识库 → 审核 → 设置。
-
-| 功能 | 说明 |
-|------|------|
-| 自动发现仓库 | 配置扫描根递归发现全部 Git 仓库；默认值随平台自适应 |
-| 可视化仪表盘 | 每日目标进度环、项目卡片、趋势折线（7 / 30 天 / 全部）、提交热力图 |
-| 仓库收藏 | 收藏仓库显示完整统计卡片；未收藏只显示名字，按需跟进 |
-| 按需历史回填 | 收藏卡片上的「回填历史」抓取该仓库最近 365 天的每日统计 |
-| 智能项目分组 | 自动识别 monorepo 与单仓库；手动拆分/合并单事务执行（笔记与待办随项目移动） |
-| 工作日检查 | 自定义每日代码目标，未达标提醒 |
-| 状态栏 | 实时展示最近一次提交（仓库 / 分支 / 时间，30s 缓存） |
-| 主题切换 | 亮色 / 暗色 / 跟随系统，重启后保留 |
-
-### 其它
-
-| 功能 | 说明 |
-|------|------|
-| i18n | 中 / 英一键切换（react-i18next，zh-CN + en） |
-| 单文件跨平台 | 单个 Go 二进制，无运行时依赖 |
-| 设计上离线 | 无账号、无遥测；只有你显式配置端点时才产生外发 |
 
 ## 快速开始
 
@@ -302,6 +158,81 @@ Agent 会链式调用 `repotory_projects_list` → `repotory_notes_search` → `
 
 每日快照就在旁边的 `backups/` 里。日志路径见[故障排查](docs/troubleshooting.md)。
 
+## 闭环
+
+整个产品就是一个闭环——会话边界上的三次工具调用，之后每一个接手的 Agent 都复用上一个留下的东西：
+
+```mermaid
+flowchart TB
+    SCAN["① repotory_scan<br/>首次运行 · 发现仓库"] --> CTX["② repotory_context<br/>会话开始 · 完整上下文"]
+    CTX --> WORK(["…干活…"])
+    WORK --> HAND["③ repotory_handoff<br/>会话结束 · 交接笔记"]
+    HAND -.->|"下一个会话从这里开始"| CTX
+    classDef entry fill:#eff6ff,stroke:#3b82f6,color:#1e3a5f
+    classDef ctx fill:#f0fdf4,stroke:#22c55e,color:#14532d
+    classDef rec fill:#fdf2f8,stroke:#ec4899,color:#831843
+    class SCAN entry
+    class CTX ctx
+    class HAND rec
+```
+
+那条虚线是重点：交接存在本地 SQLite 里，不在任何 Agent 的私有记忆中，所以闭环能跨 Agent 合上——Claude Code 写的交接，Cursor 直接读。
+
+两条路径汇于同一个本地知识库——人这一侧（桌面应用、VS Code 扩展）、Agent 那一侧（MCP 工具、llms.txt），下面同一套 service 层，`repotory-init` 一条命令把 Agent 侧接好：
+
+人的一侧、agent 的一侧与本地核心如何拼装（以及 `repotory-init` 的位置）：见[架构说明](docs/architecture.md)。
+mermaid
+flowchart TB
+    subgraph HUMAN[👤 人类用户 — 在 IDE 里可见]
+        direction LR
+        DESKTOP[桌面应用]
+        VSCODE[VS Code 扩展<br/>VS Code · Cursor · Windsurf]
+    end
+    subgraph AGENT[🤖 AI Agent 用户 — 工具面]
+        direction LR
+        MCP[repotory-mcp · 13 个 MCP 工具]
+        DSH[dsh Harness 插件 · llms.txt]
+    end
+    subgraph CORE[🧠 本地知识库 — 唯一事实源]
+        direction LR
+        SVC[internal/service] --- DB[(SQLite + FTS5)]
+    end
+    HUMAN ~~~ AGENT ~~~ CORE
+    INIT[⚡ repotory-init · 一条命令完成注册]
+    INIT --> MCP
+    DESKTOP --> SVC
+    VSCODE --> SVC
+    MCP --> SVC
+    DSH --> SVC
+```
+
+> **为什么需要 Repotory？** 编程 Agent 不保留*你跨多个仓库积累的判断*：为什么这样设计、上次踩了什么坑、下一个 todo 是什么。每个 Agent 各有一套私有记忆格式，换工具等于从零开始。Repotory 把它们全部沉淀进一个本地、可搜索的记忆层，任何 Agent 都能读写——`repotory_context` 在会话开始时注入，`repotory_handoff` 在会话结束时捕获，其间按需检索。
+> 关于产品定位优先级、功能分级与范围冻结，见 [ADR-0006](docs/adr/0006-scope-freeze.md) 与[定位简报](docs/positioning-brief.md)（仅中文）。
+
+## 截图
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/zh/knowledge.png" alt="知识库——107 条笔记，来源涵盖导入的 Agent 记忆与手写知识" /></td>
+    <td width="50%"><img src="assets/screenshots/zh/project.png" alt="项目详情——某个仓库的技术栈、动态、笔记与历史" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>知识库</b>——导入笔记、交接记录与你自己的写作，一条可搜索的流</sub></td>
+    <td align="center"><sub><b>项目详情</b>——每个仓库的挖掘结果、动态与积累的知识</sub></td>
+  </tr>
+</table>
+
+## 功能
+
+> 完整功能表（含层级图例与 ADR 链接）：[docs/features-overview.md](docs/features-overview.md)。层级模型：**Core**（补完 发现 → 理解 → 沉淀 → 检索 → 交给 AI 闭环）· **Support**（让闭环可读）· **Experimental**（保留不再扩张）· **Paused**（不再投入）——见 [ADR-0006](docs/adr/0006-scope-freeze.md)。
+
+- **知识库（Core）** —— Markdown 笔记 + `/` 块编辑器、FTS5 三元组搜索、逐次保存的版本历史与行级 diff、全局 ⌘/Ctrl+K 搜索
+- **AI 就绪接口（Core）** —— `repotory-mcp`（13 个 MCP 工具）、单次调用 `repotory_context` / `repotory_handoff`、llms.txt、8 个内置记忆导入源（Claude / Codex / OpenCode / CodeBuddy / Cursor / OpenClaw / Hermes…）、OMP 风格导出、数据完整性审计（`repotory_integrity`）
+- **知识图谱 & LLM Wiki（Support，人把关）** —— 笔记编译为**待审** wiki 页；审核队列（批准 / 拒绝 / 合并，墓碑语义）；页面版本；合并建议；社区摘要；图感知取证；混合语义检索 + 可插拔向量库（默认 sqlite-vec，远程 Qdrant / Weaviate）——所有 LLM 路径都是 opt-in 门，默认关
+- **内置备份（Core）** —— 每日 `VACUUM INTO` 快照（默认开，留 14 份，0600）；恢复 = 拷回一个文件；异机推送见 [ADR-0025](docs/adr/0025-backup-recovery.md) L2
+- **仓库挖掘（Core）** —— README 摘要、技术栈（20+ 清单格式）、语言占比、依赖、贡献者、活跃度、提交流——按仓库缓存
+- **仪表盘与统计（Support）** —— 目标环、趋势、热力图、收藏、智能分组、工作日提醒、实时状态栏、主题切换
+
 ## VS Code 扩展（预览）
 
 扩展（VS Code / Cursor / Windsurf——一个 VSIX 通吃三者）目前是**预览**。每次产品发布自动发布到 [Marketplace](https://marketplace.visualstudio.com/items?itemName=sky-jiangcheng.repotory-vscode)（配置了 `VSCE_PAT` secret 后生效）；`.vsix` 也随每个 [Release](https://github.com/sky-jiangcheng/repotory/releases) 附带，可手动安装，也可从源码打包：
@@ -399,6 +330,8 @@ web/src/
 
 | 文档 | 内容 |
 |------|------|
+| [功能总览](docs/features-overview.md) | 全量功能表：每个能力、所属层级与背后的 ADR |
+
 | [快速上手](docs/getting-started.md) | 安装、首次运行、扫描 |
 | [数据与备份](docs/data-management.md) | 备份、迁移机器、重置与卸载 |
 | [功能说明](docs/features/knowledge.md) | 知识库 / 仪表盘 / 项目详情 / 设置 / 命令面板 |
