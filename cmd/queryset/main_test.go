@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -117,6 +118,12 @@ func TestQuerysetSeedNumbersNotesStably(t *testing.T) {
 
 // The number the user labels with must resolve to the note that number names.
 // This is the whole value of the tool: the edit is a number, never a raw id.
+//
+// The assertion is "number N resolves to the id on worksheet line N", NOT
+// "number 1 is the oldest note". The two came apart when db.ListNotes flipped
+// to newest-first: the worksheet numbers whatever order the list returns, so
+// pinning the expectation to insertion order would make this test fail on a
+// change that is correct in the product and invisible in the tool's contract.
 func TestQuerysetEmitResolvesLineNumbersToIDs(t *testing.T) {
 	database := setupDB(t)
 	pid := makeProject(t, database, "qs")
@@ -134,6 +141,10 @@ func TestQuerysetEmitResolvesLineNumbersToIDs(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	first := worksheetNoteID(t, ws, 1)
+	if first == 0 {
+		t.Fatal("worksheet has no note numbered 1")
+	}
 	edited := ws + "\n" + `{"query": "重试几次", "relevant": [1]}` + "\n"
 
 	path := filepath.Join(t.TempDir(), "ws.tsv")
@@ -153,9 +164,37 @@ func TestQuerysetEmitResolvesLineNumbersToIDs(t *testing.T) {
 		t.Errorf("query = %q", cases[0]["query"])
 	}
 	got := cases[0]["relevant"].([]any)
-	if len(got) != 1 || int64(got[0].(float64)) != ids["重试策略"] {
-		t.Errorf("relevant = %v, want [%d] (note number 1)", got, ids["重试策略"])
+	if len(got) != 1 || int64(got[0].(float64)) != first {
+		t.Errorf("relevant = %v, want [%d] (note number 1)", got, first)
 	}
+	// Guard the guard: if every note happened to share one id this assertion
+	// would pass for the wrong reason.
+	if ids["重试策略"] == ids["幂等键"] {
+		t.Fatal("fixture notes share an id; the resolution check proves nothing")
+	}
+}
+
+// worksheetNoteID returns the id the worksheet printed next to a note number,
+// i.e. the id a user labeling that line means.
+func worksheetNoteID(t *testing.T, worksheet string, num int) int64 {
+	t.Helper()
+	re := regexp.MustCompile(`^# (\d+)\t[^\t]+\t[^\t]+\t\(id=(\d+)\)$`)
+	for _, line := range strings.Split(worksheet, "\n") {
+		m := re.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n != num {
+			continue
+		}
+		id, err := strconv.ParseInt(m[2], 10, 64)
+		if err != nil {
+			t.Fatalf("worksheet line %d has an unparsable id %q: %v", num, m[2], err)
+		}
+		return id
+	}
+	return 0
 }
 
 // A case with no labels is skipped by the scorers, so accepting it would emit a

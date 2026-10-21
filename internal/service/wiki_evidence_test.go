@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -30,14 +31,26 @@ func encodedRef(item EvidenceItem) abeval.DocID {
 	return abeval.DocID{Type: item.Type, ID: item.ID}
 }
 
-// legacyNoteIDs reproduces the pre-W2 behaviour exactly: the notes ListNotes
-// returns, first 10, no relevance anywhere in the choice.
+// legacyNoteIDs reproduces the pre-W2 behaviour exactly: the ten notes a
+// recency-ordered listing put first, with no relevance anywhere in the choice.
+// Under the old created_at ASC order that was the ten OLDEST notes, which is
+// the baseline this gate is written against ("retrieval must beat stuffing the
+// ten oldest"). Sorting by created_at here rather than reusing ListNotes keeps
+// the baseline pinned to that meaning: when ListNotes flipped to updated_at
+// DESC the naive "first 10" quietly became the ten NEWEST — i.e. the newest
+// notes, which is no longer a stuffing baseline at all.
 func legacyNoteIDs(t *testing.T, svc *Service, projectID int64) []int64 {
 	t.Helper()
 	notes, err := db.ListNotes(svc.db, projectID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sort.Slice(notes, func(i, j int) bool {
+		if notes[i].CreatedAt != notes[j].CreatedAt {
+			return notes[i].CreatedAt < notes[j].CreatedAt
+		}
+		return notes[i].ID < notes[j].ID
+	})
 	var out []int64
 	for i, n := range notes {
 		if i >= 10 {

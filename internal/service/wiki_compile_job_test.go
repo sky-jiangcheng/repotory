@@ -265,7 +265,7 @@ func TestCompileNoteTargets_SharesSelectionWithSyncPath(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("targets = %d, want 2", len(got))
 	}
-	// db.ListNotes is oldest-first; a run must take the newest ones.
+	// db.ListNotes is newest-first; a run must take the head, not the tail.
 	if got[0].ID != ids[len(ids)-1] {
 		t.Errorf("first target = %d, want the newest note %d", got[0].ID, ids[len(ids)-1])
 	}

@@ -147,11 +147,11 @@ func (s *Service) runNextCompileJob(ctx context.Context) bool {
 // take minutes.
 func (s *Service) runLintJob(ctx context.Context, job *db.CompileJob) {
 	if err := ctx.Err(); err != nil {
-		s.finishJob(job.ID, db.CompileJobCanceled, "", "worker shutting down")
+		s.finishJob(job.ID, db.CompileJobCanceled, "", db.CompileJobErrShutdown)
 		return
 	}
 	if canceled, _ := db.CompileJobIsCanceled(s.db, job.ID); canceled {
-		s.finishJob(job.ID, db.CompileJobCanceled, "", "canceled before the model pass started")
+		s.finishJob(job.ID, db.CompileJobCanceled, "", db.CompileJobErrCanceledEarly)
 		return
 	}
 	rep, err := s.RunWikiLint(job.ProjectID, true)
@@ -212,7 +212,7 @@ func (s *Service) runCompileJob(ctx context.Context, job *db.CompileJob) bool {
 
 	for i, n := range targets {
 		if err := ctx.Err(); err != nil {
-			s.finishJob(job.ID, db.CompileJobCanceled, "", "worker shutting down")
+			s.finishJob(job.ID, db.CompileJobCanceled, "", db.CompileJobErrShutdown)
 			return true
 		}
 		if canceled, _ := db.CompileJobIsCanceled(s.db, job.ID); canceled {
@@ -249,15 +249,16 @@ func (s *Service) runCompileJob(ctx context.Context, job *db.CompileJob) bool {
 // compileNoteTargets picks which notes a run covers. Shared by the synchronous
 // and the job path so "compile this project" cannot mean two different things
 // depending on which button was pressed.
+//
+// Takes the head of the list, so it depends on db.ListNotes being newest-first
+// (pinned, then updated_at DESC). It used to walk the tail instead, which was
+// only correct while ListNotes was oldest-first — the day that flipped, this
+// silently started compiling a project's stalest notes instead of its freshest.
 func compileNoteTargets(notes []db.Note, limit int) []db.Note {
 	if limit <= 0 || limit > len(notes) {
 		limit = len(notes)
 	}
-	out := make([]db.Note, 0, limit)
-	for i := len(notes) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, notes[i])
-	}
-	return out
+	return notes[:limit]
 }
 
 // recoverInterruptedCompileJobs is the startup path ADR-0016 asks for: work left
