@@ -54,8 +54,8 @@ function brandMarkSvg(size) {
   // (mermaid diagrams too), so a collision would repaint this mark with
   // another diagram's gradient.
   const uid = `docs-brand-${size}`
-  svg = svg.replace(/id="rn-([a-z]+)"/g, (_, n) => `id="${uid}-${n}"`)
-  svg = svg.replace(/url\(#rn-([a-z]+)\)/g, (_, n) => `url(#${uid}-${n})`)
+  svg = svg.replace(/id="rp-([a-z]+)"/g, (_, n) => `id="${uid}-${n}"`)
+  svg = svg.replace(/url\(#rp-([a-z]+)\)/g, (_, n) => `url(#${uid}-${n})`)
   return `<svg width="${size}" height="${size}" viewBox="0 0 512 512" aria-hidden="true" focusable="false">${svg}</svg>`
 }
 
