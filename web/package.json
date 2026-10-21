@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "build:server": "tsc && vite build --mode server --outDir dist-server",
+    "build": "tsc && vite build && node ../scripts/prune-web-dist.mjs web/dist",
+    "build:server": "tsc && vite build --mode server --outDir dist-server && node ../scripts/prune-web-dist.mjs web/dist-server",
     "preview": "vite preview",
     "lint": "eslint src",
     "test": "vitest run"

@@ -27,7 +27,22 @@ export default defineConfig(({ mode }) => ({
     outDir: 'dist',
     // Let the npm build script wipe dist; Vite's built-in emptyOutDir triggers
     // bulk-delete guards in this environment.
+    //
+    // The wipe is done by scripts/prune-web-dist.mjs, which reads Vite's own
+    // .vite/manifest.json and deletes only the files this build did NOT
+    // produce. Without it, every build leaves the previous build's chunks
+    // behind — 15 copies of the 1.4MB elk chunk accumulated, and since
+    // web/dist is embedded whole into the binary (go:embed all:web/dist),
+    // those orphans were shipped inside the executable.
     emptyOutDir: false,
+    // The manifest is what makes the prune precise: it lists exactly what
+    // this build references, so the cleanup can tell orphans from live files
+    // instead of guessing by age.
+    //
+    // Side effect: `go:embed all:web/dist` (main.go) also embeds this file,
+    // since the `all:` prefix includes dot-directories. Cost is ~65 KB on a
+    // ~20 MB binary — a fair price for a cleanup that cannot misfire.
+    manifest: true,
     // The only remaining chunk above the 500 kB default is mermaid's shared
     // diagram engine (~660 kB). Mermaid is imported on demand in
     // utils/markdown.ts, so it never sits on the initial-load path and cannot
