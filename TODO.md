@@ -5,10 +5,10 @@
 
 ## 现状速查（新会话从这里开始）
 
-- 品牌 **Repotory**（原 RepoNest），版本 **v2.9.0**（2026-10-20），SSOT 在 `wails.json`。
-- schema **v25**（v25：单仓分组容器根的 activity 聚合修复 + 污染缓存清理，随 v2.7.0 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 默认关、零回退）；ADR-0018 lane 1（关系词表八型）已 **Accepted**（真库演练 PASS，产物 `v21-rehearse/`）。
+- 品牌 **Repotory**（原 RepoNest），版本 **v2.9.1**（2026-10-20），SSOT 在 `wails.json`。
+- schema **v26**（v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.1 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 默认关、零回退）；ADR-0018 lane 1（关系词表八型）已 **Accepted**（真库演练 PASS，产物 `v21-rehearse/`）。
 - 近期大项均已落地：插件脚本运行时（yaegi）已移除（C11-B）、全局 CSS Modules 迁移收口（全局 1,227 行）、D25 首屏经 **ADR-0024** 演进为**首页工作台**——单栏融合仪表盘 + 记忆环条（`web/src/pages/Home.tsx`），全局搜索独立为 `/search` 顶级页（空闲态含热门项目 / 热门标签推荐，`web/src/pages/Search.tsx`），`/dashboard` 重定向到 `/`，导航以「搜索」取代「仪表盘」。
-- **真库事故（2026-10-14，已恢复，损失见「用户动作」）**：`project_notes` 主表页级损坏（101 处 invalid page number，原因未定论；当日数据目录曾出现 15 个「删除时仍被打开」的 sidecar 残留，APFS 本地快照为空）。经 `.recover` 重建 + FTS 三表 rebuild 后换入，quick_check ok、integrity 83/100 零 fail；批页成果（7 页全 approved、7 份版本快照、2 条边）保住。**笔记 75 → 22 条**（AI1 丢 41 条，其余 12 条散布 6 个项目）。损坏原件与首次备份在 `~/Library/Application Support/repotory-corruption-backup-20261014/`。
+- **真库事故（2026-10-14）已完全恢复并归档**：恢复过程、48 条笔记重导找回与 TM/快照双点验证见归档 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。内置每日本地快照（ADR-0025 L1）与 S3 远端推送（L2）均已落码。
 
 ---
 
@@ -27,14 +27,7 @@
 
 ### 用户动作 / 外部依赖
 
-- [ ] **真库事故后续（2026-10-14）**：事故已恢复（`.recover` 换入、integrity 83/100、批页成果保住）；三个收尾项如下（2026-10-18 更新）：
-  - **① 源重导 — ✅ 已完成（2026-10-18）**：修复 opencode/codebuddy 导入器布局漂移后真机重导：opencode 31 + codebuddy 15 + codebuddy-memory 2 = **48 条找回**（总笔记 59→107），重跑幂等（created=0/updated=N）；11 条自动归属 CBiUnion/CBiMoney/BookStore 等既有项目，其余落占位/未分类待归口；claude/codex 目录为空无所得；handoff 类只能从原会话人工补录。**归口执行（2026-10-19）**：结构上唯一确定的归属已落——笔记 174（CodeBuddy 会话 11d3a6c5，工作目录 cbi-mis）→ 项目 **BE**（127，cbi-mis 仓库正属它），占位 121 随之清空（可在整理视图二次确认删除，回滚语句在 `.zwork/reassign-log.txt`）；其余经内容复核**不强制归口**：CodeStat 11 条（统计工具族，路径真实，等扫描自动转正）、富港资料 4 条（Documents 下无扫描覆盖、语义指向弱）、未分类 2 条（空工作目录的全局问答，本就是正确落点）。
-  - **② TM 备份复查 — 验证完成、插盘暂缓（2026-10-18）**：`tmutil status` 正常（Running=0 无 error）、`isexcluded` [Included]、发现本地 APFS 快照 `2026-10-16-232630`；文件级双恢复点（重导前 59 条 / 重导后 107 条，quick_check ok）。剩「插盘 → `tmutil listbackups` / `ls` / `startbackup`」一步，用户决定暂缓（目的已讲清）；**内置每日本地快照（ADR-0025 L1）已补位**；「异地」一层于 **2026-10-19 落码**（L2 远端推送：S3 兼容对象存储 opt-in，设置 → 操作里配置 `backup_remote_*`，凭据未配置 = 零外发）——剩余为**用户动作**：选定对象存储并在设置页填入凭据（或维持零外发现状）。
-  - **③ FUSE 溯源 — 基本收口（2026-10-18）**：15 个 `.fuse_hidden*`（10-14 17:43–19:14，与损坏窗口精确吻合）指向 FUSE 挂载类工具；用户已确认当前未挂云盘，疑为当天短暂挂载过的同步客户端，仅剩「回忆 10-14 当天用过什么工具」；`~/.hermes/state.db` 不存在，Hermes 核验暂不可跑。
-  - **备份验证命令（连接备份磁盘后执行）**：
-    1. 复查快照内确有该路径：图形化「系统设置 → General → Time Machine → 浏览历史备份」定位 `…/repotory/repotory.db`；或命令行 `tmutil listbackups` 取快照名 `<N>`，`ls /Volumes/<TM盘>/Backups.backupdb/<主机名>/Data/<N>/Users/jiangcheng/Library/Application\ Support/repotory/`
-    2. `tmutil status` 确认会话正常结束（Running=0、无 error）
-    3. **脱开陷阱**：TM 只在备份盘连接时备份，「每日」在盘脱开期间不成立；本地快照（APFS、存本机、免备份盘）是离线兜底——查看 `sudo tmutil listlocalsnapshotdates`，手动造一份 `sudo tmutil localsnapshot`（本机无 `localsnapshots enable`，已实测）。**恢复**：本机 `tmutil` 无 `restore` verb（`tmutil help` 已核实）——走 Time Machine 备份浏览器，或最稳的兜底：直接挂载备份盘手工拷回 `/Volumes/<TM盘>/Backups.backupdb/<主机名>/Data/<快照>/` 下的 `repotory.db`（单文件库，拷文件即恢复）
+- [x] **真库事故收尾（2026-10-14）**：已完全闭环并归档至 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。源重导找回 48 条（笔记总数 107）、本地每日本地快照（L1）与 S3 远端推送（L2）均已交付。
 - [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**进展 2026-10-19**：v2.7.0 wails build 通过、新包已真机启动——schema v25 真机迁移完成、污染 repo_meta 清零；交互清单待用户按序核验，新增「向上合并确认弹窗」「按仓库拆分」两项）
 - [ ] **Hermes sessions 真机核验 — state.db 链路已跑通（2026-10-20），剩设置页点源一眼**：Hermes Agent v0.22.2 已按官方 install.sh 装上本机（HTTPS 克隆超时 → `HERMES_REPO_URL` 走 SSH 源），配 LM Studio（`model.provider=lmstudio`，bonsai-27b）跑通 `hermes chat --oneshot` 产出真 `~/.hermes/state.db`（WAL、274KB，`source='oneshot'`）；官方 `session-storage.md` 与导入器读取列逐一致（schema 证据由 Tencent 侧证升级为官方文档 + 真机数据）。沙箱库 + 真数据实测：探活 detected ✓（state.db 单独判活）、首导 created=1、复跑幂等 updated=1、memories/ 缺失优雅 no-op、笔记落「未分类」（hermes_project 未设的既定语义）。**剩**：设置页点源验证（v2.8.0 桌面包重启后点一下）；curated memories 半边仍空（`~/.hermes/memories/` 待真实使用产生 MEMORY.md/USER.md）
 - [ ] **OMP 导入向**（等 OMP v1 稳定）；Bleve（是否替代 FTS5：**先离线 A/B 度量再决策**，abeval 同标注集加 Bleve 臂，recall@10 ≥ +0.05 才立项）、Pinecone/Milvus（`vectordb` registry 纯加法，Milvus 自托管先于 Pinecone 云端；**触发条件未满足，暂不写适配器**）——三项的完整评估与触发后做法见 [检索与向量后端架构评估 2026-10-19](outputs/process-logs/Repotory-检索与向量后端架构评估-2026-10-19.md)：结论 = 「可选配置代替替换」在向量层成立且已是既成架构，在文本检索层先度量再定，OMP 是协议版本问题非后端选择
