@@ -9,11 +9,11 @@ import (
 // WikiLinkSuggestion represents a candidate entity/concept from the library that
 // appears in the given text but is not yet formatted as a [[wikilink]].
 type WikiLinkSuggestion struct {
-	Slug     string `json:"slug"`
-	Title    string `json:"title"`
-	Kind     string `json:"kind"`
-	PageID   int64  `json:"page_id"`
-	Matched  string `json:"matched"` // the exact word/phrase matched in text
+	Slug    string `json:"slug"`
+	Title   string `json:"title"`
+	Kind    string `json:"kind"`
+	PageID  int64  `json:"page_id"`
+	Matched string `json:"matched"` // the exact word/phrase matched in text
 }
 
 // SuggestWikiLinks scans content for mentions of existing approved wiki page titles

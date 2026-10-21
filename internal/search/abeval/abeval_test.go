@@ -129,4 +129,3 @@ func TestCompareIgnoresForeignTypes(t *testing.T) {
 	approx(t, cand.MeanRecall, 0, "note hits must not satisfy a page label")
 	approx(t, dRecall, 0, "no phantom gain")
 }
-

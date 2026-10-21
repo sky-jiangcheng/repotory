@@ -174,15 +174,16 @@ func isAPIPath(p string) bool {
 //
 // webDist == ""  -> API only (production behaviour, unchanged).
 // webDist != ""  -> API paths (see isAPIPath) route to the mux; all other
-//                   paths serve a file from webDist, falling back to
-//                   index.html for client-side routes (React Router). Path
-//                   traversal is rejected: any resolved path escaping webDist
-//                   is forced to the SPA root.
-//                   A miss on a path that looks like a static asset (it has a
-//                   non-.html extension) is a real 404 instead: falling back
-//                   there would return HTML with 200 for a .js request and the
-//                   browser would fail the module on MIME type — a frontend
-//                   phantom that hides the actual "file missing" cause.
+//
+//	paths serve a file from webDist, falling back to
+//	index.html for client-side routes (React Router). Path
+//	traversal is rejected: any resolved path escaping webDist
+//	is forced to the SPA root.
+//	A miss on a path that looks like a static asset (it has a
+//	non-.html extension) is a real 404 instead: falling back
+//	there would return HTML with 200 for a .js request and the
+//	browser would fail the module on MIME type — a frontend
+//	phantom that hides the actual "file missing" cause.
 func newWebHandler(webDist string, api http.Handler) http.Handler {
 	if webDist == "" {
 		return api

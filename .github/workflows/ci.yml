@@ -84,6 +84,44 @@ jobs:
       - name: Run Go tests
         run: go test -race -timeout 10m ./...
 
+  # ------------------------------------------------------------ Format ----
+  # gofmt is the one tool every Go developer already runs before committing,
+  # yet the repo had no gate for it — and 11 files had drifted out of format
+  # (struct field alignment, mainly) without anyone noticing. Nothing breaks
+  # at runtime when a file is unformatted, so the drift accumulates silently
+  # until somebody runs gofmt -w over the tree and produces a 44-line diff
+  # that has nothing to do with the change it claims to be.
+  #
+  # The gate is a plain `gofmt -l`: it prints the offending files and exits
+  # non-zero, so the diff in CI is exactly the list to fix. No formatting is
+  # applied automatically — a bot that rewrites source would make the
+  # offending commit look innocent.
+  gofmt:
+    name: Go formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+
+      - name: Check gofmt
+        run: |
+          set -euo pipefail
+          BAD=$(gofmt -l internal cmd)
+          if [ -n "$BAD" ]; then
+            echo "ERROR: these files are not gofmt-clean:" >&2
+            echo "$BAD" >&2
+            echo >&2
+            echo "Fix with: gofmt -w \$(gofmt -l internal cmd)" >&2
+            exit 1
+          fi
+          echo "gofmt clean"
+
   # ------------------------------------------------------------- Icons ----
   # The brand mark lives once (build/icon.svg); every shipped icon — the
   # Wails appicon, the Windows .ico, the VS Code extension icon and the docs

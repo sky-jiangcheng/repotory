@@ -167,7 +167,7 @@ func TestChromemValidation(t *testing.T) {
 // Registry wiring: chromem opens without a reachability probe (embedded), but
 // an empty vector_store_url must fall back to local instead of losing every
 // embedding on the next restart.
-func TestChromemRegistryWiring(t *testing.T) {	// Unknown-URL chromem via Open: a real temp dir must yield the chromem store.
+func TestChromemRegistryWiring(t *testing.T) { // Unknown-URL chromem via Open: a real temp dir must yield the chromem store.
 	dir := filepath.Join(t.TempDir(), "chromem")
 	st := Open(nil, "chromem", dir, "", "")
 	if st.Name() != "chromem-go" {

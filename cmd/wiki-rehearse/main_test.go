@@ -10,13 +10,13 @@ import (
 
 func TestReconcile_Pure(t *testing.T) {
 	type tc struct {
-		name        string
-		before      []edge
-		after       []edge
-		wantPass    bool
+		name         string
+		before       []edge
+		after        []edge
+		wantPass     bool
 		wantCollapse int
-		wantLost    int
-		wantExtra   int
+		wantLost     int
+		wantExtra    int
 		wantOffVocab int
 	}
 	cases := []tc{
@@ -50,10 +50,10 @@ func TestReconcile_Pure(t *testing.T) {
 			wantLost: 1,
 		},
 		{
-			name:     "extra: a fabricated edge appears",
-			before:   []edge{{From: 1, To: 2, Relation: "ref"}},
-			after:    []edge{{From: 1, To: 2, Relation: "ref"}, {From: 5, To: 6, Relation: "ref"}},
-			wantPass: false,
+			name:      "extra: a fabricated edge appears",
+			before:    []edge{{From: 1, To: 2, Relation: "ref"}},
+			after:     []edge{{From: 1, To: 2, Relation: "ref"}, {From: 5, To: 6, Relation: "ref"}},
+			wantPass:  false,
 			wantExtra: 1,
 		},
 		{
@@ -124,7 +124,7 @@ func buildPreV21DB(t *testing.T, path string) {
 		rel  string
 	}{
 		{a.ID, b.ID, "cites"},
-		{a.ID, b.ID, "compiled-from"}, // folds to ref, collides with the row above
+		{a.ID, b.ID, "compiled-from"},  // folds to ref, collides with the row above
 		{a.ID, c.ID, "wildcard-value"}, // unknown -> ref
 		{b.ID, c.ID, "depends"},        // already canonical, must survive untouched
 	}

@@ -66,11 +66,11 @@ func (i *Importer) Probe() plugin.ProbeResult {
 // sessionFile is the subset of OpenCode's session JSON we rely on. Unknown
 // fields are ignored so schema drift in unrelated fields does not break import.
 type sessionFile struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"projectID"`
-	Directory string `json:"directory"`
-	Title     string `json:"title"`
-	Slug      string `json:"slug"`
+	ID        string       `json:"id"`
+	ProjectID string       `json:"projectID"`
+	Directory string       `json:"directory"`
+	Title     string       `json:"title"`
+	Slug      string       `json:"slug"`
 	Summary   summaryField `json:"summary"`
 	Time      struct {
 		Created int64 `json:"created"`

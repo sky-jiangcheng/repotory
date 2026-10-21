@@ -68,7 +68,6 @@ func TestImportProducesNote(t *testing.T) {
 	}
 }
 
-
 func TestImportToleratesObjectSummary(t *testing.T) {
 	root := fakeXDGData(t)
 	writeSession(t, root, "h", "real.json", `
@@ -89,10 +88,10 @@ func TestImportToleratesObjectSummary(t *testing.T) {
     "files": 3
   }
 }`)
-	
+
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()
-	
+
 	docs, err := New(database).Import()
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -100,7 +99,7 @@ func TestImportToleratesObjectSummary(t *testing.T) {
 	if len(docs) != 1 {
 		t.Fatalf("expected 1 doc, got %d", len(docs))
 	}
-	
+
 	d := docs[0]
 	if d.Source != "opencode" || d.Kind != "log" {
 		t.Errorf("source/kind = %q/%q", d.Source, d.Kind)

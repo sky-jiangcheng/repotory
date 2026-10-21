@@ -325,9 +325,9 @@ func TestEscapeFTSOR_CJKRunBecomesTrigrams(t *testing.T) {
 
 func TestIsCJKRun(t *testing.T) {
 	cases := map[string]bool{
-		"中英文切换":   true,
-		"ログイン":   true, // kana
-		"한국어":     true, // hangul
+		"中英文切换":     true,
+		"ログイン":      true, // kana
+		"한국어":       true, // hangul
 		"FastAPI":   false,
 		"FastAPI登录": false, // mixed: not guessed at
 		"":          false,
@@ -462,9 +462,9 @@ func TestEscapeFTSOR_CappedForPathologicalInput(t *testing.T) {
 func TestLikeTerms(t *testing.T) {
 	cases := map[string][]string{
 		"FastAPI 里 health 探测不到": {"FastAPI", "里", "health", "探测不到"},
-		"login  login":              {"login"}, // deduped
-		"one":                       {"one"},
-		"health,":                   {"health"}, // punctuation trimmed
+		"login  login":          {"login"}, // deduped
+		"one":                   {"one"},
+		"health,":               {"health"}, // punctuation trimmed
 	}
 	for in, want := range cases {
 		got := likeTerms(in)
