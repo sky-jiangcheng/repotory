@@ -6,10 +6,7 @@
 
 ## [Unreleased]
 
-### 修复
-
-- **构建产物无限累积，最终被打进二进制（web/dist 85MB → 7.7MB，可执行文件 83.7MB → 19.7MB）**：`vite.config.ts` 设了 `emptyOutDir: false`（此环境的批量删除守卫会拦 Vite 内建清空），注释写着「由 npm build 脚本负责清空」——但 `npm run build` 一直只是 `tsc && vite build`，Vite 自己不清目录，于是每次构建把新 chunk 写进去、旧 chunk 留在原地。实测累积到 **15 份 `elk-*.js`**（elk 是 mermaid 的图布局引擎，mermaid 按需动态 import，本该只有一份），每份 1.4MB；`web/dist` 被 `go:embed all:web/dist` 整个打进二进制，**约 21MB 的重复 chunk 直接进了可执行文件**。修法：开启 Vite 的 `build.manifest`（产出 `.vite/manifest.json`，列举本次构建真实产出的资源），新增 `scripts/prune-web-dist.mjs` 按 manifest 精确删除 `assets/` 下的孤儿文件，接进 `npm run build` 与 `npm run build:server`。清理范围严格限定在 `assets/`——manifest 只覆盖 Vite 产出的资源，`dist` 根下的 `index.html` / `favicon.*` 来自 `web/public` 与 HTML 入口、不在 manifest 的 file 列表里（manifest 的 `index.html` 条目指的是它注入的入口 chunk 而非 HTML 本身），按「dist 内未列入 manifest 即孤儿」删过一轮会连页面 HTML 一起删掉导致白屏。降级路径：无 manifest 或 manifest 为空时打印提示并**不删任何东西**（宁可留垃圾，不可误删）。实测：清出 1170 个孤儿文件、释放 74.3MB；dist 完整性校验（index.html / favicon 存在、index.html 引用的 9 个资源无缺失、manifest 引用 170 个文件无缺失、assets 下零孤儿）全过。
-- **API 参考文档仍在承诺两个已删除的绑定**：`docs/api/reference.md` 与英文镜像都还列着 `GetPluginStatuses()` / `ReloadPlugins()`——这两个绑定已随 yaegi 插件运行时一并退役（C11-B）。文档说的和代码能调的对不上，读文档的人照着调必然失败。
+## [2.10.0] - 2026-10-21
 
 ### 新增
 
@@ -20,13 +17,16 @@
 ### 变更
 
 - **知识图谱取证 lane 2 晋升（ADR-0018 条件 10 三门全过），`wiki_graph_search` 随之开启**：`evidencePages` 原本只以 FTS 命中为种子，本轮补全种子召回——FTS 零命中时由页面向量召回（`pageVectorRecall`，k=8）救场，白名单边邻接页以 PPR 定序**追加**在召回前缀之后（绝不重排直接命中——两种融合种子形态实测 -0.182 / +0.136@k10 但 k<7 为负且 1 例回退，均被条件 10② 否决，负结果记录于 ADR 晋升记录）。真库度量（27 approved 页/55 边，22 案例 enriched 集）：**delta recall@10 = +0.205，k=2..20 全区间为正、零回退**，逐案诊断 5 例增益全部形如「命中种子页→沿白名单边带出邻接页」。生产语义：FTS 有命中的查询纯本地零外发；向量阶段沿用 `semantic_search` 同意门（默认关，未配端点时优雅降级，今日生产即得 FTS-only 分阶口径 +0.023）。另有 `promote-m7-lane2.sh` 两处修复（WAL 库 `-readonly` 快照复核、门失败不再吞掉逐案诊断）。
-
 - **文档状态回写（4 处漂移，同批修掉）**：`TODO.md` 第 34 行仍写「门槛② evidence 门未过、lane 2 维持 Proposed、`wiki_graph_search` 默认关不动」，与同文件第 9/17 行的「已晋升 Accepted」互斥——末次提交 `6c63661` 改了前两处漏改第三处，而生产库已 `app_config=1` 开启该门，**文档说的和库里跑的不一致**；现按 `6c63661` 的实测数据改写为「已还清：delta +0.205@k10、k=2..20 全区间为正、22 案例零回退，生产口径 FTS-only 分阶 +0.023」。`docs/adr/index.md` 与英文镜像的 0018 行仍停在「当前密度 6 页/5 边、待晋升」，ADR 正文已追加 2026-10-21 晋升记录（27 页/55 边）——索引是入口页，正文再好，读者从索引读到的仍是旧状态。`AGENTS.md` 写「24 份架构决策」实为 26 份；两份 index 的 frontmatter `order: 24` 与末行约定「新 ADR 从 `0026` 递增」（0026 已存在，应为 0027）同步更正。
 - **`CONTRIBUTING.md` 依赖清单更正**：仍写「wails、mcp-go、yaegi、modernc sqlite」——yaegi 已随 C11-B 方案 B 移除（`go.mod` 里也确实没有了），同时新增了 `minio-go`（S3 远端推送）与 `chromem-go`（向量存储）。清单两头都不准。
-
 - **README 再瘦身 + License 结尾按主流惯例收尾（339 → 222 行，中英同步）**：快速开始从「安装三选 → MCP 注册 → 30 秒演示 → 数据目录」的多层嵌套扁平化为 **1 安装 → 2 接 Agent → 3 跑闭环** 三步，30 秒演示的 quote 叙事并入步骤 3 的三行 loop 表；「Why Repotory」定位段此前在闭环章节原样出现第二次，删重复段；项目结构树 26 行压到 8 行（分层细节归 Architecture 文档）；VS Code 扩展 17 行压到 10 行。License 结尾学 Vite / Astro 式写法：版权行（`© 2026-present sky-jiangcheng and Repotory contributors`）+ 一句许可范围（个人/商用免费）+ 商标声明（许可证覆盖代码，名称与 logo 仍为项目商标），替掉原来孤零零一行 `[MIT](LICENSE)`；`LICENSE` 文件版权行同步从旧品牌名 `RepoNest Contributors` 更正为当前实体——品牌已更名两代（gitboard → gitbuddy → repotory → Repotory），法律文本停在旧名不动会是真 bug。
 
-## [2.9.1] - 2026-10-20
+### 修复
+
+- **构建产物无限累积，最终被打进二进制（web/dist 85MB → 7.7MB，可执行文件 83.7MB → 19.7MB）**：`vite.config.ts` 设了 `emptyOutDir: false`（此环境的批量删除守卫会拦 Vite 内建清空），注释写着「由 npm build 脚本负责清空」——但 `npm run build` 一直只是 `tsc && vite build`，Vite 自己不清目录，于是每次构建把新 chunk 写进去、旧 chunk 留在原地。实测累积到 **15 份 `elk-*.js`**（elk 是 mermaid 的图布局引擎，mermaid 按需动态 import，本该只有一份），每份 1.4MB；`web/dist` 被 `go:embed all:web/dist` 整个打进二进制，**约 21MB 的重复 chunk 直接进了可执行文件**。修法：开启 Vite 的 `build.manifest`（产出 `.vite/manifest.json`，列举本次构建真实产出的资源），新增 `scripts/prune-web-dist.mjs` 按 manifest 精确删除 `assets/` 下的孤儿文件，接进 `npm run build` 与 `npm run build:server`。清理范围严格限定在 `assets/`——manifest 只覆盖 Vite 产出的资源，`dist` 根下的 `index.html` / `favicon.*` 来自 `web/public` 与 HTML 入口、不在 manifest 的 file 列表里（manifest 的 `index.html` 条目指的是它注入的入口 chunk 而非 HTML 本身），按「dist 内未列入 manifest 即孤儿」删过一轮会连页面 HTML 一起删掉导致白屏。降级路径：无 manifest 或 manifest 为空时打印提示并**不删任何东西**（宁可留垃圾，不可误删）。实测：清出 1170 个孤儿文件、释放 74.3MB；dist 完整性校验（index.html / favicon 存在、index.html 引用的 9 个资源无缺失、manifest 引用 170 个文件无缺失、assets 下零孤儿）全过。
+- **API 参考文档仍在承诺两个已删除的绑定**：`docs/api/reference.md` 与英文镜像都还列着 `GetPluginStatuses()` / `ReloadPlugins()`——这两个绑定已随 yaegi 插件运行时一并退役（C11-B）。文档说的和代码能调的对不上，读文档的人照着调必然失败。
+
+## [2.9.0] - 2026-10-19
 
 ### 新增
 
@@ -305,7 +305,12 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.9.0...v2.10.0
+[2.9.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.8.0...v2.9.0
+[2.8.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.7.0...v2.8.0
+[2.7.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.6.0...v2.7.0
+[2.6.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.2.0...v2.3.0
