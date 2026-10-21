@@ -150,7 +150,6 @@ A successful create emits the plugin event `note.created`.
 |------|------|
 | `GenerateLLMsTxt()` | LLM-oriented Markdown overview of the knowledge base |
 | `ExportNoteAsMarkdown(noteID)` | note Markdown with YAML frontmatter |
-| `GetPluginStatuses()` / `ReloadPlugins()` | plugin load status / hot reload |
 | `GetKnowledgeSources()` | knowledge source list (built-in claude + plugin-registered) |
 | `TriggerKnowledgeImport(name)` / `TriggerAllKnowledgeImports()` | trigger imports (emits the `import.completed` frontend event) |
 | `ImportClaudeMemory()` | one-click Claude memory import |

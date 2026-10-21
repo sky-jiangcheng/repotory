@@ -1,6 +1,6 @@
 ---
 title: 架构决策（ADR）
-order: 24
+order: 26
 ---
 
 # 架构决策记录（ADR）
@@ -24,7 +24,7 @@ order: 24
 | [0015](0015-w3-minimal-compile-loop.md) | W3 最小编译闭环——LLM 只写 pending 页，人批准才进检索 | Accepted |
 | [0016](0016-async-batch-jobs.md) | 长时批任务的异步化——提交即返回、进度可查、结果可取 | Accepted |
 | [0017](0017-one-kernel-two-entry-points.md) | 一个内核、两个入口——产品分层而不分叉仓库 | **Accepted（2026-10-13）**；条件 3 措辞于晋升当日由「第一安装路径」修订为「首屏叙事里的一等入口」，安装排序仍归 ADR-0009 管 |
-| [0018](0018-knowledge-graph-foundation.md) | 知识图谱底座——受控关系词表让图可查，图感知取证让图被读 | **lane 1 Accepted（2026-10-12 真库演练 PASS）**；lane 2 **已落码（schema v23，2026-10-14）：页面向量空间 + 图感知取证（`wiki_graph_search` 默认关、零回退）+ 纯 Go PPR**，晋升改挂**于 2026-10-18 强化的条件 10**（原「待 Phase 0 delta」已失效：Phase 0 于 2026-10-15 过门，evidence delta +0.094 @k=10，但那是在 **7 页 2 边**的稀疏图上量的、属下限。新门槛三条：approved 页 >= 15 且边 >= 20；该密度下 delta 仍 > +0.05 且 k=2..20 全区间为正、无一例回退；逐案诊断确认增益形如「命中种子页→沿白名单边带出邻接页」。当前密度 6 页 / 5 边。该门槛此前只活在 TODO 一行里、正文条件 6 比它弱，2026-10-19 按草案原文回写并移除 TODO 行） |
+| [0018](0018-knowledge-graph-foundation.md) | 知识图谱底座——受控关系词表让图可查，图感知取证让图被读 | **lane 1 与 lane 2 均 Accepted**（lane 1：2026-10-12 真库演练 PASS；lane 2：**2026-10-21 条件 10 三门全过**——密度 27 approved / 55 边，evidence 门 delta recall@10 **+0.205**、k=2..20 全区间为正、22 案例零回退，逐案诊断增益形如「命中种子页→沿白名单边带出邻接页」；`wiki_graph_search` 同日开启。种子召回定型为**分阶加性**：FTS 前缀原样保留、向量仅零命中时救场（`pageVectorRecall` k=8）、邻接只追加（纯 Go PPR 定序），结构性零回退；两种融合种子形态实测被否（等权 -0.182 / RRF 加权 +0.136 但 k<7 为负且 1 例回退），负结果见正文晋升记录。落地为 schema v23 页面向量空间 + `page_embed_dirty` 增量队列，Phase 0 门 2026-10-15 已过。live 未配 embedding 端点时生产口径为 FTS-only 分阶 +0.023） |
 | [0019](0019-entity-resolution-merge.md) | 实体消歧与概念合并——治「概念分裂」，合并永远由人触发 | Accepted（**真库副本端到端演练 + 人审采纳已完成（2026-10-18）**。结构候选发现（四类信号 + blocking）、合并事务、模型二判→`[lint] merge` 待办、审核页「合并建议」区均有契约测试；晋升条件 1-5 全部满足——条件 5 在真库副本（VACUUM INTO 副本、不碰 live）上按序演练：候选发现 5 条（各 ≥2 独立信号）、人审否决全部假阳性并手动采纳一条真重复（墓碑 + 边重指向 + 保留页一字不变）。「向量相似度」那一路仍待 ADR-0018 lane 2 的 `page_embeddings`，缺席不阻塞其余。演练发现见末尾「实现修正」节） |
 | [0020](0020-community-synthesis.md) | 社区摘要——用 Label Propagation 让 synthesis 层自己长出来 | Accepted（**真库副本端到端演练 + 人审已完成（2026-10-18）**。`internal/graph` 的同步 Label Propagation、白名单传播、synthesis 起草成 pending、`documents` 边与来源挂接、幂等 slug、预算与 `wiki_community_summary` 门都已实现并有测试；待决 4 按推荐落地（同步 + 硬预算，不给 `compile_jobs.kind` 加值，因此没有整表重建）。晋升条件 1、2、3、5 已满足——条件 4 在真库副本（VACUUM INTO 副本、不碰 live）上按序演练：门关时仅结构检测（1 社区，零外发、零写入，如实提示）；门开时产出 1 篇 pending synthesis 页（slug 决定性、3 条 documents 边、3 条 code-built note 附件），出口字节可审计；重跑更新同一 slug（未堆叠）。发现模型 slug 漂移（[[cbipay-branch-3.0.6]] 与实际 cbipay-branch-306 不符），人审可拦；另补演练所用模拟边（直接 SQL）形成 ≥3 人社区，验证门控逻辑。） |
 | [0021](0021-temporal-graph-page-versions.md) | 时态图——`page_versions` 快照让「修订已批准结论」可以安全发生 | Accepted（**真库副本端到端演练 + 人审已完成（2026-10-18）**。`page_versions` 快照表、作为唯一写入者的 `AFTER UPDATE` 触发器、两条 append-only 守卫、逐页回填与 `DropWikiSchema` 可逆性均有测试；晋升条件 1、2 已满足；条件 4 已于 2026-10-13 改写为「真库落地后的回填对账」（真库当天在无演练前提下推进到 v22，原措辞失去对象，见该条修订记录），其完成需先存在 approved 页，而批准是人独有的动作；条件 3 随 `revise_page` 一起等待——决策 4 与待决 4 明确不在本 ADR 落地修订流。演练已在副本上完成：批准一张 pending 页得到首份快照；直接 `UPDATE wiki_pages SET content=… WHERE id=…`（模拟编辑器/导入器直写）得到第二份快照；尝试 `DELETE` 或 `UPDATE` `page_versions` 被触发器拒绝（错误 19：append‑only）。迁移实际取 v22 而非 v23，外键 CASCADE 同样触发行触发器，故快照表不能带级联外键。） |
@@ -38,4 +38,4 @@ order: 24
 
 - 每个重大不可逆决策一篇：背景 → 决策 → 后果
 - 被 superseded 的 ADR 保留原文与横幅，不删除
-- 新 ADR 从 `0026` 递增编号，文件名 `NNNN-kebab-title.md`
+- 新 ADR 从 `0027` 递增编号，文件名 `NNNN-kebab-title.md`

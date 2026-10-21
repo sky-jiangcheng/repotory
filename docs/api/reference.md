@@ -150,7 +150,6 @@ cd .. && go build -o repotory-server ./cmd/server
 |------|------|
 | `GenerateLLMsTxt()` | 面向 LLM 的知识库总览 Markdown |
 | `ExportNoteAsMarkdown(noteID)` | 带 YAML frontmatter 的笔记 Markdown |
-| `GetPluginStatuses()` / `ReloadPlugins()` | 插件加载状态 / 热重载 |
 | `GetKnowledgeSources()` | 知识源列表（内置 claude + 插件注册） |
 | `TriggerKnowledgeImport(name)` / `TriggerAllKnowledgeImports()` | 触发导入（发出 `import.completed` 前端事件） |
 | `ImportClaudeMemory()` | Claude 记忆一键导入 |

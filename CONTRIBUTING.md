@@ -35,6 +35,10 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 
 > 双语文档镜像守卫：`docs/**/*.md`（中文源）与 `docs/en/**/*.md`（英文源）必须互为 1:1。改一边、只改一边的「双语漂移」会被 `scripts/check-docs-mirror.mjs` 在 CI（`docs-mirror` job）拦下。有意只出中文的研究文档（`competitive-positioning.md`、`positioning-brief.md`、`product-review/*`）在该脚本的 `ZH_ONLY` 白名单里；新增此类文档时同步登记白名单，否则守卫会误报。
 
+> **绑定面契约守卫**：`internal/app/api_contract_test.go` 会在 `go test ./...` 里核对 `docs/api/reference.md`（中英双份）与 `*App` 的绑定面——文档写到的绑定必须真实存在、已删除的绑定不得复活、两边文档的绑定集必须一致。改绑定面时**只改代码不同步文档会被这条门拦下**。
+
+> **构建产物清理**：`web/dist` 被 `go:embed all:web/dist` 整个打进二进制，所以那里多一份文件就等于二进制大一份。`npm run build` 末尾会跑 `scripts/prune-web-dist.mjs`，按 Vite 的 `.vite/manifest.json` 精确删除 `assets/` 下的孤儿 chunk（历史包袱：曾累积 15 份 elk chunk，21MB 直接进了可执行文件）。清理范围严格限定在 `assets/`——`dist` 根下的 `index.html` / `favicon.*` 不在 manifest 里，按「未列入 manifest 即孤儿」删会连页面 HTML 一起删掉。
+
 ## 架构约定
 
 - **业务逻辑只写在 `internal/service`**：Wails 桌面、headless HTTP（`cmd/server`）、MCP（`cmd/mcp`）三端共享同一实现；`internal/app` 是薄绑定层，每个方法 1-3 行委托，不放逻辑
@@ -81,7 +85,7 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 - [ ] `go test ./...`、`npm test`、`npm run build` 全绿；`node scripts/check-docs-mirror.mjs`（双语文档 1:1 镜像守卫，CI `docs-mirror` job）通过
 - [ ] 不触碰范围冻结与冻结标识（或已在 Issue/ADR 中说明理由）
 - [ ] 绑定面变更已同步 API 参考；用户可见变更已更新手册与 CHANGELOG
-- [ ] 新增依赖有明确理由（本项目依赖极简：wails、mcp-go、yaegi、modernc sqlite）
+- [ ] 新增依赖有明确理由（本项目依赖极简：wails、mcp-go、minio-go、chromem-go、modernc sqlite）
 
 ## 报告问题
 

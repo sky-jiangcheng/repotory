@@ -6,9 +6,23 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **构建产物无限累积，最终被打进二进制（web/dist 85MB → 7.7MB，可执行文件 83.7MB → 19.7MB）**：`vite.config.ts` 设了 `emptyOutDir: false`（此环境的批量删除守卫会拦 Vite 内建清空），注释写着「由 npm build 脚本负责清空」——但 `npm run build` 一直只是 `tsc && vite build`，Vite 自己不清目录，于是每次构建把新 chunk 写进去、旧 chunk 留在原地。实测累积到 **15 份 `elk-*.js`**（elk 是 mermaid 的图布局引擎，mermaid 按需动态 import，本该只有一份），每份 1.4MB；`web/dist` 被 `go:embed all:web/dist` 整个打进二进制，**约 21MB 的重复 chunk 直接进了可执行文件**。修法：开启 Vite 的 `build.manifest`（产出 `.vite/manifest.json`，列举本次构建真实产出的资源），新增 `scripts/prune-web-dist.mjs` 按 manifest 精确删除 `assets/` 下的孤儿文件，接进 `npm run build` 与 `npm run build:server`。清理范围严格限定在 `assets/`——manifest 只覆盖 Vite 产出的资源，`dist` 根下的 `index.html` / `favicon.*` 来自 `web/public` 与 HTML 入口、不在 manifest 的 file 列表里（manifest 的 `index.html` 条目指的是它注入的入口 chunk 而非 HTML 本身），按「dist 内未列入 manifest 即孤儿」删过一轮会连页面 HTML 一起删掉导致白屏。降级路径：无 manifest 或 manifest 为空时打印提示并**不删任何东西**（宁可留垃圾，不可误删）。实测：清出 1170 个孤儿文件、释放 74.3MB；dist 完整性校验（index.html / favicon 存在、index.html 引用的 9 个资源无缺失、manifest 引用 170 个文件无缺失、assets 下零孤儿）全过。
+- **API 参考文档仍在承诺两个已删除的绑定**：`docs/api/reference.md` 与英文镜像都还列着 `GetPluginStatuses()` / `ReloadPlugins()`——这两个绑定已随 yaegi 插件运行时一并退役（C11-B）。文档说的和代码能调的对不上，读文档的人照着调必然失败。
+
+### 新增
+
+- **绑定面契约守卫（`internal/app/api_contract_test.go`，7 项）**：CONTRIBUTING 写着「改绑定面必须同步 `docs/api/reference.md`」，但没有任何东西强制它——上面那个 `GetPluginStatuses` 漂移能长期存活正是这个缺口。新守卫从 API 参考页提取绑定名（表格首列的反引号标识符 + 行内 `Name(args)` 形式，类型名如 `ProjectResponse` 不会误入），断言：① 文档写到的每个绑定都真实存在于 `*App`（**文档 → 代码**方向；反向不断言——参考页有意只列主 API，要求全覆盖会往可读页面里灌噪声）；② 已删除的绑定不得重新出现在文档里（点名法，把「上次忘了」变成常驻回归测试）；③ 文档写到的每个绑定都已在 `bindingSurfaces` 注册表里分类（否则「agent 能不能调它」没有答案）；④ 中英两页的绑定集必须一致（`check-docs-mirror.mjs` 只查文件互为孪生，不查内容一致，单边改动它看不见）；⑤ 基线断言（提取结果 ≥ 30 个绑定，防止页面被清空后所有检查空转通过）；⑥ 提取正确性自检（必须命中 `GetProjects` 等已知绑定、必须不把类型名当绑定）；⑦ 文档路径必须留在仓库内。**验证过守卫有牙齿**：把 `GetPluginStatuses` 注回中文页后，①②④ 三项同时报红。
+- **`internal/importers/memsrc` 直测（`memsrc_helpers_test.go`）**：这批 helper 是六个内置记忆导入器（claude / codex / cursor / hermes / openclaw / opencode）共用的「另一半」，包文档承诺它们「不会在源之间漂移」——但此前只被各导入器自己的测试间接覆盖，某个 helper 的行为变化可能被恰好覆盖它的那个导入器掩盖。补齐直测：项目匹配三级阶梯（精确名 → 仓库路径后缀 → 名称包含，顺序即语义）、大小写处理（精确名大小写敏感、包含与路径后缀不敏感）、无主仓库不匹配、`ReadCapped` 对超大文件**返回上限字节且不报错**（这正是导入器能给出清晰跳过信息而非把数 GB  transcript 读进内存的前提）、`LastPathSegment` 去尾斜杠、`StripFrontmatter` 五种形态、`TargetProject` 的按名/按数字 id 解析与「未知/空/畸形一律回落 0」（这个回落是全部要点：配置错了的源必须落在无处，而不是把笔记散到错的项目里）。覆盖率 10.7% → **73.8%**。
+- **`internal/core/git` 契约测试（`provider_test.go`，此前 0 覆盖、无测试文件）**：`Provider` 是未来 HTTP/SSH provider（GitLab / Gitea / GitHub）要落进来的接缝，服务层依赖的是接口而非具体类型——接口漂移了，每个未来的实现者都会继承这份漂移。补齐：接口满足性、真实仓库上每个方法确实打到 git（薄适配器若返回零值，签名检查过得去而扫描引擎照样坏）、日期助手与 `ValidateDate` 自洽、`IsWorkday` 的周一至周五/周末语义、校验器对 shell 元字符的拒绝（`ValidateAuthor` 接受空串是刻意的——空即「不过滤作者」）、以及**非仓库路径降级为空结果而非报错**（这是既定契约：扫描引擎要能走过含非仓库目录的目录树而不中断）。覆盖率 0% → **81.8%**。
+
 ### 变更
 
 - **知识图谱取证 lane 2 晋升（ADR-0018 条件 10 三门全过），`wiki_graph_search` 随之开启**：`evidencePages` 原本只以 FTS 命中为种子，本轮补全种子召回——FTS 零命中时由页面向量召回（`pageVectorRecall`，k=8）救场，白名单边邻接页以 PPR 定序**追加**在召回前缀之后（绝不重排直接命中——两种融合种子形态实测 -0.182 / +0.136@k10 但 k<7 为负且 1 例回退，均被条件 10② 否决，负结果记录于 ADR 晋升记录）。真库度量（27 approved 页/55 边，22 案例 enriched 集）：**delta recall@10 = +0.205，k=2..20 全区间为正、零回退**，逐案诊断 5 例增益全部形如「命中种子页→沿白名单边带出邻接页」。生产语义：FTS 有命中的查询纯本地零外发；向量阶段沿用 `semantic_search` 同意门（默认关，未配端点时优雅降级，今日生产即得 FTS-only 分阶口径 +0.023）。另有 `promote-m7-lane2.sh` 两处修复（WAL 库 `-readonly` 快照复核、门失败不再吞掉逐案诊断）。
+
+- **文档状态回写（4 处漂移，同批修掉）**：`TODO.md` 第 34 行仍写「门槛② evidence 门未过、lane 2 维持 Proposed、`wiki_graph_search` 默认关不动」，与同文件第 9/17 行的「已晋升 Accepted」互斥——末次提交 `6c63661` 改了前两处漏改第三处，而生产库已 `app_config=1` 开启该门，**文档说的和库里跑的不一致**；现按 `6c63661` 的实测数据改写为「已还清：delta +0.205@k10、k=2..20 全区间为正、22 案例零回退，生产口径 FTS-only 分阶 +0.023」。`docs/adr/index.md` 与英文镜像的 0018 行仍停在「当前密度 6 页/5 边、待晋升」，ADR 正文已追加 2026-10-21 晋升记录（27 页/55 边）——索引是入口页，正文再好，读者从索引读到的仍是旧状态。`AGENTS.md` 写「24 份架构决策」实为 26 份；两份 index 的 frontmatter `order: 24` 与末行约定「新 ADR 从 `0026` 递增」（0026 已存在，应为 0027）同步更正。
+- **`CONTRIBUTING.md` 依赖清单更正**：仍写「wails、mcp-go、yaegi、modernc sqlite」——yaegi 已随 C11-B 方案 B 移除（`go.mod` 里也确实没有了），同时新增了 `minio-go`（S3 远端推送）与 `chromem-go`（向量存储）。清单两头都不准。
 
 - **README 再瘦身 + License 结尾按主流惯例收尾（339 → 222 行，中英同步）**：快速开始从「安装三选 → MCP 注册 → 30 秒演示 → 数据目录」的多层嵌套扁平化为 **1 安装 → 2 接 Agent → 3 跑闭环** 三步，30 秒演示的 quote 叙事并入步骤 3 的三行 loop 表；「Why Repotory」定位段此前在闭环章节原样出现第二次，删重复段；项目结构树 26 行压到 8 行（分层细节归 Architecture 文档）；VS Code 扩展 17 行压到 10 行。License 结尾学 Vite / Astro 式写法：版权行（`© 2026-present sky-jiangcheng and Repotory contributors`）+ 一句许可范围（个人/商用免费）+ 商标声明（许可证覆盖代码，名称与 logo 仍为项目商标），替掉原来孤零零一行 `[MIT](LICENSE)`；`LICENSE` 文件版权行同步从旧品牌名 `RepoNest Contributors` 更正为当前实体——品牌已更名两代（gitboard → gitbuddy → repotory → Repotory），法律文本停在旧名不动会是真 bug。
 
