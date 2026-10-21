@@ -136,6 +136,13 @@ function getCalloutIcon(type: CalloutType): string {
 // highlightCodeBlocks applies hljs to <pre><code> blocks. An unknown language
 // makes hljs.highlight throw, which would crash the whole note render, so we
 // fall back to auto-detection (which never throws on arbitrary text).
+//
+// The try/catch alone is not enough: hljs.highlight LOGS "Could not find the
+// language 'x'" to the console *before* throwing, so every ```mermaid block
+// (a language the common bundle does not carry, and which renderMarkdownAsync
+// renders via mermaid instead of hljs) painted one console error per block —
+// 15 errors on a single screenful. Check support first and skip the call
+// entirely: the fallback is the same, minus the noise.
 function highlightCodeBlocks(html: string): string {
   return html.replace(
     /<pre><code(?:\s+class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g,
@@ -147,11 +154,15 @@ function highlightCodeBlocks(html: string): string {
         .replace(/&#39;/g, "'")
         .replace(/&quot;/g, '"')
       let highlighted: string
-      try {
-        highlighted = lang
-          ? hljs.highlight(decoded, { language: lang }).value
-          : hljs.highlightAuto(decoded).value
-      } catch {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          highlighted = hljs.highlight(decoded, { language: lang }).value
+        } catch {
+          highlighted = hljs.highlightAuto(decoded).value
+        }
+      } else {
+        // No declared language, or one this bundle does not carry (mermaid):
+        // auto-detect, without ever handing hljs a name it would reject.
         highlighted = hljs.highlightAuto(decoded).value
       }
       return `<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre>`
@@ -300,12 +311,34 @@ async function renderMermaidBlocks(text: string): Promise<string> {
 }
 
 // stripMarkdown returns a single-line plain-text excerpt of markdown content.
+//
+// It strips markdown SYNTAX, never bare characters. The previous version used a
+// character class (`[#>*_\-[\]()!]`), which quietly mangled the content it was
+// summarizing: a knowledge-card excerpt showed "2026 09 01" for 2026-09-01 and
+// leaked the URL out of every `[ADR-0002](0002-….md)` link (observed on the
+// knowledge grid, 2026-10-21 smoke test). Every rule below is anchored to the
+// construct it owns — a bullet marker is only a bullet at the start of a line,
+// an emphasis `_` only when it is not intraword (so `lines_added` survives).
 export function stripMarkdown(content: string, max = 140): string {
   const cleaned = stripCalloutLines(content)
     .replace(/^---\n[\s\S]*?\n---\n?/, '')
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/[#>*_\-[\]()!]/g, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')   // images → alt text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')    // inline links → label, URL dropped
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')   // reference links → label
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, ' ')         // ATX heading markers
+    .replace(/^\s{0,3}>+\s?/gm, '')             // blockquote markers
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')          // bullet markers
+    .replace(/^\s{0,3}\d+[.)]\s+/gm, '')        // ordered-list markers
+    .replace(/^\s{0,3}(?:=+|-{3,}|_{3,})\s*$/gm, ' ') // thematic breaks / setext underlines
+    // Table handling: the delimiter row goes first, otherwise the pipe rule
+    // below turns "|---|---|" into "--- ---" and it survives as body text.
+    .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, ' ')
+    .replace(/^\s*\|.*$/gm, row => row.replace(/\|/g, ' ')) // remaining pipes
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '$2')      // strong
+    .replace(/(^|[\s(（])([*_])(?=\S)([^*_]*?\S)\2/g, '$1$3') // emphasis, intraword-safe
+    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1')   // strikethrough
     .replace(/\s+/g, ' ')
     .trim()
   return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned

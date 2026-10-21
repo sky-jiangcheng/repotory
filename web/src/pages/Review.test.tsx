@@ -43,7 +43,7 @@ import {
   type MergeCandidate, type MergeCandidateReport, type WikiCommunityReport,
   type WikiPageVersion, type WikiPendingPage,
 } from '../api/client'
-import ReviewPage from './Review'
+import ReviewPage, { jobErrorText } from './Review'
 
 const mockGetProjects = vi.mocked(getProjects)
 const mockListPending = vi.mocked(listPendingWikiPages)
@@ -260,7 +260,7 @@ describe('Review community synthesis (ADR-0020)', () => {
     mockGetProjects.mockResolvedValue([{
       id: 4, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
       is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
-      my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
     }])
     mockCommunity.mockResolvedValue(communityReport())
     await renderReview()
@@ -280,7 +280,7 @@ describe('Review community synthesis (ADR-0020)', () => {
     mockGetProjects.mockResolvedValue([{
       id: 4, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
       is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
-      my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
     }])
     mockCommunity.mockResolvedValue(communityReport({
       community_gate_off: true, pages_created: 0, pages_updated: 0, documents_linked: 0,
@@ -348,7 +348,7 @@ describe('Review queue wiring', () => {
     mockGetProjects.mockResolvedValue([{
       id: 4, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
       is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
-      my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
     }])
     await renderReview()
     await pickProject(4, 'Alpha')
@@ -360,5 +360,30 @@ describe('Review queue wiring', () => {
     expect(cancelCompileJob).not.toHaveBeenCalled()
     expect(deleteCompiledPage).not.toHaveBeenCalled()
     expect(rejectWikiPage).not.toHaveBeenCalled()
+  })
+})
+
+// The backend stores its fixed failure reasons as stable codes (db.CompileJobErr*)
+// so this page can translate them; a prose message there shipped as an English
+// sentence inside an otherwise Chinese panel (2026-10-21 review-page smoke test).
+// Tested at the function boundary on purpose: this file's `t` mock returns the
+// key and drops {{msg}}, so the rendered row cannot show the difference.
+describe('jobErrorText', () => {
+  const t = (k: string) => `T:${k}`
+
+  it.each([
+    ['interrupted_by_restart', 'review.errInterrupted'],
+    ['worker_shutdown', 'review.errShutdown'],
+    ['canceled_before_start', 'review.errCanceledEarly'],
+  ])('maps the %s code to a localized string', (code, key) => {
+    const out = jobErrorText(code, t)
+    expect(out).toBe(`T:${key}`)
+    expect(out).not.toContain(code)
+  })
+
+  it('passes a wrapped Go error through untouched', () => {
+    // Diagnostic text is deliberately not localized — rewriting it would hide
+    // what actually failed.
+    expect(jobErrorText('wiki lint: connection refused', t)).toBe('wiki lint: connection refused')
   })
 })

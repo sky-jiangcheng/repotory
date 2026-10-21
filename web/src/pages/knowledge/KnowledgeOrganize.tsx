@@ -5,6 +5,7 @@ import {
   type OrganizeGroup, type Project,
 } from '../../api/client'
 import { useConfirmClick } from '../../hooks/useConfirmClick'
+import { useToast } from '../../hooks/useToast'
 import ErrorBanner from '../../components/ErrorBanner'
 import Icon from '../../components/Icon'
 import s from './KnowledgeOrganize.module.css'
@@ -15,8 +16,30 @@ import s from './KnowledgeOrganize.module.css'
 // into a real project (or the default) and remove an emptied placeholder — the
 // whole point being that nothing is silently lost anymore, but filing stays a
 // human act. Renders nothing when there is nothing to organize.
-function KnowledgeOrganize() {
+
+// nestingParent finds the placeholder a bucket sits inside, judged by the root
+// paths on disk: "Fund账户绑定PI" lives under "富港科技资料", and the list
+// rendered the two as flat siblings with no hint of the containment (the
+// 2026-10-21 smoke test). Derived from the paths the groups already carry —
+// no new column, no new query.
+export function nestingParent(
+  groups: OrganizeGroup[],
+  g: OrganizeGroup,
+): OrganizeGroup | undefined {
+  let best: OrganizeGroup | undefined
+  for (const other of groups) {
+    if (other.project_id === g.project_id) continue
+    // Path-separator aware: "/a/bc" must not count as inside "/a/b".
+    if (!g.root_path.startsWith(other.root_path + '/')) continue
+    // The longest matching ancestor is the immediate parent.
+    if (!best || other.root_path.length > best.root_path.length) best = other
+  }
+  return best
+}
+
+function KnowledgeOrganize({ onPendingChange }: { onPendingChange?: (n: number) => void }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [groups, setGroups] = useState<OrganizeGroup[]>([])
   const [realProjects, setRealProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,6 +69,15 @@ function KnowledgeOrganize() {
   const worthShowing = groups.some(
     g => g.kind === 'import_placeholder' || (g.kind === 'default' && g.note_count > 0),
   )
+
+  // Report the backlog upward so the page toolbar can offer a jump link. The
+  // count is of NOTES, not buckets — "待整理 14" is the actionable number, and
+  // it drops to 0 (link disappears) the moment the backlog is cleared.
+  const pending = groups
+    .filter(g => g.kind === 'import_placeholder' || (g.kind === 'default' && g.note_count > 0))
+    .reduce((sum, g) => sum + (g.note_count || 0), 0)
+  useEffect(() => { onPendingChange?.(loading ? 0 : pending) }, [loading, pending, onPendingChange])
+
   if (!loading && !worthShowing) {
     return null
   }
@@ -68,8 +100,38 @@ function KnowledgeOrganize() {
     if (!target) return
     setBusy(g.project_id)
     try {
-      await reassignLandingNotes(g.project_id, target)
+      const moved = await reassignLandingNotes(g.project_id, target)
       await load()
+      // Silence looked like a no-op: the row stayed, only its count changed, and
+      // the user had no way to tell the move happened (2026-10-21 smoke test).
+      // Say what moved, where it went, and — when the source is now an empty
+      // shell — offer to remove it right there instead of leaving the user to
+      // wonder which bucket is the leftover.
+      const targetName = optionsFor(g).find(o => o.id === target)?.name ?? ''
+      const emptied = moved > 0 && moved >= g.note_count
+      toast({
+        kind: 'success',
+        title: t('knowledge.organizeReassigned', {
+          count: moved,
+          source: g.name,
+          target: targetName,
+          defaultValue: '已把 {{count}} 条笔记从「{{source}}」归口到「{{target}}」',
+        }),
+        message: emptied
+          ? t('knowledge.organizeReassignedEmptied', { name: g.name, defaultValue: '「{{name}}」已空，只剩一个空壳。' })
+          : t('knowledge.organizeReassignedHint', { defaultValue: '源占位项目仍在列表中，可手动删除。' }),
+        actionLabel: emptied ? t('knowledge.organizeRemoveEmpty', { defaultValue: '删除空占位' }) : undefined,
+        onAction: emptied
+          ? async () => {
+            try {
+              await deleteLandingProject(g.project_id, false)
+              await load()
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e))
+            }
+          }
+          : undefined,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -82,8 +144,16 @@ function KnowledgeOrganize() {
     try {
       // deleteNotes=true only when the bucket still holds notes (confirmed path);
       // an emptied placeholder is dropped without the flag.
-      await deleteLandingProject(g.project_id, g.note_count > 0)
+      const hadNotes = g.note_count > 0
+      await deleteLandingProject(g.project_id, hadNotes)
       await load()
+      toast({
+        kind: 'success',
+        title: t('knowledge.organizeDeleted', { name: g.name, defaultValue: '已删除占位「{{name}}」' }),
+        message: hadNotes
+          ? t('knowledge.organizeDeletedWithNotes', { count: g.note_count, defaultValue: '连同 {{count}} 条笔记一并删除。' })
+          : t('knowledge.organizeDeletedEmpty', { defaultValue: '该占位本就没有笔记。' }),
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -96,7 +166,7 @@ function KnowledgeOrganize() {
   }
 
   return (
-    <div className={`knowledge-section ${s.section}`}>
+    <div className={`knowledge-section ${s.section}`} id="knowledge-organize">
       <div className="section-header">
         <h2><Icon name="check" size={15} /> {t('knowledge.organizeTitle', { defaultValue: '知识库整理' })}</h2>
       </div>
@@ -113,6 +183,7 @@ function KnowledgeOrganize() {
             <OrganizeRow
               key={g.project_id}
               group={g}
+              parent={nestingParent(groups, g)}
               options={optionsFor(g)}
               target={targets[g.project_id] ?? 0}
               busy={busy === g.project_id}
@@ -129,9 +200,10 @@ function KnowledgeOrganize() {
 }
 
 function OrganizeRow({
-  group, options, target, busy, onPickTarget, onReassign, onDelete, t,
+  group, parent, options, target, busy, onPickTarget, onReassign, onDelete, t,
 }: {
   group: OrganizeGroup
+  parent?: OrganizeGroup
   options: Array<{ id: number; name: string }>
   target: number
   busy: boolean
@@ -149,6 +221,13 @@ function OrganizeRow({
   return (
     <div className={s.row}>
       <div className={s.rowHead}>
+        {/* A nested placeholder states its container, so "Fund账户绑定PI" no
+            longer reads as a sibling of the "富港科技资料" it lives under. */}
+        {parent && (
+          <span className={s.rowParent} title={group.root_path}>
+            {t('knowledge.organizeNestedIn', { parent: parent.name, defaultValue: '位于 {{parent}} 内' })}
+          </span>
+        )}
         <span className={s.rowName} title={group.root_path}>{group.name}</span>
         <span className={`badge ${isDefault ? s.badgeDefault : s.badgePlaceholder}`}>
           {isDefault ? t('project.kindDefault', { defaultValue: '未分类' }) : t('project.kindPlaceholder', { defaultValue: '未归类仓库' })}

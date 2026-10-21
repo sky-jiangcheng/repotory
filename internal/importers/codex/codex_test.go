@@ -85,6 +85,66 @@ func TestTitleForStableAndUnique(t *testing.T) {
 	}
 }
 
+// fixtureEnvelope mirrors a real 2026-07 rollout: the first user message is the
+// injected <environment_context> block (later ones carry an AGENTS.md heading
+// too), and only the THIRD user message is an actual instruction.
+const fixtureEnvelope = `{"type":"session_meta","payload":{"session_id":"019f7f28-1121","timestamp":"2026-07-20T10:00:00Z","cwd":"/Users/u/Documents/he"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/Users/u/Documents/he</cwd>\n  <shell>zsh</shell>\n  <filesystem><workspace_roots><root>/Users/u/Documents/he</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Sure, what should I do?"}]}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/u/Documents/he\n\n<INSTRUCTIONS>\n<!-- BEGIN:nextjs-agent-rules -->\nbreaking changes\n<!-- END:nextjs-agent-rules -->\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/Users/u/Documents/he</cwd>\n</environment_context>\n\n真正的指令：把首页的中英文切换按钮补上"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"按钮已加好。"}]}}
+`
+
+func TestStripBoilerplate(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"environment context only", "<environment_context>\n  <cwd>/a</cwd>\n</environment_context>", ""},
+		{"plain prompt untouched", "Fix the flaky test", "Fix the flaky test"},
+		{"agents heading alone", "# AGENTS.md instructions for /a\n", ""},
+		{
+			"heading then instructions then context",
+			"# AGENTS.md instructions for /a\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/a</cwd>\n</environment_context>\n\n真正的指令",
+			"真正的指令",
+		},
+		{"unclosed envelope is left alone", "<environment_context>\n  <cwd>/a", "<environment_context>\n  <cwd>/a"},
+		{"mid-text tag is not stripped", "see the <user_instructions> docs for details", "see the <user_instructions> docs for details"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripBoilerplate(tc.in); got != tc.want {
+				t.Errorf("stripBoilerplate = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A session's first user message is usually an injected envelope, not an
+// instruction. The importer must keep looking until it finds a real prompt —
+// otherwise every note is titled "<environment_context> · <id>" and its body
+// is a sandbox-permission XML dump (observed on all 50 sampled notes).
+func TestParseRolloutFileSkipsInjectedEnvelopes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout-envelope.jsonl")
+	if err := os.WriteFile(path, []byte(fixtureEnvelope), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := parseRolloutFile(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !strings.HasPrefix(p.firstUser, "真正的指令") {
+		t.Errorf("firstUser = %q, want the real instruction", p.firstUser)
+	}
+	if strings.Contains(p.firstUser, "environment_context") || strings.Contains(p.firstUser, "AGENTS.md") {
+		t.Errorf("firstUser still carries an envelope: %q", p.firstUser)
+	}
+	if title := titleFor(p); strings.HasPrefix(title, "<") || strings.HasPrefix(title, "#") {
+		t.Errorf("title = %q, must not be built from an envelope tag", title)
+	}
+}
+
 func TestImportProducesNote(t *testing.T) {
 	home := fakeHome(t)
 	sess := filepath.Join(home, ".codex", "sessions", "2026", "03", "20")

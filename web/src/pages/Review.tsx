@@ -56,6 +56,23 @@ function kindLabel(job: CompileJob, t: (k: string) => string): string {
   return kind === 'lint' ? t('review.kindLint') : t('review.kindCompile')
 }
 
+// jobErrorText localizes the backend's fixed failure reasons, which it stores as
+// stable codes (db.CompileJobErr*) precisely so this page can translate them.
+// Anything else is a wrapped Go error: diagnostic text, deliberately left as-is
+// — rewriting it would hide what actually failed. Exported for the unit test
+// because the component path is unobservable under the suite's key-returning
+// `t` mock (it discards the interpolated {{msg}}).
+const JOB_ERROR_KEYS: Record<string, string> = {
+  interrupted_by_restart: 'review.errInterrupted',
+  worker_shutdown: 'review.errShutdown',
+  canceled_before_start: 'review.errCanceledEarly',
+}
+
+export function jobErrorText(msg: string, t: (k: string) => string): string {
+  const key = JOB_ERROR_KEYS[msg]
+  return key ? t(key) : msg
+}
+
 // A dismissed pair is keyed by project too: "ignore" means "not in this view",
 // and switching project is a different view. Nothing is persisted — the moment
 // the page unmounts the pair is suggested again, which is the point (a local
@@ -408,7 +425,7 @@ function JobRow({
             </>}
       </div>
       {job.stopped && <p className={s.jobNote}>{t('review.stopped', { reason: job.stopped })}</p>}
-      {job.error && <p className={s.jobError}>{t('review.error', { msg: job.error })}</p>}
+      {job.error && <p className={s.jobError}>{t('review.error', { msg: jobErrorText(job.error, t) })}</p>}
     </li>
   )
 }

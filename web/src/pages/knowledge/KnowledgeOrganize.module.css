@@ -46,6 +46,17 @@
   max-width: 260px;
 }
 
+/* "位于 <容器> 内" — the container of a nested placeholder, dimmed so it reads
+   as a qualifier rather than as the bucket's own name. */
+.rowParent {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rowCount {
   color: var(--text-muted);
   font-size: 12px;

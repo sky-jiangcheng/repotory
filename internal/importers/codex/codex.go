@@ -29,6 +29,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"repotory/internal/core/plugin"
@@ -203,8 +204,17 @@ func parseRolloutFile(path string) (parsed, error) {
 			txt := extractText(ev.Payload.Content)
 			switch ev.Payload.Role {
 			case "user":
+				// Keep the first user message that still has real prompt text
+				// after the injected envelopes are stripped (see
+				// stripBoilerplate). Codex opens most sessions with
+				// <environment_context> and AGENTS.md blocks; taking the first
+				// message verbatim put "<environment_context> · 019f7f28" as the
+				// note title and a full sandbox-permission XML tree as its body
+				// on all 50 sampled notes (the 2026-10-21 UI smoke test).
 				if p.firstUser == "" {
-					p.firstUser = txt
+					if txt = stripBoilerplate(txt); txt != "" {
+						p.firstUser = txt
+					}
 				}
 			case "assistant":
 				if txt != "" {
@@ -220,6 +230,41 @@ func parseRolloutFile(path string) (parsed, error) {
 		return parsed{}, err
 	}
 	return p, nil
+}
+
+// agentsMdHeadingRe matches the markdown heading Codex puts at the top of the
+// first user message when a project AGENTS.md exists, e.g.
+// "# AGENTS.md instructions for /Users/…/investment-dashboard".
+var agentsMdHeadingRe = regexp.MustCompile(`(?m)^#\s*AGENTS\.md instructions[^\n]*\n?`)
+
+// leadingTagOpenRe matches an opening <tag> at the string start. Codex chains
+// the same boilerplate envelopes CodeBuddy does — <environment_context> always,
+// plus <INSTRUCTIONS> and <user_instructions> when applicable — ahead of the
+// real prompt. RE2 has no backreferences, so the closing tag is located by name
+// in code.
+var leadingTagOpenRe = regexp.MustCompile(`\A\s*<([a-zA-Z_]+)>`)
+
+// stripBoilerplate removes the injected envelope chain from a user message and
+// returns what is left, empty when the message carried nothing else. An
+// unclosed envelope is left alone: stripping half of it would fabricate text.
+func stripBoilerplate(s string) string {
+	for {
+		if loc := agentsMdHeadingRe.FindStringIndex(s); loc != nil && loc[0] == 0 {
+			s = s[loc[1]:]
+			continue
+		}
+		m := leadingTagOpenRe.FindStringSubmatch(s)
+		if m == nil {
+			break
+		}
+		closeTag := "</" + m[1] + ">"
+		i := strings.Index(s, closeTag)
+		if i < 0 {
+			break
+		}
+		s = s[i+len(closeTag):]
+	}
+	return strings.TrimSpace(s)
 }
 
 // rolloutEvent is the minimal, version-tolerant view of one JSONL line.

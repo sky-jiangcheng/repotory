@@ -120,9 +120,19 @@ func GetNoteByID(db *sql.DB, id int64) (*Note, error) {
 }
 
 // ListNotes returns all notes for a project, pinned first then by recency.
+//
+// Recency is updated_at DESC — a note you just wrote, and a note you just
+// edited, both belong at the top. The previous created_at ASC put a brand-new
+// note at the BOTTOM of a 50-note project, so saving read as "nothing
+// happened" (observed in the 2026-10-21 UI smoke test: create → count went
+// 50→51 but the list still showed the old first card).
+//
+// sort_order stays the manual tiebreaker inside equal timestamps; id DESC is
+// the final tiebreaker so two notes written in the same second still order
+// deterministically (newest first) rather than by insertion luck.
 func ListNotes(db *sql.DB, projectID int64) ([]Note, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at FROM project_notes WHERE project_id = ? ORDER BY pinned DESC, sort_order ASC, created_at ASC, id ASC",
+		"SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at FROM project_notes WHERE project_id = ? ORDER BY pinned DESC, sort_order ASC, updated_at DESC, id DESC",
 		projectID)
 	if err != nil {
 		return nil, err

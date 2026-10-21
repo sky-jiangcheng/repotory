@@ -155,7 +155,7 @@ describe('Home workbench (ADR-0024 single-column first screen)', () => {
     mockGetProjects.mockImplementation(() => lagged([{
       id: 7, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
       is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
-      my_added: 0, my_deleted: 0, my_files: 0, is_workday: false, below_standard: false,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
     }]))
     await renderHome()
     // Wait for the option — it is the data — and only then take the select by

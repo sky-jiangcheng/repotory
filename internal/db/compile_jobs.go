@@ -42,6 +42,22 @@ const (
 	JobKindLint    = "lint"
 )
 
+// Stable job-failure codes. The `error` column is rendered verbatim in the
+// review panel, so a prose message written here shipped as an English sentence
+// inside an otherwise Chinese UI ("interrupted by application restart; work is
+// not resumed…"). These four are the only fixed strings the workers write —
+// every other error is a wrapped Go error, which stays untranslated on purpose
+// (its text is diagnostic, not copy). The web layer maps each code to a
+// localized string via review.errCode_*; anything else falls through unchanged.
+const (
+	// CompileJobErrInterrupted marks work that died with the previous process.
+	CompileJobErrInterrupted = "interrupted_by_restart"
+	// CompileJobErrShutdown marks the worker exiting mid-job (app quit).
+	CompileJobErrShutdown = "worker_shutdown"
+	// CompileJobErrCanceledEarly marks a cancel that landed before any work.
+	CompileJobErrCanceledEarly = "canceled_before_start"
+)
+
 var compileJobStatements = []string{
 	`CREATE TABLE IF NOT EXISTS compile_jobs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -349,12 +365,13 @@ func RequestCancelCompileJob(db *sql.DB, id int64) (*CompileJob, error) {
 
 // FailInterruptedCompileJobs runs at startup: anything left 'running' or 'queued'
 // died with the previous process. Marking it failed is honest; silently resuming
-// would pretend we know where it stopped, and we do not.
+// would pretend we know where it stopped, and we do not. The reason is stored as
+// CompileJobErrInterrupted (a code, not prose) so the UI can localize it.
 func FailInterruptedCompileJobs(db *sql.DB) (int, error) {
 	res, err := db.Exec(
 		`UPDATE compile_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP
 		  WHERE status IN ('running','queued')`,
-		"interrupted by application restart; work is not resumed because the stopping point is unknown")
+		CompileJobErrInterrupted)
 	if err != nil {
 		return 0, fmt.Errorf("db: fail interrupted compile jobs: %w", err)
 	}

@@ -182,6 +182,26 @@ describe('stripMarkdown', () => {
   it('strips headings markers', () => {
     expect(stripMarkdown('# Title')).toBe('Title')
   })
+
+  // Regression (2026-10-21 knowledge-grid smoke test): the old character-class
+  // strip mangled every date and leaked link URLs into the card excerpts.
+  it('keeps hyphens inside dates and identifiers', () => {
+    expect(stripMarkdown('日期：2026-09-01（实现于 1.7.0）')).toBe('日期：2026-09-01（实现于 1.7.0）')
+    expect(stripMarkdown('字段 lines_added 与 daily_stats')).toBe('字段 lines_added 与 daily_stats')
+  })
+
+  it('drops the URL but keeps the label of a link', () => {
+    expect(stripMarkdown('关联：[ADR-0002](0002-c-end-repositioning.md)')).toBe('关联：ADR-0002')
+    expect(stripMarkdown('![架构图](docs/arch.png)')).toBe('架构图')
+  })
+
+  it('keeps bullet text while removing the marker', () => {
+    expect(stripMarkdown('- 状态：Accepted\n- 日期：2026-08-17')).toBe('状态：Accepted 日期：2026-08-17')
+  })
+
+  it('does not treat a table rule as a list bullet', () => {
+    expect(stripMarkdown('| a | b |\n|---|---|\n| 1 | 2 |')).toBe('a b 1 2')
+  })
 })
 
 describe('parseTags', () => {

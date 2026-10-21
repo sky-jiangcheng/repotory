@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -150,4 +151,63 @@ func seedJobTestProject(t *testing.T, database *sql.DB) int64 {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// The `error` column is shown verbatim in the review panel, so the fixed reasons
+// the workers write must be codes the web layer can localize — a prose message
+// shipped as an English sentence inside an otherwise Chinese UI (2026-10-21).
+func TestFailInterruptedCompileJobs_StoresACodeNotProse(t *testing.T) {
+	database, err := InitDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	if _, err := database.Exec(
+		`INSERT INTO projects (name, root_path) VALUES ('a', '/a'), ('b', '/b')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO compile_jobs (project_id, requested_notes, status, kind)
+		 VALUES (1, 10, 'running', 'compile'), (2, 10, 'queued', 'lint')`); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := FailInterruptedCompileJobs(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("marked %d jobs, want 2", n)
+	}
+
+	rows, err := database.Query(
+		`SELECT DISTINCT error FROM compile_jobs WHERE error != ''`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			t.Fatal(err)
+		}
+		seen++
+		if e != CompileJobErrInterrupted {
+			t.Errorf("error = %q, want the stable code %q", e, CompileJobErrInterrupted)
+		}
+		// A space would mean prose crept back in.
+		if strings.Contains(e, " ") {
+			t.Errorf("error %q looks like prose, not a code", e)
+		}
+	}
+	if seen != 1 {
+		t.Errorf("expected exactly one distinct error value, got %d", seen)
+	}
+
+	// Terminal stays terminal: a second startup pass has nothing left to do.
+	if n, err = FailInterruptedCompileJobs(database); err != nil || n != 0 {
+		t.Errorf("second pass marked %d (err %v), want 0", n, err)
+	}
 }

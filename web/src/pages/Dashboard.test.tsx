@@ -73,6 +73,7 @@ const proj = (id: number, name: string, over: Partial<Project> = {}): Project =>
   my_added: 0,
   my_deleted: 0,
   my_files: 0,
+  my_added_7d: 0,
   is_workday: true,
   below_standard: false,
   ...over,

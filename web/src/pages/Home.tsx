@@ -136,9 +136,20 @@ export default function Home() {
             <span className={s.statusSectionHint}>
               {projects.length > 0
                 ? withRepos === projects.length
-                  ? `${projects.length} 个项目`
-                  : `${projects.length} 个项目 · ${withRepos} 个含仓库`
+                  ? t('home.projectCount', { count: projects.length })
+                  : t('home.projectCountWithRepos', { count: projects.length, withRepos })
                 : ''}
+              {/* The grid below shows a fixed few cards; without this the header
+                  count and the visible cards read as contradictory (33 projects
+                  announced, 3 rendered, no hint that 30 more exist). */}
+              {starredOrTopProjects.length < projects.length && (
+                <span className={s.statusSectionMore}>
+                  {t('home.projectCardsTruncated', {
+                    shown: starredOrTopProjects.length,
+                    total: projects.length,
+                  })}
+                </span>
+              )}
             </span>
           </div>
 

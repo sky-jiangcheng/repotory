@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { stripMarkdown } from '../utils/markdown'
 import DOMPurify from 'dompurify'
@@ -15,6 +16,9 @@ import s from './Knowledge.module.css'
 function KnowledgePage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // Notes waiting to be filed, reported up by KnowledgeOrganize so the toolbar
+  // can offer a jump link (see the button below).
+  const [pendingOrganize, setPendingOrganize] = useState(0)
   const {
     notes, tags, loading, error, query, hits, kindFilter, activeTag,
     pinnedOnly, importing, message, newNotePicker, askMode, exportingId,
@@ -84,6 +88,20 @@ function KnowledgePage() {
           {query && <span className={s.searchHint}>{t('knowledge.searchHint')}</span>}
         </div>
         <div className="page-head-actions">
+          {/* The organize section renders at the very bottom of a page that is
+              ~10,000px tall (the note grid sits above it), so with nothing at
+              the top pointing at it, 14 notes across 6 landing buckets read as
+              "nowhere to be seen" — which is exactly how it looked in the
+              2026-10-21 smoke test. A count-bearing jump link puts it one
+              click away, and disappears when there is nothing to file. */}
+          {pendingOrganize > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => document.getElementById('knowledge-organize')?.scrollIntoView({ block: 'start' })}
+            >
+              {t('knowledge.organizeJump', { count: pendingOrganize, defaultValue: `待整理 ${pendingOrganize}` })}
+            </button>
+          )}
           <button className="btn btn-primary btn-sm" onClick={handleQuickCreate}>
             {t('knowledge.quickCreate')}
           </button>
@@ -259,7 +277,7 @@ function KnowledgePage() {
       {/* Always mounted (search mode too); renders nothing when no landing bucket
           awaits filing. The organize surface is where imported-but-unmatched notes
           are assigned to a real project — the ADR-0023 landing counterpart. */}
-      <KnowledgeOrganize />
+      <KnowledgeOrganize onPendingChange={setPendingOrganize} />
     </div>
   )
 }

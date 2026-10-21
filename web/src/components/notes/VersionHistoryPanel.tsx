@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { NoteVersion } from '../../api/client'
 import DiffViewer from '../DiffViewer'
@@ -15,9 +16,20 @@ interface Props {
 /** Version history list for one note, with per-version diff and restore. */
 export default function VersionHistoryPanel({ versions, restoringId, diffText, onRestore, onShowDiff, onClose }: Props) {
   const { t } = useTranslation()
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // The panel renders after the note list, so on a project with many notes it
+  // lands thousands of pixels below the "历史" button that opened it — the
+  // 2026-10-21 smoke test measured it at top: 27108px. Nothing on screen moved,
+  // so the click read as broken. Bring it into view on open; `nearest` scrolls
+  // only when it is actually off-screen, so re-renders (a diff loading in)
+  // do not yank the viewport away from wherever the user has scrolled to.
+  useEffect(() => {
+    panelRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [])
 
   return (
-    <div className={s.versionHistoryPanel}>
+    <div className={s.versionHistoryPanel} ref={panelRef}>
       <div className={s.versionHistoryHeader}>
         <h4>{t('project.versionHistory')}</h4>
         <button className="btn btn-sm" onClick={onClose}>{t('common.close')}</button>

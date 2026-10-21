@@ -777,3 +777,57 @@ func TestSearchProjects_Limit(t *testing.T) {
 		t.Errorf("results should be limited to %d, got %d", searchProjectsLimit, len(results))
 	}
 }
+
+// A note you just wrote has to be visible at the top of its project. The
+// ordering used to be created_at ASC, which put a fresh note at the BOTTOM of a
+// 50-note project — saving looked like a no-op (2026-10-21 UI smoke test).
+func TestListNotesOrdersNewestFirst(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	pid := createTestProject(t, db, "note-order")
+
+	first, err := CreateNote(db, pid, "first written")
+	if err != nil {
+		t.Fatalf("CreateNote(first) failed: %v", err)
+	}
+	second, err := CreateNote(db, pid, "second written")
+	if err != nil {
+		t.Fatalf("CreateNote(second) failed: %v", err)
+	}
+
+	notes, err := ListNotes(db, pid)
+	if err != nil {
+		t.Fatalf("ListNotes failed: %v", err)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("expected 2 notes, got %d", len(notes))
+	}
+	if notes[0].ID != second.ID {
+		t.Errorf("newest note should be first, got %d before %d", notes[0].ID, second.ID)
+	}
+
+	// Editing an old note must float it back to the top — updated_at, not
+	// created_at, is what "recency" means once editing exists.
+	if err := UpdateNote(db, first.ID, "first written, edited"); err != nil {
+		t.Fatalf("UpdateNote failed: %v", err)
+	}
+	notes, err = ListNotes(db, pid)
+	if err != nil {
+		t.Fatalf("ListNotes(after edit) failed: %v", err)
+	}
+	if notes[0].ID != first.ID {
+		t.Errorf("just-edited note should float to the top, got %d first", notes[0].ID)
+	}
+
+	// Pinned still wins over recency.
+	if err := PinNote(db, second.ID, true); err != nil {
+		t.Fatalf("PinNote failed: %v", err)
+	}
+	notes, err = ListNotes(db, pid)
+	if err != nil {
+		t.Fatalf("ListNotes(pinned) failed: %v", err)
+	}
+	if notes[0].ID != second.ID {
+		t.Errorf("pinned note should outrank the recently-edited one, got %d first", notes[0].ID)
+	}
+}
