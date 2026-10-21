@@ -537,6 +537,15 @@
   color: var(--text-secondary);
 }
 
+.sourceBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb, 99, 102, 241), 0.08);
+  border: 1px solid rgba(var(--accent-rgb, 99, 102, 241), 0.2);
+  color: var(--accent);
+}
+
 .projectBadge {
   font-size: 10px;
   color: var(--text-muted);

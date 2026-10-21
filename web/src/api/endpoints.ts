@@ -15,6 +15,7 @@ import type {
   HandoffResult,
   KnowledgeSyncStatus,
   MergeCandidateReport,
+  WikiLinkSuggestion,
   MergePreview,
   MergeResult,
   Note,
@@ -643,6 +644,12 @@ export function cancelCompileJob(jobId: number): Promise<CompileJob | null> {
 // (ADR-0019 / ADR-0020 / ADR-0021). These five bindings are desktop-only by
 // design: no MCP twin, because a merge destroys knowledge and a synthesis run
 // writes model output into the library — both are human decisions.
+
+// suggestWikiLinks suggests [[wikilink]] candidates for given text based on library vocabulary.
+export function suggestWikiLinks(projectId: number, content: string): Promise<WikiLinkSuggestion[]> {
+  return call<WikiLinkSuggestion[] | null>({ method: 'SuggestWikiLinks', args: [projectId, content] })
+    .then(list => list ?? [])
+}
 
 // findMergeCandidates runs the free structural pass over a project's pages.
 // The report is normalised rather than passed through because the review page

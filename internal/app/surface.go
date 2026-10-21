@@ -162,6 +162,7 @@ var bindingSurfaces = map[string]BindingSurface{
 
 	// ---- knowledge graph (ADR-0019 / 0020 / 0021) ----------------------------
 	"FindMergeCandidates":  {SurfaceDesktopOnly, "", "read-only, but it is the surface a person looks at in order to decide — exposing it invites an agent to merge without the human"},
+	"SuggestWikiLinks":     {SurfaceDesktopOnly, "", "assists human authoring by suggesting [[wikilinks]] based on existing approved concept vocabulary"},
 	"MergeWikiPages":       {SurfaceDesktopOnly, "", "a merge destroys information and may only follow a human decision (ADR-0019 decision 1, pinned by TestMergeHasNoAutoPath)"},
 	"RunCommunitySummary":  {SurfaceDesktopOnly, "", "writes model output into the library; reachable by an agent it would defeat the review queue (ADR-0020 decision 9)"},
 	"ResolveWorkspacePath": {SurfaceDesktopOnly, "", "agents pass `path` to repotory_context instead; a second client-side matcher is the disagreement this avoids"},

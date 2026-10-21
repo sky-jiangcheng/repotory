@@ -53,7 +53,7 @@ import (
 //             design: agents pass `path` to repotory_context instead, and a second
 //             client-side implementation of the matcher is the failure this avoids.
 //   Knowledge graph (ADR-0019/0020/0021): FindMergeCandidates, MergeWikiPages,
-//             RunCommunitySummary, ListWikiPageVersions, DiffWikiPageVersion.
+//             SuggestWikiLinks, RunCommunitySummary, ListWikiPageVersions, DiffWikiPageVersion.
 //             Also no MCP twin, for two different reasons worth keeping apart:
 //             MergeWikiPages destroys knowledge and must only ever follow a human
 //             decision, while RunCommunitySummary writes model output into the
@@ -557,6 +557,12 @@ func (a *App) DeleteCompiledPage(pageID int64) error { return a.svc.DeleteCompil
 // (ADR-0019 决策 2). topK <= 0 uses the default.
 func (a *App) FindMergeCandidates(projectID int64, topK int) (*service.MergeCandidateReport, error) {
 	return a.svc.FindMergeCandidates(projectID, topK)
+}
+
+// SuggestWikiLinks scans the provided text against approved wiki concepts and
+// suggests candidate [[wikilinks]] that could be linked.
+func (a *App) SuggestWikiLinks(projectID int64, content string) []service.WikiLinkSuggestion {
+	return a.svc.SuggestWikiLinks(projectID, content)
 }
 
 // MergeWikiPages absorbs loserID into winnerID: the loser's edges and source notes

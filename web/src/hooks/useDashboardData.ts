@@ -57,7 +57,9 @@ export function useDashboardData() {
   // lockstep (they read as two different products otherwise). A ref keeps
   // fetchSummary's identity stable for the polling hook while staying fresh.
   const starredScopeRef = useRef(showStarredOnly)
-  starredScopeRef.current = showStarredOnly
+  useEffect(() => {
+    starredScopeRef.current = showStarredOnly
+  }, [showStarredOnly])
 
   const fetchSummary = useCallback(async (selectedDate: string, silent = false) => {
     const seq = ++fetchSeq.current

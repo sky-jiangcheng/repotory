@@ -612,6 +612,17 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
                                     ? item.kind || 'Wiki'
                                     : t('dashboard.noteType', { defaultValue: '知识笔记' })}
                                 </span>
+                                {item.source_path && (
+                                  <span className={s.sourceBadge} title={`召回来源: ${item.source_path}`}>
+                                    {item.source_path === 'graph'
+                                      ? t('home.sourceGraph', { defaultValue: '图谱' })
+                                      : item.source_path === 'semantic'
+                                      ? t('home.sourceSemantic', { defaultValue: '向量' })
+                                      : item.source_path === 'fact'
+                                      ? t('home.sourceFact', { defaultValue: '事实' })
+                                      : t('home.sourceFts', { defaultValue: '全文' })}
+                                  </span>
+                                )}
                                 {item.project_name && (
                                   <span className={s.projectBadge} title={item.project_name}>
                                     📁 {item.project_name}

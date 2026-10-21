@@ -345,6 +345,7 @@ export interface EvidenceItem {
   kind: string
   snippet: string
   rank: number
+  source_path?: 'fts' | 'graph' | 'semantic' | 'fact' | string
 }
 
 export interface Evidence {
@@ -449,6 +450,14 @@ export interface MergeCandidateReport {
   pairs_possible: number
   candidates: MergeCandidate[]
   truncated: boolean
+}
+
+export interface WikiLinkSuggestion {
+  slug: string
+  title: string
+  kind: string
+  page_id: number
+  matched: string
 }
 
 /** What an executed absorption actually moved. All-zero is how a replay of a

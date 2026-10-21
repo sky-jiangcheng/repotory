@@ -88,6 +88,7 @@ type EvidenceItem struct {
 	Kind        string `json:"kind"`           // page kind or note kind
 	Snippet     string `json:"snippet"`
 	Rank        int    `json:"rank"` // 1-based position in its own ranked list
+	SourcePath  string `json:"source_path,omitempty"` // "fts" | "graph" | "semantic" | "fact"
 }
 
 // Evidence is a budgeted, citable set plus an honest account of what did not fit.
@@ -277,7 +278,7 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 		for i, p := range visible {
 			out = append(out, EvidenceItem{
 				Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
-				Snippet: clipRunes(p.Content, 600), Rank: i + 1,
+				Snippet: clipRunes(p.Content, 600), Rank: i + 1, SourcePath: "fts",
 			})
 		}
 		return out
@@ -317,9 +318,15 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 			continue // a neighbour that vanished between expansion and load
 		}
 		p := found[idx]
+		srcPath := "fts"
+		if rank < len(seedIDs) && seedIDs[rank] != id {
+			srcPath = "graph"
+		} else if rank >= len(seedIDs) {
+			srcPath = "graph"
+		}
 		out = append(out, EvidenceItem{
 			Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
-			Snippet: clipRunes(p.Content, 600), Rank: rank + 1,
+			Snippet: clipRunes(p.Content, 600), Rank: rank + 1, SourcePath: srcPath,
 		})
 	}
 	return out
@@ -344,9 +351,13 @@ func (s *Service) evidenceNotes(query string, projectID int64, limit int, start 
 		if projectID > 0 && h.ProjectID != projectID {
 			continue
 		}
+		srcPath := "fts"
+		if s.semanticEnabled() {
+			srcPath = "semantic"
+		}
 		out = append(out, EvidenceItem{
 			Type: "note", ID: h.ID, ProjectID: h.ProjectID, Title: h.Title, Kind: "note",
-			Snippet: clipRunes(h.Snippet, 400), Rank: i + 1,
+			Snippet: clipRunes(h.Snippet, 400), Rank: i + 1, SourcePath: srcPath,
 		})
 	}
 	return out
