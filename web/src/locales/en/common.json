@@ -59,7 +59,10 @@
     "quickProjectsTitle": "Featured Projects",
     "viewAllDashboard": "Open Full Dashboard",
     "todayActivity": "Today's Dev Activity",
-    "todayCardTooltip": "Today's dev activity: shows lines added today and number of repositories involved."
+    "todayCardTooltip": "Today's dev activity: shows lines added today and number of repositories involved.",
+    "projectCount": "{{count}} projects",
+    "projectCountWithRepos": "{{count}} projects · {{withRepos}} with repos",
+    "projectCardsTruncated": "Showing {{shown}} of {{total}} featured projects"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -111,7 +114,8 @@
     "goalRemaining": "{{count}} lines to your goal",
     "filesShort": "Files",
     "reposInvolved": "Across {{count}} repos",
-    "weekendShort": "Weekend"
+    "weekendShort": "Weekend",
+    "reposShort": "Repos"
   },
   "knowledge": {
     "title": "Knowledge Base",
@@ -151,6 +155,14 @@
     "organizeReassign": "Re-file",
     "organizeDeleteWithNotes": "Delete it and its notes",
     "organizeDeleteEmpty": "Delete empty placeholder",
+    "organizeNestedIn": "inside {{parent}}",
+    "organizeReassigned": "Moved {{count}} note(s) from \"{{source}}\" to \"{{target}}\"",
+    "organizeReassignedHint": "The source placeholder is still listed — delete it whenever you like.",
+    "organizeReassignedEmptied": "\"{{name}}\" is now empty — just a shell left behind.",
+    "organizeRemoveEmpty": "Delete empty placeholder",
+    "organizeDeleted": "Deleted placeholder \"{{name}}\"",
+    "organizeDeletedWithNotes": "{{count}} note(s) went with it.",
+    "organizeDeletedEmpty": "The placeholder held no notes.",
     "copying": "Copying…",
     "copiedMd": "Note Markdown copied",
     "exportFailed": "Export failed:",
@@ -159,7 +171,8 @@
     "notesTitle": "Knowledge notes",
     "resultCount": "{{count}} note",
     "resultCount_other": "{{count}} notes",
-    "pinFailed": "Failed to pin"
+    "pinFailed": "Failed to pin",
+    "organizeJump": "To file {{count}}"
   },
   "settings": {
     "title": "Settings",
@@ -247,7 +260,6 @@
     "backupRemoteSecretKey": "Secret Key",
     "backupRemoteSave": "Save remote settings",
     "backupRemoteSaved": "Remote backup settings saved",
-    "rescanDone": "Rescan completed",
     "rescanFailed": "Scan failed",
     "importClaudeTitle": "Import Claude Memory",
     "importClaudeDesc": "Import notes from <code>~/.claude/projects/*/memory/*.md</code> matched to projects. Duplicate imports update existing notes instead of creating duplicates.",
@@ -802,6 +814,9 @@
     "revisionTodos": "{{n}} revision suggestion(s)",
     "stopped": "Stopped: {{reason}}",
     "error": "Error: {{msg}}",
+    "errInterrupted": "Interrupted by an application restart; not resumed because the stopping point is unknown",
+    "errShutdown": "The app exited while this job was still running",
+    "errCanceledEarly": "Canceled before any work started",
     "status_queued": "Queued",
     "status_running": "Running",
     "status_succeeded": "Succeeded",

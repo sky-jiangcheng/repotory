@@ -181,6 +181,27 @@ jobs:
       - name: Check ZH/EN mirror
         run: node scripts/check-docs-mirror.mjs
 
+  # A single-brace `{count}` in a locale value is invisible to tsc, eslint and
+  # every unit test: i18next treats it as plain text and renders the placeholder
+  # itself ("待整理 {count}"). Three of them shipped at once in the 2026-10-21
+  # UI sweep and none was caught by anything but looking at the screen, so the
+  # check is mechanical now. Same shape as docs-mirror: pure node, zero deps.
+  i18n-interpolation:
+    name: Locale interpolation syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+
+      - name: Check interpolation syntax
+        run: node scripts/check-i18n-interpolation.mjs
+
   # --------------------------------------------------------------- Web ----
   web-test:
     name: Web typecheck, test & build

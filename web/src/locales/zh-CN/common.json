@@ -59,7 +59,10 @@
     "quickProjectsTitle": "重点项目速览",
     "viewAllDashboard": "进入完整仪表盘",
     "todayActivity": "今日开发动态",
-    "todayCardTooltip": "今日开发动态：显示今日新增代码行数和涉及的仓库数量"
+    "todayCardTooltip": "今日开发动态：显示今日新增代码行数和涉及的仓库数量",
+    "projectCount": "{{count}} 个项目",
+    "projectCountWithRepos": "{{count}} 个项目 · {{withRepos}} 个含仓库",
+    "projectCardsTruncated": "仅显示 {{shown}} / {{total}} 个重点项目"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -111,7 +114,8 @@
     "goalRemaining": "还差 {{count}} 行达标",
     "filesShort": "文件",
     "reposInvolved": "涉及 {{count}} 个仓库",
-    "weekendShort": "周末"
+    "weekendShort": "周末",
+    "reposShort": "仓库数"
   },
   "knowledge": {
     "title": "知识库",
@@ -151,6 +155,14 @@
     "organizeReassign": "归口",
     "organizeDeleteWithNotes": "连同其笔记一并删除",
     "organizeDeleteEmpty": "删除空占位",
+    "organizeNestedIn": "位于 {{parent}} 内",
+    "organizeReassigned": "已把 {{count}} 条笔记从「{{source}}」归口到「{{target}}」",
+    "organizeReassignedHint": "源占位项目仍在列表中，可手动删除。",
+    "organizeReassignedEmptied": "「{{name}}」已空，只剩一个空壳。",
+    "organizeRemoveEmpty": "删除空占位",
+    "organizeDeleted": "已删除占位「{{name}}」",
+    "organizeDeletedWithNotes": "连同 {{count}} 条笔记一并删除。",
+    "organizeDeletedEmpty": "该占位本就没有笔记。",
     "copying": "复制中…",
     "copiedMd": "笔记 Markdown 已复制",
     "exportFailed": "导出失败：",
@@ -158,7 +170,8 @@
     "importDone": "导入完成：新增 {{created}}，更新 {{updated}}，跳过 {{skipped}}",
     "notesTitle": "知识笔记",
     "resultCount": "{{count}} 条笔记",
-    "pinFailed": "置顶失败"
+    "pinFailed": "置顶失败",
+    "organizeJump": "待整理 {{count}}"
   },
   "settings": {
     "title": "设置",
@@ -246,7 +259,6 @@
     "backupRemoteSecretKey": "Secret Key",
     "backupRemoteSave": "保存远端配置",
     "backupRemoteSaved": "远端备份配置已保存",
-    "rescanDone": "重新扫描完成",
     "rescanFailed": "扫描失败",
     "importClaudeTitle": "导入 Claude 记忆",
     "importClaudeDesc": "将 <code>~/.claude/projects/*/memory/*.md</code> 中的笔记按项目匹配导入为知识笔记。重复导入会更新已有笔记而非重复创建。",
@@ -801,6 +813,9 @@
     "revisionTodos": "修订建议 {{n}} 条",
     "stopped": "停止原因：{{reason}}",
     "error": "错误：{{msg}}",
+    "errInterrupted": "应用重启中断了任务；停止位置未被记录，因此不会自动续跑",
+    "errShutdown": "应用退出时任务仍在运行，已随进程结束",
+    "errCanceledEarly": "任务在开始处理前被取消",
     "status_queued": "排队中",
     "status_running": "进行中",
     "status_succeeded": "已完成",
