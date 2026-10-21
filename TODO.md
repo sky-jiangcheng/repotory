@@ -6,7 +6,7 @@
 ## 现状速查（新会话从这里开始）
 
 - 品牌 **Repotory**（原 RepoNest），版本 **v2.9.1**（2026-10-20），SSOT 在 `wails.json`。
-- schema **v26**（v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.1 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 默认关、零回退）；ADR-0018 lane 1（关系词表八型）已 **Accepted**（真库演练 PASS，产物 `v21-rehearse/`）。
+- schema **v26**（v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.1 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 已随 lane 2 晋升开启（2026-10-21））；ADR-0018 lane 1 与 lane 2 均 **Accepted**（lane 1 真库演练 PASS，产物 `v21-rehearse/`；lane 2 于 2026-10-21 过条件 10 三门，实现定型与负结果见 ADR 晋升记录）。
 - 近期大项均已落地：插件脚本运行时（yaegi）已移除（C11-B）、全局 CSS Modules 迁移收口（全局 1,227 行）、D25 首屏经 **ADR-0024** 演进为**首页工作台**——单栏融合仪表盘 + 记忆环条（`web/src/pages/Home.tsx`），全局搜索独立为 `/search` 顶级页（空闲态含热门项目 / 热门标签推荐，`web/src/pages/Search.tsx`），`/dashboard` 重定向到 `/`，导航以「搜索」取代「仪表盘」。
 - **真库事故（2026-10-14）已完全恢复并归档**：恢复过程、48 条笔记重导找回与 TM/快照双点验证见归档 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。内置每日本地快照（ADR-0025 L1）与 S3 远端推送（L2）均已落码。
 
@@ -14,7 +14,7 @@
 
 ## 当前待办
 
-### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **代码已全部落码（2026-10-14）；Phase 0 两门已于 2026-10-15 过门，lane 2 晋升现挂 [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 条件 10 的强化门槛**
+### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **已晋升 Accepted（2026-10-21，条件 10 三门全过：密度 27 approved/55 边、delta +0.205 @k=10 且 k=2..20 全区间为正、22 案例零回退；`wiki_graph_search` 已开启；种子召回补全与被否形态见 ADR 晋升记录）**
 
 - [x] `page_embeddings`（vec0，仅 approved 页）：物理独立于 `note_embeddings` + `page_embed_dirty` 触发器队列 + `memsrc` 无关的专用 `db.Page*` 助手；门控挂既有 `semantic_search` 之后；`vectorStore()` memo 失效路径对页面配置同样生效。回归：`pagevec_test.go` / `page_embed_dirty_test.go` / `page_embed_drain_test.go`
 - [x] `evidencePages` 读图：`WITH RECURSIVE` 沿白名单（`ref`/`part-of`/`documents`，不沿 `contradicts`）1 跳扩召回 + 纯 Go PPR 替 bm25 定序；notes 与 pages 按类型分列交织；新门 `wiki_graph_search` 默认关，关时零行为回退（`TestEvidencePages_GraphOffIsFTSPure` 钉住逐条一致）

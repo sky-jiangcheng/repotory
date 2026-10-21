@@ -87,7 +87,7 @@ type EvidenceItem struct {
 	Slug        string `json:"slug,omitempty"` // pages only
 	Kind        string `json:"kind"`           // page kind or note kind
 	Snippet     string `json:"snippet"`
-	Rank        int    `json:"rank"` // 1-based position in its own ranked list
+	Rank        int    `json:"rank"`                  // 1-based position in its own ranked list
 	SourcePath  string `json:"source_path,omitempty"` // "fts" | "graph" | "semantic" | "fact"
 }
 
@@ -243,22 +243,43 @@ func (e *Evidence) tryAdd(item EvidenceItem, prefix string, budget EvidenceBudge
 //
 // When wiki_graph_search is OFF (the default), this is exactly the FTS ordering it
 // has always produced — the graph branch below is not entered, so enabling the
-// feature later cannot change today's answers. When ON, the FTS hits seed a 1-hop
-// expansion along ref/part-of/documents edges, re-ranked with PageRank; the result
-// is a SUPERSET of the FTS hits (a hit stays a hit), re-ordered so structurally
-// adjacent pages can surface. See expandPageEvidence and wiki_graph_evidence.go.
+// feature later cannot change today's answers. When ON, retrieval is STAGED:
+// the FTS hits (if any) are the seeds and keep their exact bm25 order as the
+// page prefix; only when the lexicon finds nothing does page-vector recall seed
+// instead; the whitelist-edge expansion then APPENDS neighbours behind the
+// prefix, PPR-ordered. The result is a SUPERSET of the recall hits whose prefix
+// is byte-identical to the recall order — additive expansion, never a re-rank
+// of direct hits (the fused shapes were measured and rejected; see
+// wiki_graph_evidence.go and the ADR-0018 promotion record).
 func (s *Service) evidencePages(query string, projectID int64, limit int, budget time.Duration) []EvidenceItem {
 	if budget <= 0 {
 		return nil
 	}
 	found, err := db.SearchWikiPages(s.db, query, minInt(limit, 50))
-	if err != nil || len(found) == 0 {
+	if err != nil {
+		return nil
+	}
+	// Staged seeding (the condition-10②-compliant shape): the FTS hits, when
+	// there are any, are the seed set and keep their exact bm25 order — the
+	// graph stage must never reorder a direct hit, which is exactly what the
+	// "k=2..20 all positive, no case regression" clause demands (both fused
+	// variants measured on 2026-10-21 violated it; see the ADR promotion
+	// record). Only when the trigram lexicon finds NOTHING does page-vector
+	// recall seed instead — the "查询词→种子页" rescue, the measured bottleneck.
+	// The OFF path never reaches the vector stage, so with the switch off this
+	// function behaves exactly as it always has.
+	graphOn := s.graphSearchEnabled()
+	var seedPages []db.WikiPage
+	if graphOn && len(found) == 0 {
+		seedPages = s.pageVectorRecall(query, pageVecRecallK)
+	}
+	if len(found) == 0 && len(seedPages) == 0 {
 		return nil
 	}
 	// Project filter first, so both the FTS-order path and the graph path rank the
 	// same visible set (another project's page is skipped, not hidden).
 	visible := found[:0:0]
-	byID := make(map[int64]int, len(found)) // id -> index in found, for O(1) lookup
+	byID := make(map[int64]int, len(found)+len(seedPages)) // id -> index in found, for O(1) lookup
 	for i := range found {
 		byID[found[i].ID] = i
 	}
@@ -268,12 +289,34 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 		}
 		visible = append(visible, p)
 	}
-	if len(visible) == 0 {
+	seedSource := make(map[int64]string, len(visible)+len(seedPages))
+	seedIDs := make([]int64, 0, len(visible)+len(seedPages))
+	for _, p := range visible {
+		seedSource[p.ID] = "fts"
+		seedIDs = append(seedIDs, p.ID)
+	}
+	// Vector-rescued seeds (only present when FTS found nothing) join the seed
+	// set in KNN order. Approved-only is already enforced inside
+	// pageVectorRecall; the project filter here mirrors the FTS branch above.
+	for _, p := range seedPages {
+		if projectID > 0 && p.ProjectID != 0 && p.ProjectID != projectID {
+			continue
+		}
+		if _, ok := byID[p.ID]; !ok {
+			found = append(found, p)
+			byID[p.ID] = len(found) - 1
+		}
+		if _, ok := seedSource[p.ID]; !ok {
+			seedSource[p.ID] = "semantic"
+		}
+		seedIDs = append(seedIDs, p.ID)
+	}
+	if len(seedIDs) == 0 {
 		return nil
 	}
 
 	// OFF path (default): the exact FTS ordering, unchanged.
-	if !s.graphSearchEnabled() {
+	if !graphOn {
 		out := make([]EvidenceItem, 0, len(visible))
 		for i, p := range visible {
 			out = append(out, EvidenceItem{
@@ -284,18 +327,14 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 		return out
 	}
 
-	// ON path: expand + re-rank over page ids, then map back to items. Neighbours
-	// the FTS pass never returned are loaded here (approved-only, PageHitsByIDs).
-	seedIDs := make([]int64, len(visible))
-	for i, p := range visible {
-		seedIDs[i] = p.ID
-	}
-	ordered := s.expandPageEvidence(seedIDs)
-
-	// Load any neighbour pages not already in the FTS result, so an expanded id has
-	// a title/snippet to render. Approved-only (PageHitsByIDs filters status).
+	// ON path: the seed prefix stands in recall order; the graph stage APPENDS
+	// whitelist-edge neighbours behind it, PPR-ordered (graphNeighborOrder).
+	// Neighbours neither recall stage returned are loaded here so an expanded id
+	// has a title/snippet to render (approved-only, PageHitsByIDs filters
+	// status).
+	neighborIDs := s.graphNeighborOrder(seedIDs)
 	var missing []int64
-	for _, id := range ordered {
+	for _, id := range neighborIDs {
 		if _, ok := byID[id]; !ok {
 			missing = append(missing, id)
 		}
@@ -311,22 +350,27 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 		}
 	}
 
-	out := make([]EvidenceItem, 0, len(ordered))
-	for rank, id := range ordered {
+	out := make([]EvidenceItem, 0, len(seedIDs)+len(neighborIDs))
+	for _, id := range seedIDs {
+		idx, ok := byID[id]
+		if !ok {
+			continue // a seed that vanished between recall and render
+		}
+		p := found[idx]
+		out = append(out, EvidenceItem{
+			Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
+			Snippet: clipRunes(p.Content, 600), Rank: len(out) + 1, SourcePath: seedSource[id],
+		})
+	}
+	for _, id := range neighborIDs {
 		idx, ok := byID[id]
 		if !ok {
 			continue // a neighbour that vanished between expansion and load
 		}
 		p := found[idx]
-		srcPath := "fts"
-		if rank < len(seedIDs) && seedIDs[rank] != id {
-			srcPath = "graph"
-		} else if rank >= len(seedIDs) {
-			srcPath = "graph"
-		}
 		out = append(out, EvidenceItem{
 			Type: "page", ID: p.ID, ProjectID: p.ProjectID, Title: p.Title, Slug: p.Slug, Kind: p.Kind,
-			Snippet: clipRunes(p.Content, 600), Rank: rank + 1, SourcePath: srcPath,
+			Snippet: clipRunes(p.Content, 600), Rank: len(out) + 1, SourcePath: "graph",
 		})
 	}
 	return out

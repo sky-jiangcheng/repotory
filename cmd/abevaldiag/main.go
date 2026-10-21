@@ -55,7 +55,7 @@ func main() {
 	k := flag.Int("k", 10, "cutoff")
 	dbPath := flag.String("db", "", "database path")
 	onlyMiss := flag.Bool("only-miss", false, "print only cases where the candidate arm missed something relevant")
-	rebuild := flag.Bool("rebuild-embeddings", false, "rebuild the note vector index first (needed whenever semantic_search is on, or the hybrid arm silently degrades to lexical)")
+	rebuild := flag.Bool("rebuild-embeddings", false, "rebuild the note vector index first (notes mode; evidence mode always rebuilds both indexes)")
 	flag.Parse()
 
 	if *casesPath == "" {
@@ -85,6 +85,25 @@ func main() {
 	}
 
 	if *mode == "evidence" {
+		// The evidence gate's candidate arm seeds PPR from FTS hits PLUS
+		// page-vector recall (lane 2's 向量粗筛 → 图精排), behind the same
+		// semantic_search consent the gate sets in its own copy. The diagnosis
+		// must reproduce that setup exactly, or it describes a different
+		// retriever than the gate it claims to explain — so evidence mode
+		// always rebuilds both indexes here, on the throwaway copy, never live.
+		if err := db.SetConfig(database, "semantic_search", "1"); err != nil {
+			fmt.Printf("abevaldiag: could not enable semantic_search in the copy: %v\n", err)
+		}
+		if n, err := svc.RebuildEmbeddings(); err != nil {
+			fmt.Printf("abevaldiag: note embedding rebuild unavailable (%v)\n", err)
+		} else {
+			fmt.Printf("abevaldiag: embedded %d notes\n", n)
+		}
+		if n, err := svc.RebuildPageEmbeddings(); err != nil {
+			fmt.Printf("abevaldiag: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only\n", err)
+		} else {
+			fmt.Printf("abevaldiag: embedded %d pages\n", n)
+		}
 		runEvidence(database, svc, *casesPath, *k, *onlyMiss)
 		return
 	}

@@ -8,14 +8,29 @@
 // between them is the switch under test.
 //
 //	baseline  wiki_graph_search=0 → evidencePages returns the FTS order verbatim
-//	candidate wiki_graph_search=1 → 1-hop expansion along ref/part-of/documents
-//	                                 + PPR re-rank, superset of the FTS hits
+//	candidate wiki_graph_search=1 → STAGED: FTS hits (if any) keep their exact
+//	                                 order as the prefix; page-vector recall seeds
+//	                                 only when FTS finds nothing; whitelist-edge
+//	                                 neighbours append behind the prefix, PPR-ordered
 //
-// Both arms read semantic_search as the database has it and neither arm touches
-// it: this gate is about the graph, and mixing in a semantic arm would make a
-// delta unattributable. If the corpus has no graph to traverse, the honest
-// result is delta 0 and GATE FAIL — a zero here means "the claim is not yet
-// demonstrated", never "the gate is broken".
+// The candidate arm is lane 2's pipeline with its seed stage completed (the
+// "查询词→种子页" rescue), shaped to satisfy criterion 11②'s "k=2..20 all
+// positive, no case regression": additive after the recall prefix, never a
+// re-rank of it (both fused reset shapes were measured on 2026-10-21 and
+// rejected — see the ADR promotion record).
+//
+// The candidate arm's vector stage needs the page vector index — which a fresh
+// copy lacks. The gate builds both vector indexes IN THE COPY (never live)
+// exactly like the notes gate rebuilds note embeddings for its hybrid arm,
+// behind the same semantic_search consent the app itself uses. With no
+// embedding endpoint configured both rebuilds degrade, the candidate arm
+// silently becomes FTS-seeded expansion, and the reported delta honestly
+// measures just that — the notice printed below makes the degradation visible
+// instead of silent.
+//
+// Both arms read the same note ranking (semantic_search is set once up front,
+// identically for both), so the only inter-arm difference remains the graph
+// switch: the delta stays attributable to the lane-2 pipeline.
 package main
 
 import (
@@ -92,12 +107,18 @@ func runEvidenceGate(casesPath, dbPath string, k int, minRecall float64) int {
 	// db.GetConfig returns ("", err) for a missing key, so an empty original means
 	// "was unset" — matching how the notes gate restores semantic_search.
 	original, _ := db.GetConfig(database, graphSearchKey)
+	originalSemantic, _ := db.GetConfig(database, "semantic_search")
 	restore := func() {
 		if original == "" {
 			_ = db.DeleteConfig(database, graphSearchKey)
 			return
 		}
 		_ = db.SetConfig(database, graphSearchKey, original)
+		if originalSemantic == "" {
+			_ = db.DeleteConfig(database, "semantic_search")
+			return
+		}
+		_ = db.SetConfig(database, "semantic_search", originalSemantic)
 	}
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
@@ -106,6 +127,25 @@ func runEvidenceGate(casesPath, dbPath string, k int, minRecall float64) int {
 		restore()
 		os.Exit(130)
 	}()
+
+	// Build both vector indexes in the copy so the candidate arm's seed stage has
+	// vectors to recall (see the header comment). Consent is set before the page
+	// rebuild because RebuildPageEmbeddings checks semantic_search — the same
+	// consent gate the app enforces. Notes first: it persists embedding_dim,
+	// which the page rebuild reads instead of re-probing.
+	if err := db.SetConfig(database, "semantic_search", "1"); err != nil {
+		log.Printf("abeval: could not enable semantic_search in the copy: %v", err)
+	}
+	if n, err := svc.RebuildEmbeddings(); err != nil {
+		fmt.Printf("abeval: note embedding rebuild unavailable (%v) — note ranking falls back to lexical, identically in both arms\n", err)
+	} else {
+		fmt.Printf("abeval: embedded %d notes for both arms\n", n)
+	}
+	if n, err := svc.RebuildPageEmbeddings(); err != nil {
+		fmt.Printf("abeval: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only\n", err)
+	} else {
+		fmt.Printf("abeval: embedded %d pages for the vector-seeded graph arm\n", n)
+	}
 
 	baseline := func(q string) []abeval.DocID {
 		_ = db.SetConfig(database, graphSearchKey, "0")
