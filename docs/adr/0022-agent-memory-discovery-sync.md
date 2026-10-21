@@ -1,6 +1,6 @@
 # ADR-0022: 自动发现与定时同步 agent 记忆——来源类型用户可见
 
-- 状态：Proposed（方案待评审；注记 2026-10-19：独立先行项「CodeBuddy 接线」已随 v2.6.0 落地——source_type 暴露、knowledge_sync 定时同步与 CodeBuddy 双路导入源均已上线，其余整体方案仍待评审）
+- 状态：Proposed（方案待评审；注记 2026-10-19：独立先行项「CodeBuddy 接线」已随 v2.6.0 落地——source_type 暴露、knowledge_sync 定时同步与 CodeBuddy 双路导入源均已上线。**2026-10-21 逐阶段核验落码边界**：已落码= P1（`codebuddy_project` 双源注册，`internal/importers/codebuddy` + `internal/core/plugin/runtime` 测试绿）与 P3（`internal/service/knowledge_sync.go` ticker + `knowledge_sync_interval_minutes` 默认 240 分钟 + 七源 `sync_source_<name>` 逐源 opt-in）；**未落码**= P2 发现探活（runtime 无 `Probe` 契约、`SourceStatus` 无 detected/detail）、P4 来源类型 UI 泛化与 i18n、P5 收口验证。因此状态维持 Proposed——不是实现超前，而是分阶段方案里P2/P4/P5 尚未开工，整体方案仍待评审）
 - 日期：2026-10-14
 - 关联：[ADR-0011](0011-multi-agent-memory-importers.md)（多 agent 记忆源导入）、[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（LLM Wiki 知识编译层）、[ADR-0015](0015-w3-minimal-compile-loop.md)（W3 最小编译闭环）、[ADR-0007](0007-session-memory-protocol.md)（会话记忆协议）、[ADR-0009](0009-ide-presence.md)（IDE 存在感）、TODO 会话记忆路线 M2/M8
 
