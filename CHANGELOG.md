@@ -4,6 +4,12 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
+## [Unreleased]
+
+### 变更
+
+- **README 再瘦身 + License 结尾按主流惯例收尾（339 → 222 行，中英同步）**：快速开始从「安装三选 → MCP 注册 → 30 秒演示 → 数据目录」的多层嵌套扁平化为 **1 安装 → 2 接 Agent → 3 跑闭环** 三步，30 秒演示的 quote 叙事并入步骤 3 的三行 loop 表；「Why Repotory」定位段此前在闭环章节原样出现第二次，删重复段；项目结构树 26 行压到 8 行（分层细节归 Architecture 文档）；VS Code 扩展 17 行压到 10 行。License 结尾学 Vite / Astro 式写法：版权行（`© 2026-present sky-jiangcheng and Repotory contributors`）+ 一句许可范围（个人/商用免费）+ 商标声明（许可证覆盖代码，名称与 logo 仍为项目商标），替掉原来孤零零一行 `[MIT](LICENSE)`；`LICENSE` 文件版权行同步从旧品牌名 `RepoNest Contributors` 更正为当前实体——品牌已更名两代（gitboard → gitbuddy → repotory → Repotory），法律文本停在旧名不动会是真 bug。
+
 ## [2.9.1] - 2026-10-20
 
 ### 新增

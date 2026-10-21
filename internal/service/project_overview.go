@@ -338,12 +338,16 @@ func (s *Service) projectOverview(projectID, preferRepoID int64) (*ProjectOvervi
 			s.mineAndCache(cacheRepoID, root, miningRepos)
 		})
 	}
-	// Recent commits are always fresh.
+	// Recent commits are always fresh. Not filtered by gitUser either: these
+	// feed the "Recent commits" section of the copied AI context, where the
+	// team's latest commits are the point — a mine-only filter silently drops
+	// them whenever git user.name doesn't match a committer (same blanking
+	// defect the status strip had, see summary.go GetStatusBar).
 	repoPaths := make([]string, 0, len(scopeRepos))
 	for _, r := range scopeRepos {
 		repoPaths = append(repoPaths, r.Path)
 	}
-	if commits, err := s.git.GetRecentCommits(repoPaths, s.gitUser(), 8); err == nil && commits != nil {
+	if commits, err := s.git.GetRecentCommits(repoPaths, "", 8); err == nil && commits != nil {
 		resp.RecentCommits = commits
 	}
 	// Normalize nil slices to empty (non-nil) so JSON consumers never see

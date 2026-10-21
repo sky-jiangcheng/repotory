@@ -17,6 +17,13 @@ type fakeGit struct {
 	git.Provider // embed for the methods we do not override
 
 	ranges map[string][]stats.DailyEntry // "path|author" -> entries
+
+	// filterAuthor each recent-commit call received. Pinned because the "mine"
+	// author filter on the status strip and the overview's recent commits
+	// blanked them entirely when git user.name matched no committer (status
+	// strip showed "no commits" over actively committing repos, E2E 2026-10-21).
+	recentCommitAuthor  string
+	recentCommitsAuthor string
 }
 
 func (f *fakeGit) QueryStatsRange(repoPath, startDate, endDate, author string) ([]stats.DailyEntry, error) {
@@ -27,7 +34,15 @@ func (f *fakeGit) GetTodayDate() string      { return "2026-08-16" }
 func (f *fakeGit) GetYesterdayDate() string  { return "2026-08-15" }
 func (f *fakeGit) ValidateDate(string) error { return nil }
 func (f *fakeGit) IsWorkday(string) bool     { return true }
-func (f *fakeGit) GetRecentCommits([]string, string, int) ([]stats.RecentCommit, error) {
+func (f *fakeGit) GetRecentCommit(_ []string, filterAuthor string) (*stats.RecentCommit, error) {
+	f.recentCommitAuthor = filterAuthor
+	return &stats.RecentCommit{
+		Hash: "abc123", Time: "2026-08-16 10:00:00", Message: "teammate work",
+		Author: "teammate", Repo: "/code/star", Branch: "main",
+	}, nil
+}
+func (f *fakeGit) GetRecentCommits(_ []string, filterAuthor string, _ int) ([]stats.RecentCommit, error) {
+	f.recentCommitsAuthor = filterAuthor
 	return nil, nil
 }
 

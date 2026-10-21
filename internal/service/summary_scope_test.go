@@ -67,6 +67,25 @@ func TestGetSummaryScope(t *testing.T) {
 	}
 }
 
+// The status strip's label is "Last commit" — repo-wide activity, not "my
+// last commit". Querying it with the "mine" author filter blanked the strip
+// entirely whenever git user.name was unset (the OS-username fallback) or
+// simply matched no committer: the strip then showed "no commits" over
+// repositories that were actively committing (E2E walkthrough 2026-10-21).
+func TestStatusBarNotFilteredByGitUser(t *testing.T) {
+	svc, fg := setupService(t)
+	pid := seedProject(t, svc.db, "p", "/tmp/p")
+	seedRepo(t, svc.db, "/tmp/p/r1", pid)
+
+	bar := svc.GetStatusBar()
+	if fg.recentCommitAuthor != "" {
+		t.Errorf("GetStatusBar queried recent commit with author filter %q; want none (repo-wide)", fg.recentCommitAuthor)
+	}
+	if bar.LastCommitTime == "" || bar.LastCommitMsg == "" {
+		t.Errorf("status strip missing commit info: %+v", bar)
+	}
+}
+
 // Scoped and global reads must not fight over the shared connection state —
 // trivially true for two queries, but this guards the unscoped fast path from
 // ever being replaced by the JOIN (a regression would show as global numbers
