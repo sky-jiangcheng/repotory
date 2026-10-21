@@ -49,17 +49,26 @@ fi
 
 echo ""
 echo "== ② 密度复核（条件 10①） =="
-sqlite3 -readonly "$LIVE" \
+# live 库是 WAL 模式：sqlite3 -readonly 无法创建 -shm，会报
+# "unable to open database file (14)"。先落临时快照（含 -wal/-shm 若在），
+# 对快照做只读复核，不触碰 live。
+SNAP="$TMPDIR/density-snapshot.db"
+cp "$LIVE" "$SNAP"
+if [ -f "$LIVE-wal" ]; then cp "$LIVE-wal" "$SNAP-wal"; fi
+if [ -f "$LIVE-shm" ]; then cp "$LIVE-shm" "$SNAP-shm"; fi
+sqlite3 "$SNAP" \
   "select 'approved pages: '||count(*) from wiki_pages where status='approved';
    select 'graph edges:    '||count(*) from page_links;
    select 'appr<->appr:    '||count(*) from page_links pl
      join wiki_pages a on a.id=pl.from_page_id and a.status='approved'
      join wiki_pages b on b.id=pl.to_page_id and b.status='approved';"
+rm -f "$SNAP" "$SNAP-wal" "$SNAP-shm"
 
 echo ""
 echo "== ③ 证据门（条件 10②，live 库直评） =="
 # abeval -db 缺省 = app 的 live 库；它自己 CopyForTooling 快照评估，不写 live
-go run -buildvcs=false ./cmd/abeval -mode evidence -cases "$CASES" -k 10 -min-recall 0.05
+GATE_STATUS=0
+go run -buildvcs=false ./cmd/abeval -mode evidence -cases "$CASES" -k 10 -min-recall 0.05 || GATE_STATUS=$?
 
 echo ""
 echo "== ④ 逐案诊断（条件 10③） =="
@@ -70,3 +79,4 @@ echo "===== 结论 ====="
 echo "门② delta 过 +0.05 且 ③ 诊断形如「种子页→白名单边→邻接页」："
 echo "  → docs/adr/0018 状态行 lane 2 改 Accepted（+英文镜像），开 wiki_graph_search。"
 echo "  不过 → lane 2 维持 Proposed（密度欠账已还，delta 是独立命题，不粉饰）。"
+exit "$GATE_STATUS"
