@@ -90,9 +90,12 @@ cd .. && go build -o repotory-server ./cmd/server
   "is_starred": true, "repo_count": 2, "project_kind": "scanned",
   "total_added": 1200, "total_deleted": 300,
   "my_added": 800, "my_deleted": 200, "my_files": 15,
+  "my_added_7d": 4200,
   "is_workday": true, "below_standard": false
 }
 ```
+
+`my_added` 是**单日**个人新增（锚点同 `GetProjects` 的 `date`，默认昨天），供仪表盘日目标与 `below_standard` 判定使用；`my_added_7d` 是同一锚点结束的**近 7 天窗口**个人新增，供「按最近活跃排序」的界面使用——单日在无个人提交日恒为 0，会让排序退化成字母序。
 
 ## 扫描
 

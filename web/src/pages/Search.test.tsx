@@ -44,6 +44,7 @@ const project = (over: Partial<Project>): Project => ({
   my_added: 0,
   my_deleted: 0,
   my_files: 0,
+  my_added_7d: 0,
   is_workday: true,
   below_standard: false,
   ...over,
@@ -66,19 +67,23 @@ beforeEach(() => {
 })
 
 describe('Search page (ADR-0024 top-level global search)', () => {
-  it('idle state recommends hot projects ranked by recent additions, starred as tiebreaker', async () => {
+  it('idle state recommends hot projects ranked by 7-day personal additions, starred as tiebreaker', async () => {
     mockGetProjects.mockResolvedValue([
-      project({ id: 1, name: 'Quiet', my_added: 0, is_starred: false }),
-      project({ id: 2, name: 'Busy', my_added: 120, is_starred: false }),
-      project({ id: 3, name: 'Starred', my_added: 0, is_starred: true }),
+      project({ id: 1, name: 'Quiet', my_added_7d: 0, is_starred: false }),
+      project({ id: 2, name: 'Busy', my_added_7d: 120, is_starred: false }),
+      project({ id: 3, name: 'Starred', my_added_7d: 0, is_starred: true }),
+      // Yesterday had no personal commits at all (my_added 0 across the board),
+      // but the 7-day window still separates them — the regression this guards.
+      project({ id: 4, name: 'RecentOnly', my_added: 0, my_added_7d: 40, is_starred: false }),
     ])
     await renderSearch()
     expect(await screen.findByText('Busy')).toBeTruthy()
-    // my_added desc first; the starred project outranks the zero-activity tie.
+    // my_added_7d desc first; the starred project outranks the zero-activity tie.
     const hrefs = screen.getAllByRole('link').map(l => l.getAttribute('href'))
     expect(hrefs[0]).toBe('/project/2')
-    expect(hrefs[1]).toBe('/project/3')
-    expect(hrefs[2]).toBe('/project/1')
+    expect(hrefs[1]).toBe('/project/4')
+    expect(hrefs[2]).toBe('/project/3')
+    expect(hrefs[3]).toBe('/project/1')
     // Idle is recommendations, not a search round-trip.
     expect(mockSearch).not.toHaveBeenCalled()
   })

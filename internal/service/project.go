@@ -7,21 +7,35 @@ import (
 
 	"repotory/internal/db"
 	"repotory/internal/domain"
+	"repotory/internal/stats"
 )
 
 // defaultDailyCodeStandard is the fallback daily line standard used when the
 // daily_code_standard config key is unset or unparsable.
 const defaultDailyCodeStandard = 500
 
+// recentActivityWindowDays is the width of the trailing window behind
+// ProjectResponse.MyAdded7d. A single day is too narrow to rank "what have
+// I been working on lately": on any day without personal commits every
+// project scores 0 and the ordering degenerates to alphabetical.
+const recentActivityWindowDays = 7
+
 // ProjectResponse is the enriched project payload sent to the frontend.
 type ProjectResponse struct {
 	domain.Project
-	RepoCount     int  `json:"repo_count"`
-	TotalAdded    int  `json:"total_added"`
-	TotalDeleted  int  `json:"total_deleted"`
-	MyAdded       int  `json:"my_added"`
-	MyDeleted     int  `json:"my_deleted"`
-	MyFiles       int  `json:"my_files"`
+	RepoCount    int `json:"repo_count"`
+	TotalAdded   int `json:"total_added"`
+	TotalDeleted int `json:"total_deleted"`
+	MyAdded      int `json:"my_added"`
+	MyDeleted    int `json:"my_deleted"`
+	MyFiles      int `json:"my_files"`
+	// MyAdded7d is the personal lines added over the 7-day window ending
+	// on the same anchor date as MyAdded. MyAdded itself stays single-day:
+	// the daily code standard and the dashboard's goal check are day
+	// metrics, and widening them would silently change what "met the
+	// standard" means. This extra field exists for the surfaces that
+	// rank projects by recent activity instead of by one day.
+	MyAdded7d     int  `json:"my_added_7d"`
 	IsWorkday     bool `json:"is_workday"`
 	BelowStandard bool `json:"below_standard"`
 }
@@ -64,6 +78,12 @@ func (s *Service) dailyCodeStandard() int {
 func (s *Service) enrichProjects(projects []domain.Project, date string) []ProjectResponse {
 	codeStd := s.dailyCodeStandard()
 	isWorkday := s.git.IsWorkday(date)
+	author := s.gitUser()
+
+	// One grouped query for the whole list. Doing it per project would add
+	// another N round trips on top of the two each project already costs.
+	recentAdded, _ := db.GetPersonalAddedByProjectRange(
+		s.db, stats.DaysBefore(date, recentActivityWindowDays-1), date, author)
 
 	result := make([]ProjectResponse, 0, len(projects))
 	for _, p := range projects {
@@ -73,12 +93,13 @@ func (s *Service) enrichProjects(projects []domain.Project, date string) []Proje
 		pr := ProjectResponse{
 			Project:   p,
 			RepoCount: len(repos),
+			MyAdded7d: recentAdded[p.ID],
 			IsWorkday: isWorkday,
 		}
 		for _, st := range statsList {
 			pr.TotalAdded += st.LinesAdded
 			pr.TotalDeleted += st.LinesDeleted
-			if st.Author == s.gitUser() {
+			if st.Author == author {
 				pr.MyAdded += st.LinesAdded
 				pr.MyDeleted += st.LinesDeleted
 				pr.MyFiles += st.FilesChanged

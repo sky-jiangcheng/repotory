@@ -21,6 +21,11 @@ export interface Project {
   my_added: number
   my_deleted: number
   my_files: number
+  // 7-day personal additions over the window ending on the same anchor date as
+  // my_added. Surfaces that rank by "recent" activity (the search page's hot
+  // projects) must use this: my_added is a single-day metric and reads 0 on any
+  // day without personal commits, which would silently rank alphabetically.
+  my_added_7d: number
   is_workday: boolean
   below_standard: boolean
 }
@@ -418,6 +423,9 @@ export interface CompileJob {
   findings: number
   stopped?: string
   note?: string
+  // Either one of the backend's stable failure codes (db.CompileJobErr* — the
+  // review page maps those to localized copy) or a wrapped Go error, which is
+  // diagnostic text and stays verbatim.
   error?: string
   created_at: string
   started_at?: string

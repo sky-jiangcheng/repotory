@@ -90,9 +90,12 @@ cd .. && go build -o repotory-server ./cmd/server
   "is_starred": true, "repo_count": 2, "project_kind": "scanned",
   "total_added": 1200, "total_deleted": 300,
   "my_added": 800, "my_deleted": 200, "my_files": 15,
+  "my_added_7d": 4200,
   "is_workday": true, "below_standard": false
 }
 ```
+
+`my_added` is **single-day** personal additions (anchored on the same `date` as `GetProjects`, yesterday by default) and feeds the dashboard's daily goal and the `below_standard` check; `my_added_7d` is personal additions over the **7-day window** ending on that same anchor, for surfaces that rank by recent activity — a single day reads 0 whenever there were no personal commits, which silently degrades the ordering to alphabetical.
 
 ## Scanning
 

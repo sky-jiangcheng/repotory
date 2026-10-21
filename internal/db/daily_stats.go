@@ -70,6 +70,38 @@ func GetStatsByDateScope(db *sql.DB, date string, starredOnly bool) ([]DailyStat
 	return scanDailyStats(rows, err)
 }
 
+// GetPersonalAddedByProjectRange sums the personal (single-author) lines
+// added per project over the [start, end] date window, keyed by project id.
+// One grouped query covers the whole list; the per-project variant
+// (GetStatsByProject) would cost one round trip per project.
+//
+// date() normalises stat_date because a row may carry a time component
+// ("2025-10-11T00:00:00Z"), which plain string comparison would push
+// outside the window — the same truncation GetHeatmapData does on read.
+func GetPersonalAddedByProjectRange(db *sql.DB, start, end, author string) (map[int64]int, error) {
+	rows, err := db.Query(
+		"SELECT r.project_id, COALESCE(SUM(d.lines_added), 0) "+
+			"FROM daily_stats d "+
+			"JOIN repositories r ON r.id = d.repository_id "+
+			"WHERE date(d.stat_date) BETWEEN ? AND ? AND d.author = ? "+
+			"GROUP BY r.project_id",
+		start, end, author)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var pid int64
+		var added int
+		if err := rows.Scan(&pid, &added); err != nil {
+			return nil, err
+		}
+		out[pid] = added
+	}
+	return out, rows.Err()
+}
+
 // GetHeatmapData returns per-day aggregated stats between start and end.
 // A non-empty gitUser restricts the aggregation to that author. A positive
 // projectID restricts it to the repositories of that project (used by the

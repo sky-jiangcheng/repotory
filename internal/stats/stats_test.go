@@ -121,6 +121,36 @@ func TestGetYesterdayDate(t *testing.T) {
 	}
 }
 
+func TestDaysBefore(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"2026-10-20", 6, "2026-10-14"},
+		{"2026-10-20", 0, "2026-10-20"},
+		{"2026-01-02", 1, "2026-01-01"},   // crosses a month boundary
+		{"2026-03-01", 1, "2026-02-28"},   // non-leap February
+		{"2024-03-01", 1, "2024-02-29"},   // leap February
+		{"2026-10-20", 400, "2025-09-15"}, // crosses a year boundary
+	}
+	for _, c := range cases {
+		if got := DaysBefore(c.in, c.n); got != c.want {
+			t.Errorf("DaysBefore(%q, %d) = %q; want %q", c.in, c.n, got, c.want)
+		}
+	}
+}
+
+// An unparsable date must not silently become an arbitrary one: a bad anchor
+// would shift the whole activity window instead of degrading to "same day".
+func TestDaysBefore_UnparsableDateReturnsInput(t *testing.T) {
+	for _, in := range []string{"", "not-a-date", "2026-13-01", "2026-10-20 10:00:00"} {
+		if got := DaysBefore(in, 6); got != in {
+			t.Errorf("DaysBefore(%q, 6) = %q; want it returned unchanged", in, got)
+		}
+	}
+}
+
 func TestIsWorkday(t *testing.T) {
 	// Monday 2024-01-01
 	if !IsWorkday("2024-01-01") {

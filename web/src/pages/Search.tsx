@@ -16,10 +16,14 @@ import s from './Search.module.css'
 // Strings live in the `search` namespace (locales/*/search.json), referenced
 // with the `search:` prefix from the default common namespace. The idle
 // (no-query) state is the recommendation surface: hot projects ranked
-// client-side by recent personal additions (Project.my_added — GetProjects
-// defaults that to yesterday, a stable "recent" anchor), with starred/repo
-// count tiebreakers, and hot tags from ListAllTags that fill the input on
-// click. All of it reuses existing endpoints — no backend change.
+// client-side by recent personal additions, with starred/repo count
+// tiebreakers, and hot tags from ListAllTags that fill the input on click.
+//
+// Ranking uses Project.my_added_7d (a 7-day window), not the single-day
+// my_added: GetProjects anchors my_added on yesterday, so on any day without
+// personal commits every project scores 0 and the "hot" ordering silently
+// degenerates to alphabetical. All of it reuses existing endpoints — no new
+// backend surface.
 export default function Search() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -67,7 +71,7 @@ export default function Search() {
   const hotProjects = useMemo(() => {
     return [...(projectsData ?? [])]
       .sort((a, b) =>
-        b.my_added - a.my_added ||
+        b.my_added_7d - a.my_added_7d ||
         Number(b.is_starred) - Number(a.is_starred) ||
         b.repo_count - a.repo_count ||
         a.name.localeCompare(b.name))
@@ -109,7 +113,7 @@ export default function Search() {
                         <span className={s.rowTitle}>{p.name}</span>
                         <span className={s.rowSub}>
                           {t('commandPalette.reposCount', { count: p.repo_count })}
-                          {' · '}+{p.my_added}
+                          {' · '}+{p.my_added_7d}
                         </span>
                       </span>
                     </Link>
@@ -172,7 +176,7 @@ export default function Search() {
                     <span className={s.hotSub}>
                       {t('commandPalette.reposCount', { count: p.repo_count })}
                       {' · '}
-                      {t('search:recentAdded', { count: p.my_added, defaultValue: '最近 +{{count}}' })}
+                      {t('search:recentAdded', { count: p.my_added_7d, defaultValue: '近 7 天 +{{count}}' })}
                     </span>
                   </Link>
                 </li>
