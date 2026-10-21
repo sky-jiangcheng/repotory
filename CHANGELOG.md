@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **品牌图标重设计（Plex R，平涂）**：旧标仍是 RepoNest 时期的「仓库卡片 + 巢碗」直译，16px 下卡片与双弧线互相挤压。`build/icon.svg` 改为 IBM Plex Sans Bold 的 R 轮廓（SIL OFL 1.1）：字母本身由字体设计师做过比例校正，品牌只负责底色、颜色与应用。最终版去掉渐变、内描边这类模板化装饰，单色平涂 `#0F2244` + `#F6F8FC`，cap 320、按视觉重心（外框居中会偏左）居中，16/32/64/128/512 逐档验证。`docs/favicon.svg` 与源文件逐字节一致，`BrandMark.tsx` 与 VS Code 单色 `repotory.svg` 同构；`BrandMark.test.tsx` 守卫「单条填充路径 + 真内白 + 无渐变 / 无描边」。v2 描边、v3 手绘圆角为中间探索，过程见 `outputs/icon-redesign-v2/`、`outputs/icon-redesign-v3/`，最终决策见 `outputs/icon-redesign-v4/设计决策.md`。
+
 ## [2.10.0] - 2026-10-21
 
 ### 新增

@@ -19,35 +19,6 @@ const root = process.cwd()
 const svgPath = path.join(root, 'build/icon.svg')
 const outDir = path.join(root, 'build/icons')
 
-// Favicon variant of the mark: same construction as the SSOT but with
-// heavier strokes and no interior lines — at 16×16 a favicon reads by
-// silhouette, and hairline strokes disappear.
-const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Repotory">
-  <title>Repotory</title>
-  <defs>
-    <linearGradient id="rn-bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1F2C4D"/>
-      <stop offset="1" stop-color="#0B1526"/>
-    </linearGradient>
-    <linearGradient id="rn-gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512">
-      <stop offset="0" stop-color="#F7CE58"/>
-      <stop offset="1" stop-color="#E0A63C"/>
-    </linearGradient>
-    <clipPath id="rn-round">
-      <rect x="0" y="0" width="512" height="512" rx="104" ry="104"/>
-    </clipPath>
-  </defs>
-  <g clip-path="url(#rn-round)">
-    <rect x="0" y="0" width="512" height="512" fill="url(#rn-bg)"/>
-    <g stroke="url(#rn-gold)" fill="none" stroke-linecap="round">
-      <rect x="182" y="88" width="148" height="164" rx="34" stroke-width="52"/>
-      <path d="M72 246A184 184 0 0 0 440 246" stroke-width="54"/>
-      <path d="M122 256A134 134 0 0 0 390 256" stroke-width="44"/>
-    </g>
-  </g>
-</svg>
-`
-
 // Every derived artifact: how it is produced, plus (for bitmaps) a pixel
 // diff tolerance for --check. sharp upgrades can shift anti-aliased edges
 // by a level, so the check compares pixel content with a small allowance
@@ -164,7 +135,10 @@ async function main() {
   }
 
   // 2. Cross-target derivatives (VS Code media, browser favicons)
-  const faviconSvg = Buffer.from(FAVICON_SVG)
+  //    The favicon is the SSOT verbatim: the mark has no bevel or gradient
+  //    any more, so there is nothing left to simplify for small sizes. One
+  //    file, one letterform, no second copy to drift.
+  const faviconSvg = svg
   if (check) {
     const favPath = path.join(root, 'docs/favicon.svg')
     if (!fs.existsSync(favPath) || sha(faviconSvg) !== sha(fs.readFileSync(favPath))) {
