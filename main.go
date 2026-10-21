@@ -26,8 +26,14 @@ func main() {
 	platform.SetPrivateUmask() // owner-only files: DB sidecars, logs, exports
 	log.Printf("Repotory %s starting...", version.Version)
 
+	// Check storage safety before opening database
+	dbPath := platform.GetDbPath()
+	if safety := platform.CheckStorageSafety(dbPath); !safety.IsSafe {
+		log.Printf("WARNING: 存储安全风险 [%s]: %s (路径: %s)", safety.RiskType, safety.Warning, safety.Path)
+	}
+
 	// Open database
-	database, err := db.InitDB(platform.GetDbPath())
+	database, err := db.InitDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
