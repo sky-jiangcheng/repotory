@@ -162,13 +162,29 @@ export function searchProjects(query: string): Promise<Project[]> {
 }
 
 export function getProjectOverview(projectId: number): Promise<ProjectOverview> {
+  const empty: ProjectOverview = {
+    readme_excerpt: '', tech_stack: [], languages: [], recent_commits: [], cached: false,
+    dependencies: [], top_contributors: [], activity: null,
+  }
+  // Backend may serialize nil slices as null; normalize so callers can safely
+  // treat every array field as an array.
   return call<ProjectOverview>({
     method: 'GetProjectOverview',
     args: [projectId],
     path: `/projects/${projectId}/overview`,
-  }).then(d => d ?? {
-    readme_excerpt: '', tech_stack: [], languages: [], recent_commits: [], cached: false,
-    dependencies: [], top_contributors: [], activity: null,
+  }).then(d => {
+    if (!d) return empty
+    return {
+      ...d,
+      readme_excerpt: d.readme_excerpt ?? empty.readme_excerpt,
+      tech_stack: d.tech_stack ?? [],
+      languages: d.languages ?? [],
+      dependencies: d.dependencies ?? [],
+      top_contributors: d.top_contributors ?? [],
+      recent_commits: d.recent_commits ?? [],
+      activity: d.activity ?? null,
+      cached: d.cached ?? false,
+    }
   })
 }
 
