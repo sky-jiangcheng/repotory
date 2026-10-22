@@ -33,6 +33,7 @@ const ZH_ONLY = [
   'competitive-positioning.md', // 研究文档，头部声明「仅中文，不进手册镜像」
   'positioning-brief.md', // 定位简报，与 competitive-positioning 同级，不在手册侧栏
   'product-review/', // 内部产品深评归档，非对外手册内容
+  'product/', // 内部产品审视与执行清单（GitBuddy 时期），与 product-review 同体裁，无手册引用
 ]
 
 // 递归列出目录下所有 .md（相对 baseDir 的 posix 风格路径）。
