@@ -100,7 +100,15 @@ func main() {
 			fmt.Printf("abevaldiag: embedded %d notes\n", n)
 		}
 		if n, err := svc.RebuildPageEmbeddings(); err != nil {
-			fmt.Printf("abevaldiag: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only\n", err)
+			have := -1
+			if qerr := database.QueryRow("SELECT count(*) FROM page_embeddings").Scan(&have); qerr != nil {
+				have = -1
+			}
+			if have > 0 {
+				fmt.Printf("abevaldiag: page embedding rebuild unavailable (%v) — graph arm seeds from the %d page vector(s) already in the snapshot\n", err, have)
+			} else {
+				fmt.Printf("abevaldiag: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only (no page vectors in the snapshot)\n", err)
+			}
 		} else {
 			fmt.Printf("abevaldiag: embedded %d pages\n", n)
 		}

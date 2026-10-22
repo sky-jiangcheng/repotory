@@ -19,14 +19,16 @@
 // re-rank of it (both fused reset shapes were measured on 2026-10-21 and
 // rejected — see the ADR promotion record).
 //
-// The candidate arm's vector stage needs the page vector index — which a fresh
-// copy lacks. The gate builds both vector indexes IN THE COPY (never live)
-// exactly like the notes gate rebuilds note embeddings for its hybrid arm,
-// behind the same semantic_search consent the app itself uses. With no
-// embedding endpoint configured both rebuilds degrade, the candidate arm
-// silently becomes FTS-seeded expansion, and the reported delta honestly
-// measures just that — the notice printed below makes the degradation visible
-// instead of silent.
+// The candidate arm's vector stage needs the page vector index. The gate
+// rebuilds both vector indexes IN THE COPY (never live) exactly like the notes
+// gate rebuilds note embeddings for its hybrid arm, behind the same
+// semantic_search consent the app itself uses. A snapshot taken AFTER the
+// production pipeline was activated already carries both indexes, and the
+// rebuild is re-runnable over them (clear-then-insert, like the note twin).
+// With no embedding endpoint configured both rebuilds degrade: a snapshot that
+// already carries vectors keeps them (the graph arm stays vector-seeded), and
+// only a vector-less snapshot falls back to FTS-seeded expansion — the notices
+// printed below state which shape applied instead of hiding it.
 //
 // Both arms read the same note ranking (semantic_search is set once up front,
 // identically for both), so the only inter-arm difference remains the graph
@@ -142,7 +144,11 @@ func runEvidenceGate(casesPath, dbPath string, k int, minRecall float64) int {
 		fmt.Printf("abeval: embedded %d notes for both arms\n", n)
 	}
 	if n, err := svc.RebuildPageEmbeddings(); err != nil {
-		fmt.Printf("abeval: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only\n", err)
+		if have := scalarInt(database, "SELECT count(*) FROM page_embeddings"); have > 0 {
+			fmt.Printf("abeval: page embedding rebuild unavailable (%v) — graph arm seeds from the %d page vector(s) already in the snapshot\n", err, have)
+		} else {
+			fmt.Printf("abeval: page embedding rebuild unavailable (%v) — graph arm seeds from FTS only (no page vectors in the snapshot)\n", err)
+		}
 	} else {
 		fmt.Printf("abeval: embedded %d pages for the vector-seeded graph arm\n", n)
 	}
