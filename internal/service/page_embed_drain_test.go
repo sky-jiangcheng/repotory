@@ -88,6 +88,30 @@ func TestPageDrainIndexesAndUnIndexesPages(t *testing.T) {
 	}
 }
 
+// A rebuild must be re-runnable on a database whose page vector index already
+// holds rows: the snapshots the evaluation tools (abeval/abevaldiag) copy FROM
+// live now contain page vectors, and a rebuild that collides with the index's
+// own previous output (UNIQUE on page id) made the tools report a false
+// "graph arm seeds from FTS only" degradation. The note twin is re-runnable
+// because RebuildEmbeddings clears the index first; the page twin must be too.
+func TestRebuildPageEmbeddings_RerunnableOverExistingVectors(t *testing.T) {
+	svc, _ := setupService(t)
+	pid := seedProject(t, svc.db, "prebuild", "/tmp/prebuild")
+	srv, _ := countedEmbedServer(t, false)
+	configureEmbedding(t, svc, srv.URL, "2")
+	if _, err := db.CreateWikiPage(svc.db, db.WikiKindConcept, "p", "P", pid, "body"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := svc.RebuildPageEmbeddings(); err != nil || n != 1 {
+		t.Fatalf("first rebuild: n=%d err=%v", n, err)
+	}
+	// Second rebuild over rows the first one left behind — the snapshot-with-
+	// vectors shape the gate tools hit in production.
+	if n, err := svc.RebuildPageEmbeddings(); err != nil || n != 1 {
+		t.Fatalf("second rebuild over existing vectors: n=%d err=%v", n, err)
+	}
+}
+
 // Only APPROVED pages are embedded: RebuildPageEmbeddings must skip pending pages,
 // and a pending page created before the first rebuild must never reach the index
 // (its content is unreviewed model output, ADR-0015).

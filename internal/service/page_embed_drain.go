@@ -64,6 +64,13 @@ func (s *Service) RebuildPageEmbeddings() (int, error) {
 	if err := db.EnsurePageVectorIndex(s.db, dim); err != nil {
 		return 0, err
 	}
+	// Full re-embed starts from an empty index, mirroring RebuildEmbeddings'
+	// store.Clear: the evaluation tools rebuild over a copy of a live database
+	// whose index already holds vectors, and rows for pages that left the
+	// approved set since the copy was taken would otherwise survive.
+	if err := db.ClearPageVectorIndex(s.db); err != nil {
+		return 0, err
+	}
 	pages, err := db.ListPageEmbeddingInputs(s.db)
 	if err != nil {
 		return 0, err
