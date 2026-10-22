@@ -121,15 +121,21 @@ func ClearPageVectorIndex(db *sql.DB) error {
 }
 
 // PutPageEmbedding upserts a page's vector, keyed by page id (the vec0 rowid).
+// vec0 does NOT honour INSERT OR REPLACE for an existing rowid (it raises
+// "UNIQUE constraint failed ... primary key"), so the upsert is an explicit
+// delete-then-insert: the incremental drainer re-embeds edited pages through
+// this path, and a full rebuild may run over an index that already holds rows.
 func PutPageEmbedding(db *sql.DB, pageID int64, vec []float32) error {
 	blob, err := encodeVector(vec)
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(
-		fmt.Sprintf("INSERT OR REPLACE INTO %s(rowid, embedding) VALUES(?, ?)", pageVecTableName),
-		pageID, blob)
-	if err != nil {
+	if _, err := db.Exec("DELETE FROM "+pageVecTableName+" WHERE rowid = ?", pageID); err != nil {
+		return fmt.Errorf("db: replace embedding page %d: %w", pageID, err)
+	}
+	if _, err := db.Exec(
+		fmt.Sprintf("INSERT INTO %s(rowid, embedding) VALUES(?, ?)", pageVecTableName),
+		pageID, blob); err != nil {
 		return fmt.Errorf("db: put embedding page %d: %w", pageID, err)
 	}
 	return nil

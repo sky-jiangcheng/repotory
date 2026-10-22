@@ -184,6 +184,31 @@ func TestPrunePageEmbeddings_DropsGoneAndUnapproved(t *testing.T) {
 	}
 }
 
+// vec0 does NOT honour INSERT OR REPLACE for an existing rowid (it raises
+// "UNIQUE constraint failed ... primary key"), so PutPageEmbedding's upsert
+// contract requires delete-then-insert: the incremental drainer re-embeds
+// edited pages through this path, and a rebuild may run over a snapshot whose
+// index already holds vectors.
+func TestPutPageEmbedding_ReplacesExistingRow(t *testing.T) {
+	db := setupTestDB(t)
+	if err := EnsurePageVectorIndex(db, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := PutPageEmbedding(db, 7, []float32{1, 0}); err != nil {
+		t.Fatalf("first put: %v", err)
+	}
+	if err := PutPageEmbedding(db, 7, []float32{0, 1}); err != nil {
+		t.Fatalf("re-put existing row: %v", err)
+	}
+	ids, err := KnnPageIDs(db, []float32{0, 1}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != 7 {
+		t.Fatalf("knn after re-put = %v, want exactly [7]", ids)
+	}
+}
+
 func TestPageVectorStoreHealthCheck(t *testing.T) {
 	db := setupTestDB(t)
 	if err := PageVectorStoreHealthCheck(db, 3); err != nil {
