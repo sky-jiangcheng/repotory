@@ -10,8 +10,8 @@ import * as path from "node:path";
 import { accessSync } from "node:fs";
 import { exec } from "node:child_process";
 import { McpStdioClient } from "./mcpClient.js";
-import { getJson, postJson } from "./headless.js";
-import { NotesSearchProvider, parseSearchHits } from "./notesTree.js";
+import { getJson, parseSearchHits, postJson } from "./headless.js";
+import { NotesSearchProvider } from "./notesTree.js";
 
 const CONFIG_SECTION = "repotory";
 const SERVER_URL_KEY = "serverUrl";
@@ -361,7 +361,7 @@ async function onboard(context: vscode.ExtensionContext): Promise<void> {
       "开始使用前，请先：\n" +
       "1. 安装 repotory-mcp（GitHub Releases，或随桌面应用一同安装）；\n" +
       '2. 运行 "Repotory: Register MCP Server" 把 MCP 服务器注册到你的 AI 客户端；\n' +
-      '3. 打开一个代码文件夹，点击状态栏 "Repotory" 或按 ⌘K 加载会话上下文。',
+      '3. 打开一个代码文件夹，点击状态栏 "Repotory"，或按 Ctrl+Cmd+R C（Windows/Linux 为 Ctrl+Alt+R C）加载会话上下文。',
     "安装 repotory-mcp",
     "注册 MCP 服务器",
     "稍后再说",

@@ -2,20 +2,14 @@
 // Thin client: renders hits from repotory_notes_search (MCP) or /api/search
 // (headless HTTP) — all business logic stays in the Repotory service layer.
 import * as vscode from "vscode";
-import { excerpt, extractNotes, type NoteHit } from "./headless.js";
+import { excerpt, hitText, type NoteHit } from "./headless.js";
 
 export const MAX_HITS = 50;
 
-/** Parse the JSON payload printed by makeJSONResult("notes_search", …). */
-export function parseSearchHits(text: string): NoteHit[] {
-  const start = text.indexOf("{");
-  if (start < 0) return [];
-  try {
-    return extractNotes(JSON.parse(text.slice(start)));
-  } catch {
-    return [];
-  }
-}
+// parseSearchHits lives in headless.ts, beside the transport it parses for:
+// the payload shape is the MCP tool's contract, not a tree-view detail. It used
+// to be here, and it sliced the JSON array from its first "{" — which made
+// every search look empty. Parsing is now whole-document (headless.ts).
 
 export class NotesSearchProvider implements vscode.TreeDataProvider<NoteItem> {
   private hits: NoteHit[] = [];
@@ -47,7 +41,7 @@ export class NotesSearchProvider implements vscode.TreeDataProvider<NoteItem> {
       const title =
         typeof hit.title === "string" && hit.title
           ? hit.title
-          : excerpt(hit.content, 40) || `note ${String(hit.id ?? "?")}`;
+          : excerpt(hitText(hit), 40) || `note ${String(hit.id ?? "?")}`;
       return new NoteItem(title, hit);
     });
     if (this.hits.length > MAX_HITS) {
@@ -76,9 +70,16 @@ export class NoteItem extends vscode.TreeItem {
       this.contextValue = "hint";
       return;
     }
-    this.description = excerpt(hit.content, 60);
-    this.tooltip = typeof hit.content === "string" ? hit.content : undefined;
-    const body = typeof hit.content === "string" ? hit.content : "";
+    // The hit carries a snippet (the matched excerpt), never the full body:
+    // the description, the tooltip and the read-only preview all show that.
+    // Fetching the whole note would need repotory_notes_read, and this list
+    // mixes notes with todos, which have no note row to read.
+    const text = hitText(hit);
+    const kind = hit.type === "todo" ? "Todo" : "Note";
+    const heading = `${kind} ${String(hit.id ?? "?")} — ${label}`;
+    this.description = excerpt(text, 60);
+    this.tooltip = text || `${heading} (no snippet returned)`;
+    const body = text ? `${heading}\n\n${text}\n` : `${heading}\n\n(snippet unavailable)\n`;
     this.command = {
       command: "vscode.open",
       title: "Read Note",
@@ -86,7 +87,7 @@ export class NoteItem extends vscode.TreeItem {
         vscode.Uri.from({
           scheme: "repotory-notes",
           path: `/note-${String(hit.id ?? "0")}.md`,
-          query: Buffer.from(body || `note ${String(hit.id ?? "?")} (content unavailable)`).toString("base64"),
+          query: Buffer.from(body).toString("base64"),
         }),
       ],
     };

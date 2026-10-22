@@ -10,7 +10,7 @@ One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 |---|---|
 | Command `Repotory: Load Session Context` | Pulls the working context for your project (tech stack, README excerpt, recent commits, open todos, the last session handoff) via `repotory_context`, sending the current workspace path so a subdirectory resolves to the repository it belongs to; shows it in the Repotory output channel |
 | Command `Repotory: Write Session Handoff` | Prompts for summary / changes / next steps, then records a structured handoff (`repotory_handoff`) — the project is resolved from the workspace path — the next session, yours or any agent's, starts from it |
-| Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar and open read-only |
+| Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar with the matched snippet (the service returns the excerpt, not the full body) and open as a read-only preview |
 | Sidebar "Repotory: Knowledge Search" | Idle state shows the resolved `project · repository` (or "Repotory: not in the knowledge base yet"), then the search results. Title bar also carries **"Repotory: Open Desktop App"** to launch the Repotory desktop app from the IDE |
 | Status bar `$(repo) Repotory` | Click = load context; the tooltip names the resolved workspace (project / repository and its path) once resolved |
 | Command `Repotory: Register MCP Server` | Runs the bundled `repotory-init --with-hook` in a terminal: registers the MCP server for Claude Code / Cursor / VS Code / Windsurf and installs the SessionEnd hook. The installer ships inside the extension, so this works in any project — it is not limited to the Repotory repository |
@@ -23,7 +23,7 @@ One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 | `Ctrl+Alt+R` `H` (`Ctrl+Cmd+R` `H` on macOS) | Write Session Handoff |
 | `Ctrl+Alt+R` `S` (`Ctrl+Cmd+R` `S` on macOS) | Search Knowledge |
 
-The sidebar's title bar also carries a search button. All four commands remain in the Command Palette; rebind them in *Preferences → Keyboard Shortcuts* if the defaults collide with yours.
+The sidebar's title bar also carries a search button. All five commands remain in the Command Palette; rebind them in *Preferences → Keyboard Shortcuts* if the defaults collide with yours.
 
 ## Requirements
 

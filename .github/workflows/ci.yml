@@ -283,3 +283,55 @@ jobs:
       # committed out of sync with ../../scripts/repotory-init/index.mjs.
       - name: Bundled repotory-init is in sync
         run: git diff --exit-code -- repotory-init/index.mjs
+
+  # ------------------------------------------------------ JetBrains plugin ----
+  # Same reasoning as the VS Code job above: release.yml does not build the
+  # JetBrains plugin at all, so a Kotlin compile error in ide/jetbrains could
+  # sit on master indefinitely — the only gate was somebody running
+  # `gradle buildPlugin` by hand. This job is that gate.
+  #
+  # It builds, it does not verify: `verifyPlugin` downloads a full IDE (about
+  # 1.2 GB) on top of the platform distribution this build already needs, and
+  # the job's job is to keep master compiling. Run `gradle verifyPlugin` locally
+  # for the compatibility check against the declared sinceBuild/untilBuild.
+  jetbrains-plugin-test:
+    name: JetBrains plugin build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        # The plugin is its own Gradle build; without this every step would run
+        # from the repo root, where there is no build script.
+        working-directory: ide/jetbrains
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # jvmToolchain(21) in build.gradle.kts means the build needs a JDK 21; the
+      # toolchain is also what makes "compiled with Kotlin 2.2.0" match the
+      # platform's own metadata (an older Kotlin aborts with "Module was compiled
+      # with an incompatible version of Kotlin").
+      - name: Setup JDK 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # This repository ships no Gradle wrapper in ide/jetbrains/, so the
+      # gradle-version input is what makes Gradle exist at all: the action
+      # downloads and caches the distribution (and, unlike a bare
+      # actions/cache on ~/.gradle, it also caches the Gradle User Home, which
+      # is where the 1.2 GB IntelliJ Platform distribution lands — that cache is
+      # the difference between a 3-minute job and a 9-minute one).
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # Quotes are required or YAML reads 8.10.2 as a number.
+          gradle-version: '8.10.2'
+
+      # Compiles the Kotlin sources against the real IntelliJ Platform and packs
+      # build/distributions/repotory-jetbrains-<version>.zip. This is the actual
+      # gate: it fails on a Kotlin type error, an unresolved platform API, or a
+      # plugin.xml that references a class that does not exist.
+      - name: Build plugin (gradle buildPlugin)
+        run: gradle buildPlugin

@@ -4,6 +4,8 @@
 # SSOT (single source of truth): wails.json -> info.productVersion
 # This script writes the new version into wails.json, then propagates it to:
 #   - web/package.json           (version field)
+#   - ide/vscode/package.json    (the extension follows the app version — 2b)
+#   - ide/jetbrains/build.gradle.kts (the plugin follows the app version — 2c)
 #   - internal/version/version.go                     (const Version, also overridable via ldflags at CI build time)
 #
 # Usage:
@@ -55,6 +57,13 @@ update_file() {
     rm -f "$tmp"
     return 1
   fi
+  # mktemp creates 0600, so reset the mode on the replacement — otherwise every
+  # run silently tightens the permissions of wails.json, web/package.json,
+  # version.go and the two IDE manifests to 0600. Git cannot see the drift (it
+  # tracks only the executable bit), which is exactly why it went unnoticed, but
+  # the SSOT files end up unreadable to group/other anyway. Same fix, same
+  # reason, as scripts/update-manifests.sh.
+  chmod 0644 "$tmp"
   mv "$tmp" "$file"
   echo "  updated $file"
 }
@@ -96,6 +105,26 @@ if [ -f ide/vscode/package.json ]; then
   update_file "ide/vscode/package.json" \
     '("version"[[:space:]]*:[[:space:]]*)"[^"]+"' \
     "\1\"$VERSION\""
+fi
+
+# 2c. ide/jetbrains/build.gradle.kts  ->  version
+#
+#     Same rule as the VS Code extension (2b): the JetBrains plugin follows the
+#     app version. It used to carry its own 0.1.0 while the service it talks to
+#     was 2.10.0, so an installed plugin could not be matched to a build.
+#     The pattern is anchored at the start of a line so it cannot touch the
+#     plugin/toolchain versions in the `plugins { ... }` block
+#     (`id("...") version "2.2.0"`), and the count is asserted, not assumed.
+if [ -f ide/jetbrains/build.gradle.kts ]; then
+  JBKEYS=$(grep -cE '^version[[:space:]]*=' ide/jetbrains/build.gradle.kts || true)
+  if [ "$JBKEYS" -ne 1 ]; then
+    echo "ERROR: ide/jetbrains/build.gradle.kts has $JBKEYS top-level version assignments, expected 1." >&2
+    echo "       Refusing to rewrite — the pattern would hit the wrong one." >&2
+    exit 1
+  fi
+  update_file "ide/jetbrains/build.gradle.kts" \
+    '^version[[:space:]]*=[[:space:]]*"[^"]+"' \
+    "version = \"$VERSION\""
 fi
 
 # 3. internal/version/version.go  ->  const Version = "..."  (SSOT for app/CLI/MCP)
@@ -140,7 +169,7 @@ fi
 
 echo
 echo "Done. Verify with:"
-echo "  grep -rn '$VERSION' wails.json web/package.json web/package-lock.json internal/version/version.go ide/vscode/package.json packaging/ docs/index.html"
+echo "  grep -rn '$VERSION' wails.json web/package.json web/package-lock.json internal/version/version.go ide/vscode/package.json ide/jetbrains/build.gradle.kts packaging/ docs/index.html"
 echo "  go build ./... && (cd web && npm run build)"
 echo
 echo "Then commit & tag:"

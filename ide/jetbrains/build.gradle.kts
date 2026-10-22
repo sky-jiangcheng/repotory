@@ -21,7 +21,13 @@ plugins {
 }
 
 group = "dev.repotory"
-version = "0.1.0"
+// The plugin deliberately follows the app version (wails.json -> 2.10.0) rather
+// than keeping a line of its own. It used to say 0.1.0, which would have shipped
+// a Marketplace build whose number said nothing about the service it talks to;
+// the VS Code extension learned the same lesson (scripts/bump-version.sh, 2b).
+// One version, one CHANGELOG (ADR-0017 criterion 3). Rewritten by
+// scripts/bump-version.sh — do not edit by hand.
+version = "2.10.0"
 
 repositories {
     mavenCentral()

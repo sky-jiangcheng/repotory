@@ -8,7 +8,7 @@
 // none of them owns the search implementation.
 //
 // MVP scope (ADR-0027 decision 2):
-//   ① knowledge-search tool window — notes + wiki pages, via SearchAll
+//   ① knowledge-search tool window — notes + todos, via SearchAll
 //   ② result jump — open the Repotory SPA in the system browser, deep-linked
 //   ③ settings page — server address + a health check
 //
@@ -37,9 +37,28 @@ data class RepotoryHit(
     val projectId: Long,
     val title: String,
     val snippet: String,
-    /** The SPA route this hit opens, e.g. "/project/12?note=345". */
+    /** The SPA route this hit opens, e.g. "/project/12?noteId=345". */
     val route: String,
 )
+
+/**
+ * What a search produced.
+ *
+ * It is a sealed outcome rather than a plain list because the UI has to tell
+ * "nothing matched" from "the search never ran": both used to arrive as an
+ * empty list, so an unreachable service rendered exactly like a clean miss —
+ * the failure that teaches users to distrust a working query.
+ */
+sealed interface SearchOutcome {
+    /** Hits, possibly empty (an empty list is a real "nothing matched"). */
+    data class Hits(val hits: List<RepotoryHit>) : SearchOutcome
+
+    /** The search could not be carried out; [message] says why, for the UI. */
+    data class Failure(val message: String) : SearchOutcome
+}
+
+/** Raised when an RPC call yields no payload; the message is user-presentable. */
+class RepotoryRpcException(message: String) : Exception(message)
 
 /**
  * Thin HTTP client for the Repotory headless service.
@@ -77,18 +96,55 @@ class RepotoryClient {
     }
 
     /**
-     * Searches notes AND wiki pages in one call.
+     * True when the running server also serves the Repotory web UI, i.e. it was
+     * started with `--web-dist` (see cmd/server/main.go: without it the process
+     * is API-only and every non-/api path 404s).
      *
-     * `SearchAll` is the binding the web frontend's knowledge search uses, so
-     * the plugin inherits the FTS / hybrid / graph-aware ranking for free —
-     * including the `semantic_search` and `wiki_graph_search` gates, which the
-     * plugin deliberately does NOT reimplement (ADR-0027 decision 2①).
+     * Results deep-link into that UI, so a plain API-only server answers the API
+     * but turns every "Open in Repotory" click into a 404. The plugin only
+     * CONNECTS to a server (ADR-0027 decision 4) — it cannot add the flag for
+     * the user — so it asks this question and says the answer out loud.
      */
-    fun search(serverUrl: String, query: String): List<RepotoryHit> {
-        if (query.isBlank()) return emptyList()
-        val result = rpc(serverUrl, "SearchAll", listOf(query))
-        val array = result as? JsonArray ?: return emptyList()
-        return array.mapNotNull { parseHit(it) }
+    fun servesWebUi(serverUrl: String): Boolean = try {
+        val conn = open(serverUrl, "/", "GET")
+        try {
+            // The SPA root is index.html (serveIndex in cmd/server/main.go). A
+            // 404 from the API mux, or any non-HTML answer, means no web UI here.
+            conn.responseCode == 200 && (conn.contentType ?: "").contains("text/html", ignoreCase = true)
+        } finally {
+            conn.disconnect()
+        }
+    } catch (e: Exception) {
+        Logger.getInstance(LOG).debug("repotory web-ui probe failed: ${e.message}")
+        false
+    }
+
+    /**
+     * Searches notes AND todos in one call.
+     *
+     * `SearchAll` is the binding the web frontend's knowledge search uses
+     * (web/src/api/endpoints.ts), so the plugin inherits exactly the ranking
+     * the desktop app serves — FTS5 bm25 with a LIKE fallback
+     * (internal/db/search.go) — and reimplements none of it (ADR-0027
+     * decision 2①). Its scope is notes + todos: wiki pages are not reachable
+     * through this binding, and the plugin does not pretend they are.
+     *
+     * Returns [SearchOutcome], never a bare list: a transport failure and an
+     * empty result set must stay distinguishable all the way to the UI.
+     */
+    fun search(serverUrl: String, query: String): SearchOutcome {
+        if (query.isBlank()) return SearchOutcome.Hits(emptyList())
+        return try {
+            val result = rpc(serverUrl, "SearchAll", listOf(query))
+            val array = result as? JsonArray
+                ?: return SearchOutcome.Failure("Repotory returned an unexpected SearchAll payload")
+            SearchOutcome.Hits(array.mapNotNull { parseHit(it) })
+        } catch (e: RepotoryRpcException) {
+            SearchOutcome.Failure(e.message ?: "SearchAll failed")
+        } catch (e: Exception) {
+            // IOException and friends: the service is not running, or not answering.
+            SearchOutcome.Failure("Cannot reach ${serverUrl.trimEnd('/')} — ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 
     /**
@@ -97,7 +153,14 @@ class RepotoryClient {
      * The bridge is the same one the desktop Wails app is bound to, so the
      * plugin can reach ANY binding without a hand-written REST route per
      * method — and without the plugin growing its own API surface.
+     *
+     * Throws [RepotoryRpcException] when the call produced no payload: a
+     * non-200 status, an `error` envelope, or a body that is not an object.
+     * Returning null instead would make every failure indistinguishable from a
+     * successful call that legitimately carries no result — the caller could
+     * not tell "the server said no" from "the server said nothing".
      */
+    @Throws(RepotoryRpcException::class)
     fun rpc(serverUrl: String, method: String, args: List<Any?>): Any? {
         val payload = JsonObject()
         payload.addProperty("method", method)
@@ -112,16 +175,30 @@ class RepotoryClient {
             conn.outputStream.use { it.write(payload.toString().toByteArray(StandardCharsets.UTF_8)) }
             val code = conn.responseCode
             if (code != 200) {
-                Logger.getInstance(LOG).warn("repotory rpc $method -> HTTP $code")
-                return null
+                // Failures come back as 4xx/5xx with an {"error":…} body
+                // (internal/httpapi/rpc.go); read it so the UI can say what
+                // went wrong instead of only that something did.
+                val detail = conn.errorStream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val reason = try {
+                    JsonParser.parseString(detail).asJsonObject.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+                } catch (e: Exception) {
+                    if (detail.isBlank()) null else detail.trim().take(200)
+                }
+                Logger.getInstance(LOG).warn("repotory rpc $method -> HTTP $code ${reason ?: ""}")
+                throw RepotoryRpcException(
+                    "Repotory answered HTTP $code for $method" + (if (reason.isNullOrBlank()) "" else ": $reason"),
+                )
             }
             val body = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).readText()
             val envelope = JsonParser.parseString(body)
-            if (!envelope.isJsonObject) return null
+            if (!envelope.isJsonObject) {
+                throw RepotoryRpcException("Repotory returned a non-object response for $method")
+            }
             val obj = envelope.asJsonObject
             if (obj.has("error") && !obj.get("error").isJsonNull) {
-                Logger.getInstance(LOG).warn("repotory rpc $method -> ${obj.get("error")}")
-                return null
+                val reason = obj.get("error").toString()
+                Logger.getInstance(LOG).warn("repotory rpc $method -> $reason")
+                throw RepotoryRpcException("Repotory refused $method: $reason")
             }
             return if (obj.has("result")) obj.get("result") else null
         } finally {

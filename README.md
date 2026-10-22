@@ -136,6 +136,18 @@ code --install-extension repotory-vscode-*.vsix   # forks: cursor / windsurf
 
 Details: [`ide/vscode/README.md`](ide/vscode/README.md).
 
+## JetBrains Plugin (preview)
+
+One build installs into the whole IntelliJ family — IDEA, PyCharm, GoLand, WebStorm — because it uses platform APIs only. It is the same thin client as the VS Code extension, pointed at the loopback headless service instead of stdio: a tool window that searches your notes and todos, and opens a result in the Repotory web UI. Distribution is **private-first** for now (not on the JetBrains Marketplace), so build the zip and install it from disk:
+
+```bash
+cd ide/jetbrains && gradle buildPlugin   # → build/distributions/repotory-jetbrains-<version>.zip
+```
+
+Result links land somewhere only if the server serves its web UI: start it with `--web-dist web/dist-server` (the `npm run build:server` output). Without it the server is API-only and every result link 404s — the plugin detects that and says so rather than sending you to a dead page.
+
+Details: [`ide/jetbrains/README.md`](ide/jetbrains/README.md).
+
 ## Building from Source
 
 Requirements: **Go 1.26+**, **Node.js 20+** (frontend build), optional [Wails CLI](https://wails.io) v2.13+.

@@ -31,12 +31,17 @@ class RepotoryConfigurable : Configurable {
         val test = JButton("Test connection")
         test.addActionListener {
             val target = url.text?.trim().orEmpty()
-            status.text = if (target.isEmpty()) {
-                "Enter a server address first."
-            } else if (repotoryClient.ping(target)) {
-                "Connected: $target"
-            } else {
-                "No response from $target. Is the Repotory server running?"
+            // /health answering is not the same as the deployment being usable:
+            // a server without --web-dist serves the API but 404s every result
+            // link, so a bare "Connected" would be a green light for a broken
+            // click. The probe distinguishes the two cases.
+            status.text = when {
+                target.isEmpty() -> "Enter a server address first."
+                !repotoryClient.ping(target) -> "No response from $target. Is the Repotory server running?"
+                repotoryClient.servesWebUi(target) -> "Connected: $target — API and web UI both reachable."
+                else ->
+                    "Connected: $target, but API-only: \"Open in Repotory\" would 404. " +
+                        "Restart it with --web-dist, or use the desktop app."
             }
         }
 
