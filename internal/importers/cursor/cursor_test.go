@@ -9,10 +9,11 @@ import (
 	"testing"
 
 	"repotory/internal/db"
+	"repotory/internal/importers/imptest"
 	"repotory/internal/importers/memsrc"
 )
 
-// The fixtures below mirror the shapes verified against a real macOS install
+// The samples below mirror the shapes verified against a real macOS install
 // (bubble = {type, text, createdAt-ISO8601}, composerHeaders row per session,
 // workspaceId = the 32-hex workspaceStorage directory name holding a
 // workspace.json with a file:// folder URI).
@@ -37,24 +38,10 @@ func newFixture(t *testing.T) (appDB *sql.DB, statePath string) {
 	writeCursorState(t, statePath)
 
 	// workspaceStorage/<hash>/workspace.json — the VS Code layout Cursor shares.
-	wsDir := filepath.Join(userDir, "workspaceStorage", wsHashKnown)
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body, _ := json.Marshal(map[string]string{"folder": "file://" + wsFolder})
-	if err := os.WriteFile(filepath.Join(wsDir, "workspace.json"), body, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// A second workspace with no matching Repotory project: its sessions must
-	// skip rather than be guessed onto one.
-	other := filepath.Join(userDir, "workspaceStorage", wsHashUnknown)
-	if err := os.MkdirAll(other, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	otherBody, _ := json.Marshal(map[string]string{"folder": "file:///Users/dev/Nowhere"})
-	if err := os.WriteFile(filepath.Join(other, "workspace.json"), otherBody, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The sample tree holds both workspaces: the one that matches a Repotory
+	// project, and one that matches none (its sessions must not be guessed
+	// onto a project).
+	imptest.CopySample(t, "testdata/workspaceStorage", filepath.Join(userDir, "workspaceStorage"))
 
 	t.Setenv("CURSOR_STATE_DB", statePath)
 
@@ -97,9 +84,14 @@ func bubbleJSON(t *testing.T, typ int, text, createdAt string) string {
 	return string(b)
 }
 
-// writeCursorState creates a state.vscdb with the tables the importer reads and
-// a deliberately messy set of sessions: subagent, empty-window, unknown
-// workspace, out-of-order timestamps, and one unparseable bubble value.
+// writeCursorState creates a state.vscdb from the committed .sql sample: the
+// two tables the importer reads and a deliberately messy set of sessions —
+// subagent, empty-window, unknown workspace, out-of-order timestamps, and one
+// unparseable bubble value.
+//
+// A .sql dump rather than a committed .db file: the schema and the rows are
+// exactly what has to be reviewable, and a binary blob shows nothing when the
+// format drifts (ADR-0011 decision 5).
 func writeCursorState(t *testing.T, path string) {
 	t.Helper()
 	st, err := sql.Open("sqlite", "file:"+path)
@@ -107,72 +99,7 @@ func writeCursorState(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = st.Close() }()
-
-	ddl := []string{
-		`CREATE TABLE composerHeaders (
-			composerId TEXT PRIMARY KEY, workspaceId TEXT, createdAt INTEGER,
-			lastUpdatedAt INTEGER, isArchived INTEGER, isSubagent INTEGER,
-			recency INTEGER, checkpointAt INTEGER, value TEXT, subagentTypeName TEXT)`,
-		`CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value BLOB)`,
-	}
-	for _, d := range ddl {
-		if _, err := st.Exec(d); err != nil {
-			t.Fatalf("ddl: %v", err)
-		}
-	}
-
-	const (
-		good     = "11111111-1111-1111-1111-111111111111"
-		subagent = "22222222-2222-2222-2222-222222222222"
-		noProj   = "33333333-3333-3333-3333-333333333333"
-		emptyWin = "44444444-4444-4444-4444-444444444444"
-	)
-	rows := []struct {
-		id, ws             string
-		created, updated   int64
-		archived, subagent int
-	}{
-		{good, wsHashKnown, 1700000000000, 1700000900000, 0, 0},
-		{subagent, wsHashKnown, 1700001000000, 1700001900000, 0, 1},
-		{noProj, wsHashUnknown, 1700002000000, 1700002900000, 0, 0},
-		{emptyWin, "empty-window", 1700003000000, 1700003900000, 0, 0},
-	}
-	for _, r := range rows {
-		if _, err := st.Exec(`INSERT INTO composerHeaders
-			(composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, isSubagent)
-			VALUES (?,?,?,?,?,?)`,
-			r.id, r.ws, r.created, r.updated, r.archived, r.subagent); err != nil {
-			t.Fatalf("insert composer: %v", err)
-		}
-	}
-
-	bubbles := []struct{ key, value string }{
-		{"bubbleId:" + good + ":bbbb0002-last-question", bubbleJSON(t, 2, "answer two — the last reply", "2026-07-16T07:55:13.735Z")},
-		{"bubbleId:" + good + ":bbbb0003", bubbleJSON(t, 1, "second user turn", "2026-07-16T07:55:20.000Z")},
-		// Deliberately written BEFORE the first turn in table order but with an
-		// older createdAt: the note must still lead with the real first prompt.
-		{"bubbleId:" + good + ":bbbb0001-first-question", bubbleJSON(t, 1, "first prompt of the session", "2026-07-16T07:55:09.326Z")},
-		{"bubbleId:" + good + ":bbbb0004-answer-one", bubbleJSON(t, 2, "answer one", "2026-07-16T07:55:12.000Z")},
-		// An unknown sender must never be mistaken for either side.
-		{"bubbleId:" + good + ":bbbb0005-unknown-sender", bubbleJSON(t, 9, "system-ish noise", "2026-07-16T07:56:00.000Z")},
-		// A real shape observed in the wild: the value is not valid JSON at all.
-		{"bubbleId:" + good + ":bbbb0006-malformed", "this-is-not-json{{"},
-		// Empty text must be ignored, not rendered as a blank section.
-		{"bubbleId:" + good + ":bbbb0007-empty", bubbleJSON(t, 1, "   ", "2026-07-16T07:57:00.000Z")},
-		{"bubbleId:" + subagent + ":cccc0001", bubbleJSON(t, 1, "subagent prompt", "2026-07-16T08:00:00.000Z")},
-		{"bubbleId:" + noProj + ":dddd0001", bubbleJSON(t, 1, "orphan session", "2026-07-16T09:00:00.000Z")},
-		{"bubbleId:" + emptyWin + ":eeee0001", bubbleJSON(t, 1, "no workspace", "2026-07-16T10:00:00.000Z")},
-	}
-	for _, b := range bubbles {
-		if _, err := st.Exec("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)", b.key, b.value); err != nil {
-			t.Fatalf("insert bubble: %v", err)
-		}
-	}
-	// Non-bubble keys must not be picked up by the LIKE pattern.
-	if _, err := st.Exec("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
-		"composerData:"+good, `{"composerId":"x"}`); err != nil {
-		t.Fatal(err)
-	}
+	imptest.ExecScript(t, st, "testdata/state.sql")
 }
 
 func TestImportProducesOneAttributedNote(t *testing.T) {

@@ -7,70 +7,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"repotory/internal/importers/imptest"
 )
 
 // writeCodebuddyFixture builds one nested-profile session under a fake home and
 // returns the home dir. The layout mirrors the real on-disk shape found in the
 // 2026-10-18 rehearsal: Data/<uid>/<IDE>/<uid>/history/<session>/<sub>/ with
 // index.json + messages/ — the depth the sessionRoots fix is about.
+//
+// The session files are SAMPLES from testdata/ rather than maps built inline
+// (ADR-0011 decision 5): the importer's input is JSON on disk, so the test
+// should exercise the bytes a real install would produce. When the on-disk
+// format drifts, the diff shows the sample that drifted, next to the test
+// that broke.
 func writeCodebuddyFixture(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	sub := filepath.Join(home, "Library", "Application Support", "CodeBuddyExtension",
-		"Data", "uid-1", "JetBrains", "uid-1", "history", "sess-1", "sub-1")
-	if err := os.MkdirAll(filepath.Join(sub, "messages"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	userInner := map[string]any{
-		"role": "user",
-		"content": []map[string]any{
-			{"type": "text", "text": "<user_info>\nWorkspace Folders: /tmp/ws/DemoRepo, /tmp/ws/Other\n</user_info>\n如何实现缓存层？"},
-		},
-	}
-	writeMessageFile(t, sub, "m-user-1", map[string]any{
-		"role": "user", "id": "m-user-1", "message": mustJSON(t, userInner),
-	})
-	assistInner := map[string]any{
-		"role": "assistant",
-		"content": []map[string]any{
-			{"type": "text", "text": "<answer>用 LRU 缓存。</answer>"},
-		},
-	}
-	writeMessageFile(t, sub, "m-assist-1", map[string]any{
-		"role": "assistant", "id": "m-assist-1", "message": mustJSON(t, assistInner),
-	})
-
-	writeFile(t, sub, "index.json", map[string]any{
-		"requests": []map[string]any{
-			{"id": "r-1", "messages": []string{"m-user-1", "m-assist-1"}},
-		},
-		"messages": []map[string]any{
-			{"id": "m-user-1", "role": "user"},
-			{"id": "m-assist-1", "role": "assistant"},
-		},
-	})
-
-	// 同一会话的第二个 fork：消息更少的早期残片（hex 序在前）。整会话只能产
-	// 出一条笔记，且必须是消息最全的那份 fork 的内容。
-	frag := filepath.Join(home, "Library", "Application Support", "CodeBuddyExtension",
-		"Data", "uid-1", "JetBrains", "uid-1", "history", "sess-1", "sub-0")
-	if err := os.MkdirAll(filepath.Join(frag, "messages"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fragInner := map[string]any{
-		"role": "user",
-		"content": []map[string]any{
-			{"type": "text", "text": "早期残片，不应被选中"},
-		},
-	}
-	writeMessageFile(t, frag, "m-frag", map[string]any{
-		"role": "user", "id": "m-frag", "message": mustJSON(t, fragInner),
-	})
-	writeFile(t, frag, "index.json", map[string]any{
-		"requests": []map[string]any{{"id": "r-frag", "messages": []string{"m-frag"}}},
-		"messages": []map[string]any{{"id": "m-frag", "role": "user"}},
-	})
+	base := filepath.Join(home, "Library", "Application Support", "CodeBuddyExtension",
+		"Data", "uid-1", "JetBrains", "uid-1", "history", "sess-1")
+	imptest.CopySample(t, "testdata/session", filepath.Join(base, "sub-1"))
+	// The same session's second fork: an earlier fragment with fewer messages
+	// (hex order first). The whole session must yield exactly one note, and it
+	// must carry the content of the fork with the most messages.
+	imptest.CopySample(t, "testdata/fork", filepath.Join(base, "sub-0"))
 	return home
 }
 
@@ -81,11 +41,6 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
-}
-
-func writeMessageFile(t *testing.T, messagesDir, id string, v any) {
-	t.Helper()
-	writeFile(t, filepath.Join(messagesDir, "messages"), id+".json", v)
 }
 
 func writeFile(t *testing.T, dir, name string, v any) {

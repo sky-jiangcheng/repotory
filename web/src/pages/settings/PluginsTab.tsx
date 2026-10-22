@@ -180,6 +180,17 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
                     </div>
                     <span className={css.pluginPath}>{t('settings.fromPlugin', { name: s.plugin || 'builtin' })}</span>
                     {s.detail && <span className={css.pluginDetail}>{s.detail}</span>}
+                    {/* Per-source sync trail (ADR-0022 决策 3): the round-level
+                        line below says when the last round ran; this says when
+                        THIS source last ran, and what went wrong for it. */}
+                    {s.last_run && (
+                      <span className={css.pluginDetail}>
+                        {t('settings.sourceLastSyncAt', { time: s.last_run })}
+                      </span>
+                    )}
+                    {s.last_error && (
+                      <span className={css.syncError}>{t('settings.syncLastError', { msg: s.last_error })}</span>
+                    )}
                   </div>
                   <div className={css.pluginActions}>
                     <div className={css.syncToggleWrap}>

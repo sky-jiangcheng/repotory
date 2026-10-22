@@ -15,6 +15,7 @@ import { useFilteredNotes } from '../hooks/useFilteredNotes'
 import type { KindFilter } from '../types/kind'
 import NoteEditor, { type NoteDraft } from './notes/NoteEditor'
 import NoteFilterBar from './notes/NoteFilterBar'
+import SourceTypeBadge from './SourceTypeBadge'
 import VersionHistoryPanel from './notes/VersionHistoryPanel'
 import ErrorBanner from './ErrorBanner'
 import Icon from './Icon'
@@ -275,11 +276,10 @@ function NoteCard({
   const { t } = useTranslation()
   const { armed, click } = useConfirmClick(() => { void onDelete(note.id) })
 
-  // Source badges are generic now: any importer source (claude, codex,
-  // opencode, codebuddy-memory, …) gets a chip next to the kind badge.
-  // 'manual' notes were typed by the user and stay unbadged.
-  const sourceLabel = (src: string) =>
-    src === 'codebuddy-memory' ? 'CodeBuddy Memory' : src.charAt(0).toUpperCase() + src.slice(1)
+  // The source badge is the derived TYPE (ADR-0022 决策 5), not the raw
+  // source name: the server sends `source_type` and the shared badge
+  // component renders it, so this card and the settings list speak the same
+  // language. 'manual' notes carry no provenance and stay unbadged.
 
   if (editing) {
     return (
@@ -305,7 +305,7 @@ function NoteCard({
         <span className={s.titleText}>{note.title || note.content.split('\n')[0] || t('project.noteWord')}</span>
         <div className={s.titleBadges}>
           {note.kind === 'knowledge' && <span className={s.badgeNoteSm}>{t('project.kinds.knowledge')}</span>}
-          {note.source && note.source !== 'manual' && <span className={`${s.badgeNoteSm} ${s.badgeSource}`}>{sourceLabel(note.source)}</span>}
+          {note.source && note.source !== 'manual' && <SourceTypeBadge type={note.source_type} source={note.source} />}
           <button
             className={`pin-btn ${note.pinned ? 'pinned' : ''}`}
             onClick={() => onPin(note)}

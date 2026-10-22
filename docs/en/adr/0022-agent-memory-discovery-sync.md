@@ -1,6 +1,6 @@
 # ADR-0022: Auto-discovery and scheduled sync of agent memory — source type visible to the user
 
-- Status: Proposed (design pending review; note 2026-10-19: the independent first-step item — the CodeBuddy wiring — has landed with v2.6.0: source_type exposure, the knowledge_sync scheduled service, and both CodeBuddy import sources are live. **Phase-by-phase implementation boundary verified 2026-10-21**: landed = P1 (`codebuddy_project` dual-source registration; `internal/importers/codebuddy` + `internal/core/plugin/runtime` tests green) and P3 (`internal/service/knowledge_sync.go` ticker + `knowledge_sync_interval_minutes` defaulting to 240 minutes + the seven per-source `sync_source_<name>` opt-ins); **not landed** = P2 discovery probing (no `Probe` contract in runtime, no detected/detail on `SourceStatus`), P4 source-type UI generalization and i18n, P5 verification and closure. The status therefore stays Proposed — not because the implementation runs ahead of the document, but because P2/P4/P5 have not started and the overall design is still pending review.)
+- Status: Proposed (**the 2026-10-22 phase-by-phase verification found the actual implementation boundary differs from what the previous status line stated, so it is rewritten to match the measurement**: **P1 Wiring** ✅ landed (`internal/service/plugin.go:115-116` registers both CodeBuddy sources, eight sources in total; 5 tests in `internal/importers/codebuddy`); **P2 Discovery probing** ✅ landed (the `plugin.Prober` interface + `plugin.ProbeResult`, `internal/core/plugin/plugin.go:29-41`; `runtime.safeProbe` with panic recovery, `internal/core/plugin/runtime/runtime.go:151`; `SourceStatus` extended to `{name, plugin, detected, enabled, detail, type, last_run, last_error}`; all seven sources implement `Probe()`, memsrc being the built-in test source and thus not applicable); **P3 Scheduled sync** ✅ landed (`internal/service/knowledge_sync.go` ticker whose first tick lands one interval after startup, `knowledge_sync_interval_minutes` defaulting to 240 minutes, per-source `sync_source_<name>` opt-ins, claude on by default and the rest off; **the per-source `lastRun`/`lastError` were added**, in the runtime layer's `SourceStatus`, so a manual import and a scheduled round share one state); **P4 Source type and UI** ✅ landed (the derived mapping `SourceTypeFor` (`runtime.go:48`, now exported as the cross-layer single source of truth) + the four `SourceType` constants + three pinning tests in `source_type_test.go` + the settings-page type chip, detection status dot, detail, per-source sync switch, per-source sync time and error + the `settings.sourceTypes.*` i18n in both locales; **the note card now shows the label by type with a type-specific tone** — the new shared component `web/src/components/SourceTypeBadge.tsx` (the backend sends `source_type`; the frontend never re-derives it)); **P5 Verification and wrap-up** ✅ **landed** (`go test ./internal/...` green; **the golden-file regression is established** — ADR-0011 decision 5 asks for "golden-file samples per source" and that now holds across all seven sources under `internal/importers/` (claude/codex/codebuddy/opencode/openclaw/hermes/cursor, 28 sample files in total; the two SQLite-backed sources use a `.sql` dump, with the shared helpers in `internal/importers/imptest`); **the GUI smoke walkthrough is done** — the hermes chain ran end to end in an isolated environment (isolated HOME + a read-only mount of the real `~/.hermes/state.db`): probe → import → idempotent re-run → scheduled sync → settings-page display, see `outputs/screenshots/2026-10-22-adr0022-closure/`). **The status stays Proposed**: the three P4/P3 deviations are all closed and the golden-file form is closed as well, so nothing is left on the implementation side; the design as a whole is still up for review)
 - Date: 2026-10-14
 - Related: [ADR-0011](0011-multi-agent-memory-importers.md) (multi-agent memory importers), [ADR-0014](0014-llm-wiki-knowledge-compiler.md) (LLM Wiki knowledge compiler), [ADR-0015](0015-w3-minimal-compile-loop.md) (W3 minimal compile loop), [ADR-0007](0007-session-memory-protocol.md) (session memory protocol), [ADR-0009](0009-ide-presence.md) (IDE presence), TODO session-memory roadmap M2/M8
 
@@ -71,3 +71,84 @@ The 2026-10-14 inventory shows that points 3 and 4 already have groundwork; poin
 - **P3 Scheduled sync**: `knowledge_sync.go` ticker + `knowledge_sync_interval_minutes` + per-source `sync_source_<name>` + settings-page switch and lastRun display.
 - **P4 Source type and UI**: `SourceType` derived function + tests (pin the mapping table above + unknown fallback); generalize the NoteSection source badge; enhance settings-page per-source type/switch info; i18n labels.
 - **P5 Verification and wrap-up**: golden-file regression maintained (ADR-0011 decision 5); `go test ./internal/...`; GUI smoke test (source list discovery → enable scheduled sync for a source → note badge → settings lastRun); this ADR's promotion and implementation-correction notes are back-filled per project convention after delivery.
+
+## Implementation correction record (phase-by-phase verification, 2026-10-22)
+
+The previous status line claimed "P2/P4/P5 have not started". Verifying each phase against the code showed **two of them already landed and one partially landed**. Method: read the implementation and the tests phase by phase, never the index line — an ADR status line lags behind the code, and the index line lags behind the body.
+
+### P2 Discovery probing — was written as "not started", is in fact fully landed
+
+| Decision element | Landing site | Status |
+|---|---|---|
+| `Probe() ProbeResult` contract | `internal/core/plugin/plugin.go:29-41` (`ProbeResult{Detected, Detail}` + the optional-capability interface `Prober`) | ✅ |
+| Probe on registration | `internal/core/plugin/runtime/runtime.go:151` `safeProbe` (with panic recovery, so one broken probe cannot take down the settings page) | ✅ |
+| `SourceStatus` extension | `runtime.go:63-70`, `{name, plugin, detected, enabled, detail, type}` | ✅ |
+| Per-source probes | claude / codex / opencode / openclaw / hermes / cursor / codebuddy all implement `Probe()`; memsrc is the built-in test source and does not apply | ✅ 7/8 |
+| Hard scoping discipline | each source stats only its own declared root (hermes touches only `memories/*.md` and `state.db`, never `.env` / `mcp-tokens/`) | ✅ |
+
+### P4 Source type and UI — largely landed, with a boundary that differs from the decision text
+
+Landed: the derived mapping `SourceTypeFor` (`runtime.go:48`) + the four `SourceType` constants (`agent-import` / `user-conversation` / `project-extract` / `manual`) + three tests in `source_type_test.go` pinning the eight-source mapping and the unknown fallback + the settings-page type chip, detection status dot, detail, per-source sync switch, and preview/import-now buttons + the `settings.sourceTypes.*` i18n in both locales.
+
+**Two deviations, both closed on 2026-10-22**:
+
+1. **The `label` of decision 4 is not derived separately → kept as an i18n responsibility.** The decision text asks for a single `SourceType(source string) (type, label)` function returning both; the actual implementation leaves the wording in the frontend — the settings page resolves the text from `type` through `settings.sourceTypes.<type>`. This is a **better division of labour** (the wording does not travel with the server binary), so it does not match the decision text and is recorded here.
+2. **Decision 5's "note card shows the label by type, with a type-specific tone" → landed.** The `sourceLabel` in `NoteSection.tsx` used to build its badge from the capitalized source string (`Codex`, `Opencode`), a different vocabulary from the settings page's "Agent 记忆 / 会话记录" — the user could not tell from a card which category it belonged to. How it closed:
+   - The backend adds a **derived field** `source_type` to `domain.Note` (no new DB column — decision 4 already ruled that the classification is presentation semantics), filled by the service layer on the note-return path. The mapping function went from package-private to the exported `SourceTypeFor`, becoming a cross-layer **single source of truth** (the frontend never re-derives it, so the two cannot drift).
+   - The frontend adds a shared component `web/src/components/SourceTypeBadge.tsx`: label by type (through i18n) with a type tone (agent-import=info / user-conversation=accent / project-extract=success), the raw source name demoted to a tooltip (the user still sees whether it was claude or codex), and no badge at all for `manual` (a hand-written note has no provenance to mark).
+   - The component ships 5 tests pinning four contracts: `manual` renders no badge / an unknown type renders no badge (no guessing) / the type decides the tone / the raw name appears only in the tooltip.
+
+### P3 Scheduled sync — largely landed, the lastRun/lastError granularity now filled in
+
+Landed: all of `internal/service/knowledge_sync.go` (ticker whose first tick lands one interval after startup, `knowledge_sync_interval_minutes` defaulting to 240 minutes, per-source `sync_source_<name>` opt-ins, claude on by default and the rest off, `importMu` serializing against manual imports, one failing source not aborting the others) + 5 tests.
+
+**The original deviation (global granularity) closed on 2026-10-22**: decision 3 asks to "carry `lastRun`/`lastError` on `SourceStatus` for the settings page to show the last sync time and error", and originally only a global ticker-level `KnowledgeSyncStatus` existed (describing the round as a whole, `knowledge_sync.go:143-146`), which cannot answer "which source failed". How it closed: the per-source state lives in the **runtime layer** (`sourceEntry.lastRun` + `SourceStatus.last_run/last_error`), not in the service layer — because the manual import, the scheduled round and the startup auto-import **all go through `TriggerImport`**, so recording it in the runtime is the one place that sees all three paths; a second copy in the service layer would be a second truth. The settings page now shows each source's own last sync time and error, alongside the global round line.
+
+### P5 Verification and wrap-up — all three requirements met
+
+| Requirement | Actual | Verdict |
+|---|---|---|
+| golden-file regression (ADR-0011 decision 5) | **all seven sources now have a `testdata/` directory** under `internal/importers/` (28 sample files in total): the inline fixtures of claude / codex / codebuddy / opencode / openclaw / hermes / cursor were all migrated into sample files | ✅ established |
+| `go test ./internal/...` | green | ✅ |
+| GUI smoke walkthrough (source list discovery → scheduled sync → note badge → settings lastRun) | the full hermes chain ran in an isolated environment (isolated HOME + a read-only mount of the real `~/.hermes/state.db`) — see the table below | ✅ |
+
+**GUI smoke walkthrough, measured 2026-10-22**:
+
+| Step | Result |
+|---|---|
+| Probe | `detected=true`, detail "~/.hermes/state.db：发现会话库" |
+| First import | `created=1, updated=0, skipped=0` |
+| Re-run idempotency | `updated=1`, note count unchanged |
+| Imported content | the first question and the last reply are both preserved whole |
+| Target project | without `hermes_project` → lands in "Uncategorized" (the established semantics); with `hermes_project=lushan` → lands in project_id=41 |
+| Scheduled sync | `sync_source_hermes=1` with a 1-minute interval → `last_run` filled, `last_error` empty, note count unchanged (idempotent) |
+| Settings UI | the "Plugins" tab, hermes row: "Data found" + an "Agent 记忆" chip + the sync switch reading "Syncing" + the detail "~/.hermes/state.db：发现会话库" |
+
+Screenshots: `outputs/screenshots/2026-10-22-adr0022-closure/`.
+
+**The golden-file row was once filed as "form not met"**: the original intent of ADR-0011 decision 5 is "each source pins its parse result against fixed sample files", so that a drift in the source format raises an alarm immediately. What existed then was 66 tests using inline string samples — which pins the same parse results and alarms on the same drift. **The capability is equivalent**; the difference is only whether the samples live beside the code and whether a drift shows up as a cleaner diff. So it was filed as closure work rather than a defect.
+
+**Closed on 2026-10-22**: all seven sources migrated their inline fixtures into `testdata/` sample files, 28 files in total:
+
+| Source | Sample shape |
+|---|---|
+| claude | `testdata/memory/{project.md,notes.txt}` + `testdata/oversize/project.md` (the oversized file is still generated in code — a 1MB blob of 'x' has no business in the repo) |
+| codex | `testdata/rollout.jsonl` (with a non-JSON line) + `testdata/rollout-envelope.jsonl` (the real 2026-07 shape) |
+| codebuddy | `testdata/session/{index.json,messages/*.json}` + `testdata/fork/{index.json,messages/*.json}` |
+| opencode | `testdata/{session.json,object-summary.json,notjson.json,empty.json}` |
+| openclaw | `testdata/workspace/{SOUL.md,USER.md,notes.txt,sub/nested.md}` + `testdata/vault-roots.md` |
+| hermes | `testdata/memories/{MEMORY.md,USER.md,notmd.txt}` + `testdata/sibling/{leak.md,.env}` + `testdata/state.sql` |
+| cursor | `testdata/state.sql` + `testdata/workspaceStorage/<32-hex>/workspace.json` ×2 |
+
+The two SQLite-backed sources (hermes `state.db`, cursor `state.vscdb`) use a **`.sql` dump** rather than a binary `.db` file: a binary blob shows nothing in a diff when the format drifts, while a dump reads line by line — the schema and the rows *are* the definition of the real format. That is why `internal/importers/imptest` gained two shared helpers — `CopySample` (a file or a whole directory tree) and `ExecScript` (one Exec, many statements); they are shared across packages so the same copy of the logic cannot drift in seven places.
+
+The samples also **keep the negative cases**: every source's sample directory holds files that *must* be ignored (openclaw's `sub/nested.md`, hermes's `sibling/leak.md` and `sibling/.env`, cursor's unknown workspace, codex's non-JSON line), so the allowlist and the fault tolerance are pinned by the samples too — not just the "it parsed some content" half.
+
+### Closure list (by priority)
+
+1. ~~**P4 decision 5, note side**: the note card should classify by `SourceType` (label through i18n, tone by type), matching the settings-page vocabulary~~ — **closed (2026-10-22)**: the backend sends `source_type` + the frontend has the shared `SourceTypeBadge` component + 5 tests;
+2. ~~**P3 lastRun/lastError granularity**: add per-source `last_run` / `last_error` to `SourceStatus`~~ — **closed (2026-10-22)**: recorded in the runtime layer, displayed per source on the settings page;
+3. ~~**P5 golden-file**: give each source a `testdata/` directory and migrate the inline fixtures into sample files~~ — **closed (2026-10-22)**: all seven sources covered, 28 sample files, the two SQLite sources as `.sql` dumps;
+4. ~~**P5 GUI smoke walkthrough**: four steps — source list detection → enable scheduled sync for a source → note badge → settings lastRun~~ — **closed (2026-10-22)**: the full hermes chain ran in an isolated environment, see the table and the screenshots above.
+
+All four closure items are closed, so "the source type is visible to the user" truly closes the loop. The ADR stays Proposed — the design itself is still up for review — but **nothing is left on the implementation side**: P1–P5 now match what this ADR describes, and the three deviations of P3/P4 were corrected against the measurements and recorded.

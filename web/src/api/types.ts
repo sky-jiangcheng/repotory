@@ -147,6 +147,10 @@ export interface Note {
   kind: string
   pinned: boolean
   source: string
+  // Derived display bucket of `source` (ADR-0022 决策 4): "agent-import" |
+  // "user-conversation" | "project-extract" | "manual". Filled by the server,
+  // never computed here — one mapping, one truth.
+  source_type?: string
   sort_order: number
   created_at: string
   updated_at: string
@@ -280,6 +284,10 @@ export interface SourceStatus {
   // Derived display bucket: 'agent-import' | 'user-conversation' |
   // 'project-extract' | 'manual' (mirrors runtime.SourceType).
   type: string
+  // Per-source sync trail (ADR-0022 决策 3). The round-level status says
+  // "the last sync had a problem"; these say WHICH source and when.
+  last_run?: string
+  last_error?: string
 }
 
 export interface ImportRun {

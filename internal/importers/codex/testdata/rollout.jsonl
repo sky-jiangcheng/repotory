@@ -1,0 +1,6 @@
+{"timestamp":"2026-03-20T09:38:04.229Z","ordinal":0,"type":"session_meta","payload":{"session_id":"019d0a9b-8c9a-7f03","id":"019d0a9b-8c9a-7f03","timestamp":"2026-03-20T09:37:39.486Z","cwd":"/Users/u/Workspace/Foo"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the flaky test in auth"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done: guarded the timer and added a wait."}]}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_tokens":123}}}
+this is not json and must be skipped
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":"bare string reply"}}

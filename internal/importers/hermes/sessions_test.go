@@ -8,12 +8,19 @@ import (
 	"testing"
 
 	"repotory/internal/core/plugin"
+	"repotory/internal/importers/imptest"
 )
 
-// writeStateDB fabricates a Hermes state.db mirroring the layout confirmed
-// against TencentCloud/TencentDB-Agent-Memory's asset importer: a messages
-// table with (session_id, role, content, tool_call_id, tool_calls, tool_name,
+// writeStateDB materializes a Hermes state.db from the committed .sql sample.
+//
+// The sample mirrors the layout confirmed against
+// TencentCloud/TencentDB-Agent-Memory's asset importer: a messages table
+// with (session_id, role, content, tool_call_id, tool_calls, tool_name,
 // timestamp). Two sessions plus one tool-only session.
+//
+// A .sql dump rather than a committed .db file: a binary blob shows nothing
+// when the format drifts, while the dump reads as the schema and the rows it
+// is supposed to be (ADR-0011 decision 5).
 func writeStateDB(t *testing.T, path string) {
 	t.Helper()
 	st, err := sql.Open("sqlite", "file:"+path)
@@ -21,36 +28,7 @@ func writeStateDB(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = st.Close() }()
-
-	if _, err := st.Exec(`CREATE TABLE messages (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		session_id TEXT, role TEXT, content TEXT,
-		tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL)`); err != nil {
-		t.Fatalf("ddl: %v", err)
-	}
-	if _, err := st.Exec(`CREATE TABLE sessions (session_id TEXT, meta TEXT)`); err != nil {
-		t.Fatalf("ddl sessions: %v", err)
-	}
-
-	rows := []struct {
-		sid, role, content string
-		ts                 float64
-	}{
-		{"sess-alpha-0001", "user", "帮我修一下 auth 的 token 刷新", 100},
-		{"sess-alpha-0001", "assistant", "", 101}, // empty text: skipped, never an error
-		{"sess-alpha-0001", "tool", "tool output noise", 102},
-		{"sess-alpha-0001", "assistant", "已修复，记得轮换生产 cookie key", 103},
-		{"sess-bravo-0002", "user", "解释一下 grouper 的 monorepo 规则", 200},
-		{"sess-bravo-0002", "assistant", "父目录含多个子仓库时归为一个项目", 201},
-		{"sess-toolonly", "user", "", 300}, // no usable text: session dropped
-	}
-	for _, r := range rows {
-		if _, err := st.Exec(
-			`INSERT INTO messages(session_id, role, content, timestamp) VALUES (?, ?, ?, ?)`,
-			r.sid, r.role, r.content, r.ts); err != nil {
-			t.Fatalf("insert: %v", err)
-		}
-	}
+	imptest.ExecScript(t, st, "testdata/state.sql")
 }
 
 func TestImportSessionsFromStateDB(t *testing.T) {

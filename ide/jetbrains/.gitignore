@@ -1,0 +1,10 @@
+# Gradle build outputs / Gradle 构建产物
+build/
+.gradle/
+.kotlin/
+
+# IntelliJ Platform plugin tooling caches
+.intellijPlatform/
+
+# The distribution zip is a build artifact, not source: `gradle buildPlugin`
+# regenerates it. Release packaging picks it up from the build directory.

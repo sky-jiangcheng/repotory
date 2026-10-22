@@ -2,23 +2,13 @@ package hermes
 
 import (
 	"database/sql"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"repotory/internal/core/plugin"
+	"repotory/internal/importers/imptest"
 )
-
-func mustWrite(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestImportUsesHermesHomeAndAllowlist(t *testing.T) {
 	hermesHome := t.TempDir()
@@ -26,13 +16,13 @@ func TestImportUsesHermesHomeAndAllowlist(t *testing.T) {
 	// A bogus HOME proves $HERMES_HOME wins.
 	t.Setenv("HOME", t.TempDir())
 
-	mems := filepath.Join(hermesHome, "memories")
-	mustWrite(t, filepath.Join(mems, "MEMORY.md"), "agent notes body")
-	mustWrite(t, filepath.Join(mems, "USER.md"), "user profile body")
-	// Ignored: sibling secrets of the memories dir (never read) + non-md.
-	mustWrite(t, filepath.Join(hermesHome, ".env"), "SECRET=1")
-	mustWrite(t, filepath.Join(hermesHome, "leak.md"), "PARENT MUST NOT IMPORT")
-	mustWrite(t, filepath.Join(mems, "notmd.txt"), "x")
+	// The sample tree holds the cases at once: two imported files
+	// (memories/*.md) and three that must be ignored — a non-md file inside
+	// memories/, a .md sibling of the memories dir, and a secrets file next
+	// to it. The allowlist is memories/*.md ONLY, so nothing outside that
+	// one flat directory may ever be read.
+	imptest.CopySample(t, "testdata/memories", filepath.Join(hermesHome, "memories"))
+	imptest.CopySample(t, "testdata/sibling", hermesHome)
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()
@@ -57,7 +47,7 @@ func TestImportDefaultsToHomeWhenNoHermesHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("HERMES_HOME", "") // unset override -> use ~/.hermes
-	mustWrite(t, filepath.Join(home, ".hermes", "memories", "MEMORY.md"), "hello from home")
+	imptest.CopySample(t, "testdata/memories/MEMORY.md", filepath.Join(home, ".hermes", "memories", "MEMORY.md"))
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()
@@ -68,7 +58,7 @@ func TestImportDefaultsToHomeWhenNoHermesHome(t *testing.T) {
 	if len(docs) != 1 || docs[0].Title != "Hermes · MEMORY" {
 		t.Fatalf("expected 1 MEMORY doc, got %v", titles(docs))
 	}
-	if !strings.Contains(docs[0].Content, "hello from home") {
+	if !strings.Contains(docs[0].Content, "agent notes body") {
 		t.Errorf("content = %q", docs[0].Content)
 	}
 }

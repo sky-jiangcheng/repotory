@@ -110,9 +110,15 @@ type Note struct {
 	Kind      string `json:"kind"`
 	Pinned    bool   `json:"pinned"`
 	Source    string `json:"source"`
-	SortOrder int    `json:"sort_order"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	// SourceType is the DERIVED display bucket of Source (ADR-0022 决策 4):
+	// agent-import / user-conversation / project-extract / manual. It is not
+	// a database column — the classification is presentation semantics over
+	// the versioned source string, so the server fills it on the way out and
+	// the client never has to carry a second copy of the mapping.
+	SourceType string `json:"source_type,omitempty"`
+	SortOrder  int    `json:"sort_order"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 // NoteWithProject is a note joined with its parent project.

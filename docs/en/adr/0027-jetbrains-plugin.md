@@ -20,7 +20,7 @@ Capability-side facts (each verified):
 
 1. **Kick off, inheriting the thin-client discipline**: the plugin is a thin shell — it calls the shared service layer over headless HTTP (primarily `/api/rpc`) with zero logic duplication; it adds no execution interface (MCP stays the single execution interface, ADR-0007); the plugin evolves only with the external API, never with internal implementation. Any sub-proposal violating this discipline is out of the MVP.
 2. **MVP scope (porting the VS Code extension pattern)**:
-   - ① Knowledge-base search tool window: FTS/hybrid search over notes + wiki pages (via the existing search bindings; semantic and graph-aware retrieval follow the `semantic_search` / `wiki_graph_search` gates naturally — the plugin carries no gate logic and re-implements no ranking);
+   - ① Knowledge-base search tool window: FTS/hybrid search over notes + todos (via the existing `SearchAll` binding; semantic and graph-aware retrieval follow the `semantic_search` / `wiki_graph_search` gates naturally — the plugin carries no gate logic and re-implements no ranking);
    - ② Result jump: open the Repotory SPA in the system browser, located at that result (same-origin server address; deep-link routes follow the frontend as-is, supplemented during the MVP with minimal route parameters where missing; no full UI embedding inside the plugin);
    - ③ Settings page: server address (default `http://127.0.0.1:18765`) + connection health check;
    - ④ One-click MCP registration (reusing `repotory-init`'s registration approach, writing the JetBrains-side MCP client configuration) — if the IDE configuration surface proves too unstable during implementation, degrade to documentation guidance without blocking the MVP.
@@ -39,3 +39,46 @@ Capability-side facts (each verified):
 - Negative: +1 independent Kotlin/Gradle codebase (the doubled maintenance surface — ADR-0009's original reason for deferring, knowingly accepted by the owner given an explicit demand signal); one build covers only JetBrains, with no VSIX-style fork-family amortization.
 - Neutral: no contact with the scope freeze (`repotory` binary name / data directory / MCP prefix `repotory_*` unchanged; the plugin is a distribution surface, not platformization — ADR-0006's reconciliation clause continues to apply).
 - Legacy: Marketplace listing materials (screenshots / description / icon) and signing — distribution is now ruled as private-first, so this waits until the plugin stabilizes and the Marketplace agenda opens; the `sinceBuild` baseline is re-checked at the same time.
+
+## Implementation correction record (verified layer by layer while the MVP landed, 2026-10-22)
+
+The MVP has landed in `ide/jetbrains/` (Kotlin + Gradle, 7 source files); both `buildPlugin` and `verifyPlugin` (against IDEA CE 2025.2) pass. What follows records what the implementation measured and the corrections it forced on the decision text.
+
+### Decision 2①'s "wiki pages" search — measured, both ends are missing and the middle was never connected; the decision text is corrected
+
+Decision 2① originally read "FTS/hybrid search over notes + wiki pages (via the existing search bindings)". Verifying layer by layer while writing the code, the real state is **three segments, each with its own status**:
+
+| Layer | State of wiki-page search |
+|---|---|
+| db layer | ✅ **complete** — `db.SearchWikiPages` (`internal/db/wiki_fts.go:91`): the `wiki_pages_fts` FTS5 trigram index + bm25(3.0, 1.0) ranking + an **approved-only** filter (ADR-0015's core rule: a page no human has reviewed must never enter retrieval) + the same `escapeFTS` / `escapeFTSOR` relaxation as the notes path (a whole Chinese sentence expands into trigrams). Landed with ADR-0014 W2, with tests (`wiki_compile_test.go` / `wiki_community_test.go`) |
+| service / app binding layer | ❌ **not exposed** — `SearchAll` (`internal/db/search.go:205`) covers notes + todos only; the app bindings' retrieval set is `SearchProjects` / `SearchNotes` / `SearchAll`, with **no wiki-page search entry**. The note in ADR-0014 — "search is the first thing a consumer needs, and W2 is that consumer" — W2 landed long ago, and **the consumer never came** |
+| frontend | ❌ **no browsing surface** — no component in `web/src` renders the content of an approved wiki page (`Review.tsx` reads `p.content` in exactly two places: the pending review queue and the rejected tombstones); neither `/knowledge` nor `/review` accepts page parameters, and the route table (`web/src/App.tsx:324-333`) has no wiki-page entry. The real database holds **27 approved pages that are entirely invisible in the UI** |
+
+The VS Code extension (the first IDE distribution surface, whose pattern ADR-0027 requires the MVP to port) goes through `repotory_notes_search` and **also searches notes only**.
+
+**Ruling: decision 2① is corrected to "notes + todos" (via the existing `SearchAll` binding), and wiki-page search becomes a separate todo.** Three reasons:
+
+1. **The thin-client discipline requires the plugin to duplicate no logic.** For the plugin to search wiki pages, the service layer needs an entry point — and none exists. Writing the FTS query in the plugin (even by copying those few dozen db-layer lines) **is** logic duplication and violates Decision 1 directly.
+2. **Adding the backend binding alone does not close the loop.** Even if the service/app layer exposed `SearchWikiPages`, clicking a wiki hit in the plugin would land **nowhere** — there is no browsing surface and no addressable route for an approved page. Decision 2② asks to "open the Repotory SPA in the system browser, located at that result"; with no landing spot, that cannot be honored. The real gap is **"approved wiki pages are invisible to the user"** — an independent product gap (27 pages invisible in the UI), not a plugin problem, and closing it is a new feature rather than this ADR's wrap-up.
+3. **The porting principle comes first.** Decision 2's title is literally "MVP scope (**porting the VS Code extension pattern**)", and the VS Code side's capability set is notes. Aligning the MVP with its pattern beats shipping something outside that pattern in half-working form (findable but not reachable) inside the MVP.
+
+**Wiki-page search and its browsing surface are therefore filed as a separate todo in `TODO.md`**, to be specced in an ADR before any work: it needs a browsing UI and an addressable route for approved pages, a `SearchWikiPages` binding, and both IDE distribution surfaces consuming them.
+
+### Decision 2②'s deep-link parameters — taken from the frontend as-is, verified
+
+The plugin's first draft guessed `?note=` and `?page=`. The frontend's actual truth is `?noteId=` (`web/src/pages/ProjectDetail.tsx:58` reads `searchParams.get('noteId')`) and `?tab=todos` for todos (`web/src/App.tsx:323-337` route table). Corrected to match, and "deep-link routes follow the frontend as-is" is not read as license to invent parameters — the only reason a deep link exists is to **land the user where they can see something**.
+
+### Four real defects the compile verification exposed
+
+Compile verification (`buildPlugin` + `verifyPlugin` against IDEA CE 2025.2) surfaced four genuine problems in the first-draft code, all fixed:
+
+| Defect | Symptom | Fix |
+|---|---|---|
+| `IntelliJPlatformType` not imported | Gradle script compilation failure | added `import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType` |
+| Kotlin compiler older than the platform's metadata | a wall of "Module was compiled with an incompatible version of Kotlin (binary 2.2.0, expected 2.0.0)" plus an internal compiler error | Kotlin plugin 2.0.21 → **2.2.0** (a compiler must never be older than the metadata it reads) |
+| `RepotoryPanel` implemented `Disposable` but was used as a `JPanel` | "Unresolved reference" on `layout` / `add` | made it a `JPanel` + `Disposable` (a tool window needs a Swing component, and it must be releasable with its content) |
+| wrong `getToolWindow` entry point | "Unresolved reference 'getToolWindow'" | the correct entry is `ToolWindowManagerEx.getInstanceEx(project).getToolWindow(id)` (package `com.intellij.openapi.wm.ex`; `WindowManager` has no project-taking overload) |
+
+Also fixed: `plugin.xml` had no `<description>` — the Plugin Verifier ruled it an "Invalid plugin descriptor" (`<description>` is a required property of a valid plugin). It is now present.
+
+`verifyPlugin` reports **no compatibility problem** against IDEA CE 2025.2. The `sinceBuild=242` being lower than the build target 252 is deliberate (Decision 1 requires covering 2024.2+); the `build.gradle.kts` comment spells out that "the build target is the newest IDE, while the declared floor is the lowest version the plugin promises to support" — the plugin uses only platform APIs that exist in 242 (tool window, settings page, Swing, `java.net`), which is exactly what the Verifier is there to prove.

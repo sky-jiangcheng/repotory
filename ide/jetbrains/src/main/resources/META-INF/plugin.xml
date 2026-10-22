@@ -1,0 +1,55 @@
+<idea-plugin>
+    <!--
+      Repotory for JetBrains — thin client over the Repotory headless service.
+
+      ADR-0027 (Accepted 2026-10-22), decisions 2 and 3:
+        · IntelliJ IDEA CE first, platform-level compatibility: the plugin
+          declares com.intellij.modules.platform, so one build installs into
+          the whole IntelliJ family (including PyCharm CE on this machine)
+          without forking per product.
+        · sinceBuild 242 covers the owner's 2024.3 and current 2025.2.
+        · Session capture is NOT in the MVP.
+        · The server lifecycle is "connect only" — the plugin never starts or
+          supervises a server.
+
+      The plugin is a DISTRIBUTION surface, not a platform (ADR-0006): the
+      binary name, the data directory and the MCP prefix are untouched.
+    -->
+    <id>dev.repotory.jetbrains</id>
+    <name>Repotory</name>
+    <vendor email="sky-jiangcheng@users.noreply.github.com" url="https://github.com/sky-jiangcheng/repotory">Repotory</vendor>
+    <!-- The Plugin Verifier rejects a descriptor without <description> (it is
+         a required property of a valid plugin), and Marketplace shows it to
+         the user, so it says what the plugin actually does. -->
+    <description><![CDATA[
+        Search your Repotory knowledge base from inside the IDE and jump
+        straight to a note. The plugin is a thin client: it talks to a running
+        Repotory service over its local HTTP API and opens results in the
+        Repotory web app. It starts no server of its own — point it at one
+        under Settings | Tools | Repotory.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Repotory"
+                    anchor="right"
+                    icon="/icons/repotory.svg"
+                    factoryClass="dev.repotory.jetbrains.RepotoryToolWindowFactory"/>
+        <applicationService serviceImplementation="dev.repotory.jetbrains.RepotoryClient"/>
+        <applicationService serviceImplementation="dev.repotory.jetbrains.RepotorySettingsState"/>
+        <applicationConfigurable parentId="tools"
+                                 instance="dev.repotory.jetbrains.RepotoryConfigurable"
+                                 id="dev.repotory.jetbrains.settings"
+                                 displayName="Repotory"/>
+    </extensions>
+
+    <actions>
+        <action id="dev.repotory.jetbrains.OpenToolWindow"
+                class="dev.repotory.jetbrains.OpenRepotoryAction"
+                text="Repotory"
+                description="Open the Repotory knowledge search">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

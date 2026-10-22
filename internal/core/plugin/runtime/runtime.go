@@ -16,6 +16,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"repotory/internal/core/plugin"
 	"repotory/internal/db"
@@ -43,9 +44,15 @@ const (
 	SourceTypeManual SourceType = "manual"
 )
 
-// sourceTypeFor derives the display bucket from a source name. The mapping
+// SourceTypeFor derives the display bucket from a source name. The mapping
 // mirrors each importer's artifact shape (see internal/importers/*/).
-func sourceTypeFor(name string) SourceType {
+//
+// Exported because ADR-0022 决策 4 makes this the SINGLE server-side
+// derivation point for the display bucket: the settings page chip and the
+// note card badge must agree, and a frontend copy of this switch would let
+// the two drift. The service layer calls it when decorating notes with their
+// derived type.
+func SourceTypeFor(name string) SourceType {
 	switch name {
 	case "claude", "openclaw", "hermes", "codebuddy-memory":
 		return SourceTypeAgentImport
@@ -60,13 +67,21 @@ func sourceTypeFor(name string) SourceType {
 // Detected/Detail come from the source's optional probe (did the agent's data
 // actually show up on this machine); Enabled keeps its original meaning (did
 // the last import succeed); Type is the derived display bucket. ADR-0022 决策 1.
+//
+// LastRun/LastError are PER SOURCE (ADR-0022 决策 3 asks for them here, not
+// only at the aggregate round level): they record the most recent import
+// attempt of THIS source, whether it came from the periodic ticker, the
+// settings-page button, or the startup pass. The global round status stays
+// for "did the last round have a problem"; these answer "which source".
 type SourceStatus struct {
-	Name     string     `json:"name"`
-	Plugin   string     `json:"plugin"`
-	Detected bool       `json:"detected"`
-	Enabled  bool       `json:"enabled"`
-	Detail   string     `json:"detail"`
-	Type     SourceType `json:"type"`
+	Name      string     `json:"name"`
+	Plugin    string     `json:"plugin"`
+	Detected  bool       `json:"detected"`
+	Enabled   bool       `json:"enabled"`
+	Detail    string     `json:"detail"`
+	Type      SourceType `json:"type"`
+	LastRun   string     `json:"last_run,omitempty"`   // RFC3339; empty when never run
+	LastError string     `json:"last_error,omitempty"` // empty when the last run was clean
 }
 
 // sourceEntry is a registered knowledge importer with its latest run result.
@@ -77,6 +92,11 @@ type sourceEntry struct {
 	probeFn  func() plugin.ProbeResult
 	imported int
 	lastErr  error
+	// lastRun is when this source was last IMPORT ATTEMPTED (RFC3339, empty
+	// when never). It is per source rather than per round, so the settings
+	// page can say "hermes synced 2 minutes ago, codex failed 1 hour ago"
+	// instead of one aggregate timestamp for the whole set.
+	lastRun string
 	// auto marks sources eligible for the startup "import everything" pass
 	// (ImportAll). Curated sources (claude memory) are auto; privacy-sensitive
 	// transcript sources (codex, opencode, cursor, ...) are opt-in and only run
@@ -113,6 +133,8 @@ func (r *Runtime) SourceStatuses() []SourceStatus {
 		name    string
 		plugin  string
 		enabled bool
+		lastRun string
+		lastErr error
 		probeFn func() plugin.ProbeResult
 	}
 	entries := make([]snapshot, 0, len(r.sources))
@@ -121,6 +143,8 @@ func (r *Runtime) SourceStatuses() []SourceStatus {
 			name:    s.name,
 			plugin:  s.plugin,
 			enabled: s.lastErr == nil,
+			lastRun: s.lastRun,
+			lastErr: s.lastErr,
 			probeFn: s.probeFn,
 		})
 	}
@@ -128,7 +152,14 @@ func (r *Runtime) SourceStatuses() []SourceStatus {
 
 	out := make([]SourceStatus, 0, len(entries))
 	for _, e := range entries {
-		st := SourceStatus{Name: e.name, Plugin: e.plugin, Enabled: e.enabled, Type: sourceTypeFor(e.name)}
+		st := SourceStatus{
+			Name:      e.name,
+			Plugin:    e.plugin,
+			Enabled:   e.enabled,
+			Type:      SourceTypeFor(e.name),
+			LastRun:   e.lastRun,
+			LastError: errString(e.lastErr),
+		}
 		if e.probeFn != nil {
 			pr := safeProbe(e.probeFn)
 			st.Detected = pr.Detected
@@ -154,6 +185,16 @@ func safeProbe(fn func() plugin.ProbeResult) (pr plugin.ProbeResult) {
 		}
 	}()
 	return fn()
+}
+
+// errString renders an error for the status payload: empty when there is no
+// error, so "the last run was clean" is an absent field rather than an empty
+// string the UI has to special-case.
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // ImportRun summarizes a single knowledge import execution.
@@ -264,6 +305,7 @@ func (r *Runtime) TriggerImport(name string) (ImportRun, error) {
 	r.mu.Lock()
 	src.imported = run.Total()
 	src.lastErr = firstErr
+	src.lastRun = time.Now().Format(time.RFC3339)
 	r.mu.Unlock()
 	log.Printf("plugin runtime: import %q -> created %d, updated %d, skipped %d", name, run.Created, run.Updated, run.Skipped)
 	return run, nil
@@ -352,6 +394,7 @@ func (r *Runtime) PreviewImport(name string) (ImportPreview, error) {
 func (r *Runtime) recordSourceError(src *sourceEntry, err error) {
 	r.mu.Lock()
 	src.lastErr = err
+	src.lastRun = time.Now().Format(time.RFC3339)
 	r.mu.Unlock()
 }
 

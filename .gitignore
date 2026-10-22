@@ -54,6 +54,7 @@ docs/**/*.html
 .agents/
 .claude/
 .easyclaw/
+.omo/
 .trae-html-share-packages/
 .workbuddy/
 .zcode/

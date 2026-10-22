@@ -1,6 +1,6 @@
 # ADR-0022: 自动发现与定时同步 agent 记忆——来源类型用户可见
 
-- 状态：Proposed（方案待评审；注记 2026-10-19：独立先行项「CodeBuddy 接线」已随 v2.6.0 落地——source_type 暴露、knowledge_sync 定时同步与 CodeBuddy 双路导入源均已上线。**2026-10-21 逐阶段核验落码边界**：已落码= P1（`codebuddy_project` 双源注册，`internal/importers/codebuddy` + `internal/core/plugin/runtime` 测试绿）与 P3（`internal/service/knowledge_sync.go` ticker + `knowledge_sync_interval_minutes` 默认 240 分钟 + 七源 `sync_source_<name>` 逐源 opt-in）；**未落码**= P2 发现探活（runtime 无 `Probe` 契约、`SourceStatus` 无 detected/detail）、P4 来源类型 UI 泛化与 i18n、P5 收口验证。因此状态维持 Proposed——不是实现超前，而是分阶段方案里P2/P4/P5 尚未开工，整体方案仍待评审）
+- 状态：Proposed（**2026-10-22 逐阶段核验，五阶段实际落码边界与原状态行所述不符，按实测回写**）：**P1 接线** ✅ 已落码（`internal/service/plugin.go:115-116` 注册 codebuddy 双源，共八源；`internal/importers/codebuddy` 5 项测试）；**P2 发现探活** ✅ 已落码（`plugin.Prober` 接口 + `plugin.ProbeResult`，`internal/core/plugin/plugin.go:29-41`；`runtime.safeProbe` 带 panic 恢复，`internal/core/plugin/runtime/runtime.go:151`；`SourceStatus` 扩为 `{name, plugin, detected, enabled, detail, type, last_run, last_error}`；七源全部实现 `Probe()`，memsrc 为内置测试源不适用）；**P3 定时同步** ✅ 已落码（`internal/service/knowledge_sync.go` ticker，首跳推迟一个周期，`knowledge_sync_interval_minutes` 默认 240 分钟，逐源 `sync_source_<name>` opt-in，claude 默认开其余默认关；**per-source `lastRun`/`lastError` 已补**，落在 runtime 层 `SourceStatus`，手动导入与定时轮次共用同一份状态）；**P4 来源类型与 UI** ✅ 已落码（派生映射 `SourceTypeFor`（`runtime.go:48`，已导出为跨层单一真值源）+ `SourceType` 四值常量 + `source_type_test.go` 三项钉住 + 设置页类型 chip / 探活状态点 / detail / 逐源同步开关 / per-source 同步时间与错误 + `settings.sourceTypes.*` 双份 i18n；**笔记卡片已按类型显示 label + 类型色调**——新增共享组件 `web/src/components/SourceTypeBadge.tsx`（后端下发 `source_type`，前端不二次派生））；**P5 验证与收口** ✅ **已落码**（`go test ./internal/...` 全绿；**golden-file 回归已建立**——ADR-0011 决策 5 要求的「各源 golden-file 样本」已在 `internal/importers/` 下七源全覆盖（claude/codex/codebuddy/opencode/openclaw/hermes/cursor，共 28 个样本文件；两个 SQLite 源用 `.sql` dump 形态，共享辅助 `internal/importers/imptest`）；**GUI 真机冒烟已做**——隔离环境下走通 hermes 源「探活 → 导入 → 幂等复跑 → 定时同步 → 设置页展示」全链路，见 `outputs/screenshots/2026-10-22-adr0022-closure/`）。**状态维持 Proposed**：P4 与 P3 的三处偏差已全部收口，P5 的 golden-file 目录形态亦已收口，实施侧无遗留项；方案本身仍待评审）
 - 日期：2026-10-14
 - 关联：[ADR-0011](0011-multi-agent-memory-importers.md)（多 agent 记忆源导入）、[ADR-0014](0014-llm-wiki-knowledge-compiler.md)（LLM Wiki 知识编译层）、[ADR-0015](0015-w3-minimal-compile-loop.md)（W3 最小编译闭环）、[ADR-0007](0007-session-memory-protocol.md)（会话记忆协议）、[ADR-0009](0009-ide-presence.md)（IDE 存在感）、TODO 会话记忆路线 M2/M8
 
@@ -71,3 +71,84 @@
 - **P3 定时同步**：`knowledge_sync.go` ticker + `knowledge_sync_interval_minutes` + 逐源 `sync_source_<name>` + 设置页开关与 lastRun 展示。
 - **P4 来源类型与 UI**：`SourceType` 派生函数 + 测试（钉住上表映射 + 未知兜底）；NoteSection 来源 badge 泛化；设置页每源类型/开关信息增强；i18n 文案。
 - **P5 验证与收口**：golden-file 回归保持（ADR-0011 决策 5）；`go test ./internal/...`；GUI 真机冒烟（源列表发现 → 开启某源定时同步 → 笔记 badge → 设置页 lastRun）；本 ADR 的晋升与实施修正记录按项目惯例在落地后回填。
+
+## 实施修正记录（2026-10-22 逐阶段核验）
+
+上一版状态行写「P2/P4/P5 尚未开工」，逐阶段对代码核验后发现**两条已过时、一条部分过时**。核验方法：不读索引行，逐阶段对实现与测试（ADR 状态行会滞后于代码，索引行则滞后于正文）。
+
+### P2 发现探活 —— 原写「未开工」，实为完全落码
+
+| 决策要素 | 落点 | 状态 |
+|---|---|---|
+| `Probe() ProbeResult` 契约 | `internal/core/plugin/plugin.go:29-41`（`ProbeResult{Detected, Detail}` + 可选能力接口 `Prober`） | ✅ |
+| 注册即探活 | `internal/core/plugin/runtime/runtime.go:151` `safeProbe`（带 panic 恢复，单源探活失败不拖垮整个设置页） | ✅ |
+| `SourceStatus` 扩展 | `runtime.go:63-70`，`{name, plugin, detected, enabled, detail, type}` | ✅ |
+| 七源各自探活 | claude / codex / opencode / openclaw / hermes / cursor / codebuddy 均实现 `Probe()`；memsrc 是内置测试源，不适用 | ✅ 7/8 |
+| 硬 scoping 纪律 | 各源只 stat 自身声明根目录（hermes 只碰 `memories/*.md` 与 `state.db`，不读 `.env` / `mcp-tokens/`） | ✅ |
+
+### P4 来源类型与 UI —— 主体落码，与决策文本有偏差
+
+已落码：派生映射 `SourceTypeFor`（`runtime.go:48`）+ `SourceType` 四值常量（`agent-import` / `user-conversation` / `project-extract` / `manual`）+ `source_type_test.go` 三项测试钉住八源映射与未知兜底 + 设置页类型 chip、探活状态点、detail、逐源同步开关、预览/立即导入按钮 + `settings.sourceTypes.*` 双份 i18n。
+
+**偏差两处，均已收口（2026-10-22）**：
+
+1. **决策 4 的 `label` 未单独派生 → 保留为前端 i18n 职责**。决策文本写 `SourceType(source string) (type, label)` 单函数同时返回类型与文案；实际实现把文案留在前端——设置页按 `type` 走 i18n 取 `settings.sourceTypes.<type>`。这是**更合理的分工**（文案不随服务端二进制走），与决策文本不符，故记录在此并按此实现。
+2. **决策 5 的「笔记卡片按类型显示 label + 类型色调」→ 已落码**。原先 `NoteSection.tsx` 的 `sourceLabel` 按 source 字符串首字母大写生成 badge（如 `Codex`、`Opencode`），与设置页的「Agent 记忆 / 会话记录」是两套词汇，用户从卡片看不出类别。收口方式：
+   - 后端在 `domain.Note` 上加**派生字段** `source_type`（不加 DB 列——决策 4 已定「分类是展示语义」），由 service 层在笔记返回路径上填充，映射函数从包内私有改为导出的 `SourceTypeFor`，成为跨层**单一真值源**（前端不二次派生，避免两处漂移）；
+   - 前端新增共享组件 `web/src/components/SourceTypeBadge.tsx`：按类型给 label（走 i18n）与色调（agent-import=info / user-conversation=accent / project-extract=success），原始来源名降为 tooltip（用户仍能看出是 claude 还是 codex），`manual` 不出 badge（手写笔记无来源可标）；
+   - 组件自带 5 项测试，钉住「manual 不出 badge / 未知类型不出 badge（不猜）/ 类型决定色调 / 原名只在 tooltip」四条契约。
+
+### P3 定时同步 —— 主体落码，lastRun/lastError 粒度已补齐
+
+已落码：`internal/service/knowledge_sync.go` 全部（ticker 首跳推迟一个周期、`knowledge_sync_interval_minutes` 默认 240 分钟、逐源 `sync_source_<name>` opt-in、claude 默认开其余默认关、`importMu` 与手动导入串行、失败不中断其余源）+ 5 项测试。
+
+**原偏差（全局粒度）已收口（2026-10-22）**：决策 3 要求「在 `SourceStatus` 带上 `lastRun`/`lastError` 供设置页展示上次同步时间与错误」，原先只有全局 ticker 级的 `KnowledgeSyncStatus`（描述整轮），回答不了「哪个源上次出错」。收口方式：per-source 状态落在 **runtime 层**（`sourceEntry.lastRun` + `SourceStatus.last_run/last_error`），而非 service 层 —— 因为手动导入、定时轮次、启动时 auto-import 三条路径**都经由 `TriggerImport`**，记在 runtime 是唯一能看到全部三条路径的地方；在 service 层另存一份就是第二份真相。设置页每个源行内展示本来源上次同步时间与错误，与全局轮次行并存。
+
+### P5 验证与收口 —— 三项全部达成
+
+| 要求 | 实际 | 判定 |
+|---|---|---|
+| golden-file 回归（ADR-0011 决策 5） | `internal/importers/` 下**七源全部建了 `testdata/` 目录**（28 个样本文件）：claude / codex / codebuddy / opencode / openclaw / hermes / cursor 各源的内联 fixture 全部迁成样本文件 | ✅ 已建立 |
+| `go test ./internal/...` | 全绿 | ✅ |
+| GUI 真机冒烟（源列表发现 → 定时同步 → 笔记 badge → 设置页 lastRun） | 隔离环境（隔离 HOME + 只读挂真实 `~/.hermes/state.db`）下走通 hermes 源全链路，见下表 | ✅ |
+
+**GUI 真机冒烟实测结果（2026-10-22）**：
+
+| 步骤 | 结果 |
+|---|---|
+| Probe 探活 | `detected=true`，detail「~/.hermes/state.db：发现会话库」 |
+| 首次导入 | `created=1, updated=0, skipped=0` |
+| 复跑幂等 | `updated=1`，笔记数不变 |
+| 导入内容 | 首条提问 + 末条回复完整保留 |
+| 目标项目 | 未设 `hermes_project` → 落「未分类」（既定语义）；设 `hermes_project=lushan` → 落 project_id=41 |
+| 定时同步 | `sync_source_hermes=1` + 间隔 1 分钟 → `last_run` 已填、`last_error` 空、笔记数不变（幂等） |
+| 设置页 UI | 「插件」标签页 hermes 行：「已发现数据」+「Agent 记忆」chip + 同步开关「同步中」+ detail「~/.hermes/state.db：发现会话库」 |
+
+截图见 `outputs/screenshots/2026-10-22-adr0022-closure/`。
+
+**golden-file 这条曾一度记为「形态未达标」**：ADR-0011 决策 5 的原意是「各源用固定样本文件锁住解析结果」，目的是源格式漂移时立即报警。原先 66 项测试用内联字符串样本 —— 同样能锁住解析结果，同样会在格式漂移时报警，**能力上等价**，差别只在样本与代码是否同处一文件、漂移时 diff 是否更醒目。所以当时记为收口项而非缺陷。
+
+**已收口（2026-10-22）**：七源全部把内联 fixture 迁成 `testdata/` 下的样本文件，共 28 个文件：
+
+| 源 | 样本形态 |
+|---|---|
+| claude | `testdata/memory/{project.md,notes.txt}` + `testdata/oversize/project.md`（超长文件仍程序生成，避免仓库里躺 1MB 的 'x'） |
+| codex | `testdata/rollout.jsonl`（含非 JSON 行）+ `testdata/rollout-envelope.jsonl`（真实 2026-07 形态） |
+| codebuddy | `testdata/session/{index.json,messages/*.json}` + `testdata/fork/{index.json,messages/*.json}` |
+| opencode | `testdata/{session.json,object-summary.json,notjson.json,empty.json}` |
+| openclaw | `testdata/workspace/{SOUL.md,USER.md,notes.txt,sub/nested.md}` + `testdata/vault-roots.md` |
+| hermes | `testdata/memories/{MEMORY.md,USER.md,notmd.txt}` + `testdata/sibling/{leak.md,.env}` + `testdata/state.sql` |
+| cursor | `testdata/state.sql` + `testdata/workspaceStorage/<32-hex>/workspace.json` ×2 |
+
+两个 SQLite 源（hermes `state.db` / cursor `state.vscdb`）用 **`.sql` dump** 而非二进制 `.db` 文件：二进制 blob 在格式漂移时 diff 里什么都看不出来，而 dump 逐行可读，schema 与行数据本身就是「真实格式」的定义。为此在 `internal/importers/imptest` 加了两个共享辅助 —— `CopySample`（文件或目录树）与 `ExecScript`（一次 Exec 灌多语句）；跨包共享是为了避免同一段复制逻辑在七个包里各自漂移。
+
+样本同时**保留了负例**：每个源的样本目录里都躺着「必须被忽略」的文件（openclaw 的 `sub/nested.md`、hermes 的 `sibling/leak.md` 与 `sibling/.env`、cursor 的未知 workspace、codex 的非 JSON 行），让 allowlist 与容错行为也被样本锁住，而不只是锁住「能解析出内容」这一半。
+
+### 收口清单（按优先级）
+
+1. ~~**P4 决策 5 笔记侧**：笔记卡片改按 `SourceType` 分类显示（label 走 i18n、按类型给色调），与设置页口径一致~~ —— **已收口（2026-10-22）**：后端下发 `source_type` + 前端共享 `SourceTypeBadge` 组件 + 5 项测试；
+2. ~~**P3 lastRun/lastError 粒度**：`SourceStatus` 补 per-source 的 `last_run` / `last_error`~~ —— **已收口（2026-10-22）**：落在 runtime 层，设置页逐源展示；
+3. ~~**P5 golden-file**：八源各建 `testdata/` 目录，把内联 fixture 迁成样本文件~~ —— **已收口（2026-10-22）**：七源全覆盖，28 个样本文件，两个 SQLite 源用 `.sql` dump；
+4. ~~**P5 GUI 真机冒烟**：源列表探活 → 开启某源定时同步 → 笔记 badge → 设置页 lastRun 四步走查~~ —— **已收口（2026-10-22）**：隔离环境下 hermes 源全链路走通，见上表与截图。
+
+四项收口项全部关闭，「来源类型对用户可见」闭环达成。ADR 状态仍维持 Proposed —— 方案本身仍待评审，但**实施侧已无遗留项**：P1–P5 的落码边界与本 ADR 所述一致，P3/P4 的三处偏差已按实测修正并记录。

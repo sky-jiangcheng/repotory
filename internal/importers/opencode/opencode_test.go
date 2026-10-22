@@ -20,8 +20,6 @@ func fakeXDGData(t *testing.T) string {
 	return dir
 }
 
-const sessionFixture = `{"id":"ses_3dd894b12ffeUXjGy50UmJ8UpQ","slug":"mighty-engine","version":"1.1.36","projectID":"9a6f0de","directory":"/Users/u/Workspace/CodeStat","title":"Add caching layer","time":{"created":1770104730861,"updated":1770104758303},"summary":"Introduced an in-memory cache and wired invalidation into the write path."}`
-
 func writeSession(t *testing.T, root, hash, name, body string) {
 	t.Helper()
 	dir := filepath.Join(root, "opencode", "storage", "session", hash)
@@ -33,9 +31,22 @@ func writeSession(t *testing.T, root, hash, name, body string) {
 	}
 }
 
+// sampleSession copies a session sample from testdata/ into the session root
+// and returns its body. The samples live as files (ADR-0011 decision 5) so a
+// drift in the on-disk format shows up as a diff on the sample, next to the
+// test that broke.
+func sampleSession(t *testing.T, root, hash, sample, name string) {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("testdata", sample))
+	if err != nil {
+		t.Fatalf("read sample %s: %v", sample, err)
+	}
+	writeSession(t, root, hash, name, string(body))
+}
+
 func TestImportProducesNote(t *testing.T) {
 	root := fakeXDGData(t)
-	writeSession(t, root, "projhash", "ses_abc.json", sessionFixture)
+	sampleSession(t, root, "projhash", "session.json", "ses_abc.json")
 
 	database, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -70,24 +81,7 @@ func TestImportProducesNote(t *testing.T) {
 
 func TestImportToleratesObjectSummary(t *testing.T) {
 	root := fakeXDGData(t)
-	writeSession(t, root, "h", "real.json", `
-{
-  "id": "ses_12345678",
-  "slug": "test-engine",
-  "version": "1.0",
-  "projectID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "directory": "/some/path",
-  "title": "会话标题",
-  "time": {
-    "created": 0,
-    "updated": 0
-  },
-  "summary": {
-    "additions": 1,
-    "deletions": 2,
-    "files": 3
-  }
-}`)
+	sampleSession(t, root, "h", "object-summary.json", "real.json")
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()
@@ -122,9 +116,9 @@ func TestImportToleratesObjectSummary(t *testing.T) {
 }
 func TestImportIgnoresGarbageAndEmpty(t *testing.T) {
 	root := fakeXDGData(t)
-	writeSession(t, root, "h", "good.json", sessionFixture)
-	writeSession(t, root, "h", "notjson.json", "{ this is not json")
-	writeSession(t, root, "h", "empty.json", `{"id":"ses_x","projectID":"p","directory":"/x/y","title":"","slug":"","summary":""}`)
+	sampleSession(t, root, "h", "session.json", "good.json")
+	sampleSession(t, root, "h", "notjson.json", "notjson.json")
+	sampleSession(t, root, "h", "empty.json", "empty.json")
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()

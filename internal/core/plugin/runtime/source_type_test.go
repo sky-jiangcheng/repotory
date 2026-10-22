@@ -22,8 +22,8 @@ func TestSourceTypeForBuiltinSources(t *testing.T) {
 		{"codebuddy", SourceTypeConversation},
 	}
 	for _, tc := range cases {
-		if got := sourceTypeFor(tc.name); got != tc.want {
-			t.Errorf("sourceTypeFor(%q) = %q, want %q", tc.name, got, tc.want)
+		if got := SourceTypeFor(tc.name); got != tc.want {
+			t.Errorf("SourceTypeFor(%q) = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -33,8 +33,8 @@ func TestSourceTypeForBuiltinSources(t *testing.T) {
 // misleading type — it falls back to Manual so the UI always has a label.
 func TestSourceTypeForFallback(t *testing.T) {
 	for _, name := range []string{"", "unknown", "my-plugin", "codebuddy-memory-old"} {
-		if got := sourceTypeFor(name); got != SourceTypeManual {
-			t.Errorf("sourceTypeFor(%q) = %q, want %q", name, got, SourceTypeManual)
+		if got := SourceTypeFor(name); got != SourceTypeManual {
+			t.Errorf("SourceTypeFor(%q) = %q, want %q", name, got, SourceTypeManual)
 		}
 	}
 }

@@ -309,6 +309,7 @@
     "lastSyncAt": "上次定时同步：{{time}}",
     "neverSynced": "尚未运行定时同步",
     "syncLastError": "上次同步出错：{{msg}}",
+    "sourceLastSyncAt": "本来源上次同步：{{time}}",
     "groupSync": "定时同步",
     "syncHint": "按固定间隔（默认 240 分钟）自动导入已开启的来源；未检测到数据的来源会自动跳过。立即导入仍可通过列表中的按钮手动触发。",
     "groupTargets": "全局记忆源 · 目标项目",

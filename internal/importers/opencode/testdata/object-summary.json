@@ -1,0 +1,17 @@
+{
+  "id": "ses_12345678",
+  "slug": "test-engine",
+  "version": "1.0",
+  "projectID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "directory": "/some/path",
+  "title": "会话标题",
+  "time": {
+    "created": 0,
+    "updated": 0
+  },
+  "summary": {
+    "additions": 1,
+    "deletions": 2,
+    "files": 3
+  }
+}

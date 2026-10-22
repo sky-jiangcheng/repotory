@@ -71,6 +71,17 @@ func (c countingImporter) Import() ([]plugin.ImportDoc, error) {
 	return nil, nil
 }
 
+// failingImporter always fails its import, for the per-source error trail.
+type failingImporter struct {
+	source string
+	err    error
+}
+
+func (f failingImporter) Source() string { return f.source }
+func (f failingImporter) Import() ([]plugin.ImportDoc, error) {
+	return nil, f.err
+}
+
 // probeImporter is a staticImporter that also implements plugin.Prober.
 type probeImporter struct {
 	staticImporter

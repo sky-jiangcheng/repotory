@@ -9,6 +9,7 @@ import (
 
 	"repotory/internal/core/plugin"
 	"repotory/internal/db"
+	"repotory/internal/importers/imptest"
 )
 
 // fakeHome redirects os.UserHomeDir via HOME env var.
@@ -80,17 +81,9 @@ func TestImportScansMemoryDir(t *testing.T) {
 	home := fakeHome(t)
 	claudeDir := filepath.Join(home, ".claude", "projects")
 	memDir := filepath.Join(claudeDir, "-Users-u-Workspace-Proj", "memory")
-	if err := os.MkdirAll(memDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(memDir, "project.md"),
-		[]byte("---\ntitle: x\n---\nhello world"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Non-md file must be ignored.
-	if err := os.WriteFile(filepath.Join(memDir, "notes.txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The sample tree holds both cases: project.md (imported, frontmatter
+	// stripped) and notes.txt (ignored — not markdown).
+	imptest.CopySample(t, "testdata/memory", memDir)
 
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -145,12 +138,10 @@ func TestImportSkipsOversizedFile(t *testing.T) {
 	home := fakeHome(t)
 	claudeDir := filepath.Join(home, ".claude", "projects")
 	memDir := filepath.Join(claudeDir, "-Users-u-Workspace-Proj", "memory")
-	if err := os.MkdirAll(memDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(memDir, "project.md"), []byte("hello world"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	imptest.CopySample(t, "testdata/oversize", memDir)
+	// The oversized file is generated rather than stored: a sample big enough
+	// to exceed the cap would put a megabyte of 'x' into the repository, and
+	// its size is defined by db.MaxNoteContentLen anyway.
 	if err := os.WriteFile(filepath.Join(memDir, "huge.md"),
 		[]byte(strings.Repeat("x", db.MaxNoteContentLen+1)), 0o644); err != nil {
 		t.Fatal(err)

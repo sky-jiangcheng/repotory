@@ -10,6 +10,7 @@ import (
 
 	"repotory/internal/core/plugin"
 	"repotory/internal/db"
+	"repotory/internal/importers/imptest"
 )
 
 func fakeHome(t *testing.T) string {
@@ -19,26 +20,15 @@ func fakeHome(t *testing.T) string {
 	return dir
 }
 
-func mustWrite(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestImportAllowlistsWorkspaceMarkdown(t *testing.T) {
 	home := fakeHome(t)
 	ws := filepath.Join(home, ".openclaw-autoclaw", "workspace")
-	mustWrite(t, filepath.Join(ws, "SOUL.md"), "---\nfm: yes\n---\nsoul body text")
-	mustWrite(t, filepath.Join(ws, "USER.md"), "user profile body")
-	// Must be ignored: non-md, a subdir file (no recursion), and a sibling of
-	// workspace under the secret-bearing parent.
-	mustWrite(t, filepath.Join(ws, "notes.txt"), "x")
-	mustWrite(t, filepath.Join(ws, "sub", "nested.md"), "nested")
-	mustWrite(t, filepath.Join(home, ".openclaw-autoclaw", "vault-roots.md"), "PARENT MUST NOT IMPORT")
+	// The sample tree holds the four cases at once: two imported files
+	// (SOUL.md with frontmatter, USER.md without) and three that must be
+	// ignored (a non-md file, a subdirectory file — no recursion — and a
+	// sibling of workspace under the secret-bearing parent).
+	imptest.CopySample(t, "testdata/workspace", ws)
+	imptest.CopySample(t, "testdata/vault-roots.md", filepath.Join(home, ".openclaw-autoclaw", "vault-roots.md"))
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()

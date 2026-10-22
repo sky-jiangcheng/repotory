@@ -310,6 +310,7 @@
     "lastSyncAt": "Last periodic sync: {{time}}",
     "neverSynced": "Periodic sync has not run yet",
     "syncLastError": "Last sync error: {{msg}}",
+    "sourceLastSyncAt": "This source last synced: {{time}}",
     "groupSync": "Periodic sync",
     "syncHint": "Automatically imports enabled sources on a fixed interval (default 240 minutes); sources with no detected data are skipped. Manual imports still work via the per-source button.",
     "groupTargets": "Global-memory sources · target project",

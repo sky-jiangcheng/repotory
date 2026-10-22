@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	pluginruntime "repotory/internal/core/plugin/runtime"
 	"repotory/internal/db"
 	"repotory/internal/domain"
 )
@@ -27,6 +28,9 @@ func (s *Service) ListNotes(projectID int64) []domain.Note {
 	}
 	if notes == nil {
 		notes = []domain.Note{}
+	}
+	for i := range notes {
+		notes[i].SourceType = string(pluginruntime.SourceTypeFor(notes[i].Source))
 	}
 	return notes
 }
@@ -140,6 +144,9 @@ func (s *Service) listAllNotes(limit int) []domain.NoteWithProject {
 	}
 	if notes == nil {
 		notes = []domain.NoteWithProject{}
+	}
+	for i := range notes {
+		notes[i].SourceType = string(pluginruntime.SourceTypeFor(notes[i].Source))
 	}
 	return notes
 }

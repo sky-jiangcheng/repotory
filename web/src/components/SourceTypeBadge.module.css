@@ -1,0 +1,21 @@
+/* Source type badge (ADR-0022 决策 5) — one colour per derived bucket, so
+   the same type reads the same way in the settings list, the note card and
+   the search results. The tones reuse the design-system tokens; the mapping
+   from bucket to colour lives in SourceTypeBadge.tsx. */
+
+.badge {
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Imported agent memory — the default "came from outside" tone. */
+.toneAgentImport { background: var(--info-soft); color: var(--info); }
+
+/* A conversation the user had with an agent. */
+.toneConversation { background: var(--accent-soft); color: var(--accent); }
+
+/* Knowledge extracted out of the project itself. */
+.toneProjectExtract { background: var(--success-soft); color: var(--success); }

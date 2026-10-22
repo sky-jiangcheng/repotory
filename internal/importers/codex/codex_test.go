@@ -9,6 +9,7 @@ import (
 
 	"repotory/internal/core/plugin"
 	"repotory/internal/db"
+	"repotory/internal/importers/imptest"
 	"repotory/internal/importers/memsrc"
 )
 
@@ -20,15 +21,14 @@ func fakeHome(t *testing.T) string {
 	return dir
 }
 
-// fixture mirrors the verified real rollout shape (session_meta line 1, then
-// response_item message events whose content is an array of {type,text}).
-const fixture = `{"timestamp":"2026-03-20T09:38:04.229Z","ordinal":0,"type":"session_meta","payload":{"session_id":"019d0a9b-8c9a-7f03","id":"019d0a9b-8c9a-7f03","timestamp":"2026-03-20T09:37:39.486Z","cwd":"/Users/u/Workspace/Foo"}}
-{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the flaky test in auth"}]}}
-{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done: guarded the timer and added a wait."}]}}
-{"type":"event_msg","payload":{"type":"token_count","info":{"total_tokens":123}}}
-this is not json and must be skipped
-{"type":"response_item","payload":{"type":"message","role":"assistant","content":"bare string reply"}}
-`
+// sampleRollout copies a rollout sample from testdata/ into dest. The samples
+// live as files (ADR-0011 decision 5) so a drift in the on-disk format shows
+// up as a diff on the sample, next to the test that broke — an inline
+// fixture only shows a string that changed.
+func sampleRollout(t *testing.T, sample, dest string) {
+	t.Helper()
+	imptest.CopySample(t, filepath.Join("testdata", sample), dest)
+}
 
 func TestExtractText(t *testing.T) {
 	arr := []byte(`[{"type":"output_text","text":"a"},{"type":"refusal","text":""},{"type":"text","text":"b"}]`)
@@ -46,9 +46,7 @@ func TestExtractText(t *testing.T) {
 func TestParseRolloutFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rollout-fixture.jsonl")
-	if err := os.WriteFile(path, []byte(fixture), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	sampleRollout(t, "rollout.jsonl", path)
 	p, err := parseRolloutFile(path)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -85,16 +83,6 @@ func TestTitleForStableAndUnique(t *testing.T) {
 	}
 }
 
-// fixtureEnvelope mirrors a real 2026-07 rollout: the first user message is the
-// injected <environment_context> block (later ones carry an AGENTS.md heading
-// too), and only the THIRD user message is an actual instruction.
-const fixtureEnvelope = `{"type":"session_meta","payload":{"session_id":"019f7f28-1121","timestamp":"2026-07-20T10:00:00Z","cwd":"/Users/u/Documents/he"}}
-{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/Users/u/Documents/he</cwd>\n  <shell>zsh</shell>\n  <filesystem><workspace_roots><root>/Users/u/Documents/he</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"}]}}
-{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Sure, what should I do?"}]}}
-{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/u/Documents/he\n\n<INSTRUCTIONS>\n<!-- BEGIN:nextjs-agent-rules -->\nbreaking changes\n<!-- END:nextjs-agent-rules -->\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/Users/u/Documents/he</cwd>\n</environment_context>\n\n真正的指令：把首页的中英文切换按钮补上"}]}}
-{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"按钮已加好。"}]}}
-`
-
 func TestStripBoilerplate(t *testing.T) {
 	cases := []struct {
 		name string
@@ -127,9 +115,7 @@ func TestStripBoilerplate(t *testing.T) {
 // is a sandbox-permission XML dump (observed on all 50 sampled notes).
 func TestParseRolloutFileSkipsInjectedEnvelopes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rollout-envelope.jsonl")
-	if err := os.WriteFile(path, []byte(fixtureEnvelope), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	sampleRollout(t, "rollout-envelope.jsonl", path)
 	p, err := parseRolloutFile(path)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -151,9 +137,7 @@ func TestImportProducesNote(t *testing.T) {
 	if err := os.MkdirAll(sess, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sess, "rollout-a.jsonl"), []byte(fixture), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	sampleRollout(t, "rollout.jsonl", filepath.Join(sess, "rollout-a.jsonl"))
 	// A non-jsonl file and a message-less file must be ignored.
 	if err := os.WriteFile(filepath.Join(sess, "notes.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
