@@ -8,6 +8,8 @@
 
 ### 变更
 
+- **M7 lane 2 生产管线激活（live 全管线口径兑现，2026-10-22）**：live 库此前 `semantic_search` 关、embedding 端点未配，图感知取证实际跑的是 FTS-only 分阶口径（+0.023）。本日经运行中 headless server 的 `/api/rpc`（`UpdateConfig`×4 + `RebuildEmbeddings` + `RebuildPageEmbeddings`，零直写，vector store memo 失效走服务自身路径）写入端点（LM Studio `http://localhost:1234/v1`，`text-embedding-nomic-embed-text-v1.5`，dim=768）、开启 `semantic_search`，双向量队列 3 秒排空（笔记 133 / approved 页 27，落库行数经 vec0 影子表核对）。live 直评证据门（22 案例 enriched 集）：**k=2/5/10/20 delta recall +0.114 / +0.159 / +0.205 / +0.205（ndcg 全正），与晋升 v4 副本度量逐点一致，22 案例零回退**——生产口径由 FTS-only +0.023 升级为全管线 +0.205。激活前 live 库已文件备份（`repotory.db.backup-20261022-093904`，含 wal/shm）。过程发现并如实记录一处工具债：`abeval`/`abevaldiag` 在「快照已含页面向量」时内置重建撞 UNIQUE、告警文案与实况不符（测量不受影响，见 TODO 工具债条）。
+- **JetBrains 插件立项（ADR-0027，Accepted）**：ADR-0009 决策 4 的缓议门槛由项目所有者本人给出需求信号解除；新 ADR 承接薄客户端纪律（插件经 headless HTTP 调共享服务层，零逻辑复制），MVP=检索 toolwindow + 浏览器跳转 + server 设置；4 项开放问题同日拍板：IntelliJ IDEA CE 先行（平台级兼容、基线 242）/ 私有分发先行 / 会话捕捉不入 MVP / server 仅连接。
 - **品牌图标重设计（Plex R，平涂）**：旧标仍是 RepoNest 时期的「仓库卡片 + 巢碗」直译，16px 下卡片与双弧线互相挤压。`build/icon.svg` 改为 IBM Plex Sans Bold 的 R 轮廓（SIL OFL 1.1）：字母本身由字体设计师做过比例校正，品牌只负责底色、颜色与应用。最终版去掉渐变、内描边这类模板化装饰，单色平涂 `#0F2244` + `#F6F8FC`，cap 320、按视觉重心（外框居中会偏左）居中，16/32/64/128/512 逐档验证。`docs/favicon.svg` 与源文件逐字节一致，`BrandMark.tsx` 与 VS Code 单色 `repotory.svg` 同构；`BrandMark.test.tsx` 守卫「单条填充路径 + 真内白 + 无渐变 / 无描边」。v2 描边、v3 手绘圆角为中间探索，过程见 `outputs/icon-redesign-v2/`、`outputs/icon-redesign-v3/`，最终决策见 `outputs/icon-redesign-v4/设计决策.md`。
 
 ## [2.10.0] - 2026-10-21
