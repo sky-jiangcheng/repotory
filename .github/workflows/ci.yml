@@ -285,10 +285,12 @@ jobs:
         run: git diff --exit-code -- repotory-init/index.mjs
 
   # ------------------------------------------------------ JetBrains plugin ----
-  # Same reasoning as the VS Code job above: release.yml does not build the
-  # JetBrains plugin at all, so a Kotlin compile error in ide/jetbrains could
-  # sit on master indefinitely — the only gate was somebody running
-  # `gradle buildPlugin` by hand. This job is that gate.
+  # Same reasoning as the VS Code job above. release.yml only builds the
+  # JetBrains plugin on a `v*` tag (once per release, in the
+  # `jetbrains-plugin` and `publish-jetbrains-marketplace` jobs), so without
+  # this job a Kotlin compile error in ide/jetbrains could sit on master
+  # indefinitely — the only gate was somebody running `gradle buildPlugin` by
+  # hand. This job is that per-push gate.
   #
   # It builds, it does not verify: `verifyPlugin` downloads a full IDE (about
   # 1.2 GB) on top of the platform distribution this build already needs, and
