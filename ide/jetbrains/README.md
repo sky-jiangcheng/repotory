@@ -63,11 +63,9 @@ Search covers **notes and todos**, through the same `SearchAll` binding the desk
 
 ## Install
 
-The plugin is **privately distributed first** (ADR-0027, ruling 2) — it is not on the JetBrains Marketplace yet. Install the zip from disk:
+**From the JetBrains Marketplace** (2026-10-22): **Settings | Plugins | Marketplace**, search for **Repotory**, install, restart the IDE. Every released version is published there with the same version number as the desktop app.
 
-1. Download or build `repotory-jetbrains-<version>.zip` (below).
-2. **Settings | Plugins | ⚙ | Install Plugin from Disk…** and pick the zip.
-3. Restart the IDE.
+**From disk** (offline / pre-release builds): download the zip attached to a GitHub Release and use **Settings | Plugins | ⚙ | Install Plugin from Disk…**, then restart.
 
 The plugin is a thin client — every answer comes from the same `internal/service` layer as the Repotory desktop app, read from your local SQLite knowledge base. Nothing leaves your machine.
 
@@ -98,5 +96,26 @@ gradle verifyPlugin    # reports API misuse and binary-compatibility problems
 ```
 
 CI runs `gradle buildPlugin` on every push and pull request (`jetbrains-plugin-test` in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)), so a Kotlin breakage cannot sit on `master` unnoticed. `verifyPlugin` is heavier (it downloads a full IDE) and is run locally: `gradle verifyPlugin`.
+
+### Publishing to the JetBrains Marketplace
+
+`release.yml` publishes the tagged build with `gradle publishPlugin` (`publish-jetbrains-marketplace` job). It needs one secret and optionally three signing secrets:
+
+| Secret | Required | What it is |
+|---|---|---|
+| `JETBRAINS_MARKETPLACE_TOKEN` | yes | Permanent token from **https://plugins.jetbrains.com/author/me/tokens** |
+| `JETBRAINS_CERTIFICATE_CHAIN` | no | PEM certificate chain (Marketplace "verified vendor" badge) |
+| `JETBRAINS_PRIVATE_KEY` | no | PEM private key |
+| `JETBRAINS_PRIVATE_KEY_PASSWORD` | no | Password of that key |
+
+Without the token the job skips with a warning and the zip stays on the GitHub Release, so a release never fails on a missing credential. Without the signing secrets the upload is unsigned — Marketplace accepts it; only the badge is missing.
+
+To publish by hand (same artifacts, same token):
+
+```bash
+JETBRAINS_MARKETPLACE_TOKEN=… gradle publishPlugin
+```
+
+The first upload of a brand-new plugin has to be done once from the vendor account (the Marketplace creates the plugin page and assigns its numeric public URL); every later version can come from CI. The version is never passed as an argument — `build.gradle.kts` already carries the release version stamped by `scripts/bump-version.sh`, so the Marketplace listing, the GitHub zip and the desktop app share one number.
 
 Architecture and scope: [ADR-0027](https://github.com/sky-jiangcheng/repotory/blob/master/docs/en/adr/0027-jetbrains-plugin.md). The plugin talks to the loopback-only headless service over `GET /health` and `POST /api/rpc`; zero business logic lives here.

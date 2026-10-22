@@ -138,13 +138,13 @@ Details: [`ide/vscode/README.md`](ide/vscode/README.md).
 
 ## JetBrains Plugin (preview)
 
-One build installs into the whole IntelliJ family — IDEA, PyCharm, GoLand, WebStorm — because it uses platform APIs only. It is the same thin client as the VS Code extension, pointed at the loopback headless service instead of stdio: a tool window that searches your notes and todos, and opens a result in the Repotory web UI. Distribution is **private-first** for now (not on the JetBrains Marketplace), so build the zip and install it from disk:
+One build installs into the whole IntelliJ family — IDEA, PyCharm, GoLand, WebStorm — because it uses platform APIs only. It is the same thin client as the VS Code extension, pointed at the loopback headless service instead of stdio: a tool window that searches your notes and todos, and opens a result in the Repotory web UI. It ships on the **JetBrains Marketplace** (search for **Repotory** under Settings | Plugins | Marketplace) and as a zip on every Release for offline installs. Build it from source with:
 
 ```bash
 cd ide/jetbrains && gradle buildPlugin   # → build/distributions/repotory-jetbrains-<version>.zip
 ```
 
-Result links land somewhere only if the server serves its web UI: start it with `--web-dist web/dist-server` (the `npm run build:server` output). Without it the server is API-only and every result link 404s — the plugin detects that and says so rather than sending you to a dead page.
+Result links land somewhere only if the server serves its web UI: start it with `--web-dist web/dist-server` (the `npm run build:server` output), or just press **Start local service** in the plugin, which launches the release bundle with its `web/` directory. Without it the server is API-only and every result link 404s — the plugin detects that and says so rather than sending you to a dead page.
 
 Details: [`ide/jetbrains/README.md`](ide/jetbrains/README.md).
 

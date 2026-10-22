@@ -29,7 +29,7 @@ Capability-side facts (each verified):
 ## Ruling on the open questions (2026-10-22, delegated by the owner)
 
 1. **Target IDE family and version baseline → IntelliJ IDEA CE first, platform-level compatibility, baseline 242 (2024.2+)**. Measured on the owner's machine: the daily JetBrains IDE is IntelliJ IDEA CE (`/Applications/IntelliJ IDEA CE.app` = 2025.2.6.1, support dir `IdeaIC2025.2`, plus an `IntelliJIdea2024.3-backup`; no GoLand anywhere — the original question's "e.g. GoLand" premise does not hold). The plugin declares `com.intellij.modules.platform`: every API the MVP needs (tool window / settings page / browser jump / HTTP) is pure platform API, so one build installs into the whole IntelliJ family (including the PyCharm CE on this machine) with no per-product fork. `sinceBuild=242` covers the owner's recent 2024.3 and current 2025.2 with margin; development and acceptance run on IDEA CE 2025.2; the baseline is re-checked before any public distribution.
-2. **Distribution → private distribution first** (disk share / private update site; no signing or review friction); Marketplace revisited once the plugin stabilizes (original recommendation adopted).
+2. **Distribution → JetBrains Marketplace plus the GitHub Release zip** (2026-10-22 revision of the original "private-first" ruling): the plugin is published to the JetBrains Marketplace, using `gradle publishPlugin` on every product tag with the same version number; the zip stays a GitHub Release asset for offline / air-gapped manual installs. Signing is optional (a missing secret produces an unsigned upload, which Marketplace accepts); the first upload must be done once by the owner from a vendor account and passes Marketplace review.
 3. **Session capture → out of the MVP**: strictly align with the VS Code extension's validated capability set; terminal/capture integration waits for a real pain point (original recommendation adopted).
 4. **Server lifecycle → reuse first, with one-click start of a local instance** (2026-10-22 usability revision, replacing the original "connect-only"): by default the plugin reuses whatever answers on `serverUrl`; when nothing answers, it may start a **local** `repotory-server`. Four boundaries, all required: ① it only uses a binary the user already has (setting → `REPOTORY_SERVER_BIN` → `PATH` → common install directories) — no download, no build, no package-manager proxy; ② it only starts for a loopback address and refuses remote ones; ③ it never starts while `/health` answers, so it never races an existing instance for the port; ④ on IDE exit it stops only the child it spawned, never a user-started instance. Distribution accordingly gains `repotory-server-<platform>` assets (binary + `web/`; the plugin passes `--web-dist` itself), without which "one-click start" would be an empty promise for end users. The lifecycle item ADR-0009 left behind is hereby settled on the JetBrains side; the VS Code extension stays on MCP + on-demand headless connections and is not widened this round.
 
@@ -38,7 +38,7 @@ Capability-side facts (each verified):
 - Positive: the JetBrains family gains visible in-IDE presence (tool window / settings), completing the second distribution shelf; the thin-client discipline keeps the maintenance surface limited to API-layer evolution; the search backend directly benefits from the lane-2 production pipeline (`semantic_search` + graph-aware evidence enabled 2026-10-22), so the plugin inherits the full-pipeline caliber at zero extra cost.
 - Negative: +1 independent Kotlin/Gradle codebase (the doubled maintenance surface — ADR-0009's original reason for deferring, knowingly accepted by the owner given an explicit demand signal); one build covers only JetBrains, with no VSIX-style fork-family amortization.
 - Neutral: no contact with the scope freeze (`repotory` binary name / data directory / MCP prefix `repotory_*` unchanged; the plugin is a distribution surface, not platformization — ADR-0006's reconciliation clause continues to apply).
-- Legacy: Marketplace listing materials (screenshots / description / icon) and signing — distribution is now ruled as private-first, so this waits until the plugin stabilizes and the Marketplace agenda opens; the `sinceBuild` baseline is re-checked at the same time.
+- Legacy: Marketplace listing materials (description / icon / change notes) were filled in with the 2026-10-22 publishing setup, and signing runs off CI secrets (optional). Two external steps remain outside this codebase — the owner creating a vendor account and doing the first upload, and Marketplace reviewing the first version — tracked in `TODO.md`.
 
 ## Implementation correction record (verified layer by layer while the MVP landed, 2026-10-22)
 
@@ -91,6 +91,8 @@ The owner reported two problems after using the plugin: ① unclear whether it w
 
 The first build declared `sinceBuild=242` + `untilBuild="243.*"`, intending "cover 2024.2 through 2024.3". The actual semantics are an **upper bound**: every IDE from 2025.1 onward — including the 2025.2 build target itself — is judged incompatible and refuses to load the plugin. The `build.gradle.kts` comment even said "untilBuild 243.* so the plugin stays installable on 2024.2", which is backwards. It now declares only `sinceBuild=242`, with no upper bound. That is defensible: the plugin uses only platform APIs present in 242, and if a future platform breaks one of them, the Plugin Verifier — not a hard-coded year — is what finds out.
 
+Checking the packaged artifact before publishing exposed a second layer of the same trap: **removing `untilBuild = "243.*"` is not enough**. When the property is left untouched, the IntelliJ Platform Gradle Plugin's `patchPluginXml` fills in `<idea-version until-build="<build target>.*"/>` — this repo actually produced `until-build="252.*"` — silently re-capping the plugin at the IDE it was built against. Only an explicit `untilBuild = provider { null }` omits it; with that in place, `plugin.xml` inside the built zip contains just `<idea-version since-build="242" />`.
+
 ### Java 8: unrelated to the project JDK, now documented
 
 The plugin runs on the IDE's bundled JBR (Java 21 on 2024.2+); it does not load the project JDK, compile user code, or depend on Java 8 APIs. **A JDK 8 project can therefore use the plugin normally.** The only Java 21 requirement is building the plugin from source (`jvmToolchain(21)`), which never affects end users. Both the Requirements and Compatibility sections of `ide/jetbrains/README.md` now say so explicitly.
@@ -110,3 +112,18 @@ Distribution follows: `release.yml` gains a `Build headless server bundle` step 
 
 - One-click MCP registration stays out of the JetBrains MVP (Decision 2④'s degradation clause still applies; `repotory-init` only prints manual guidance).
 - The VS Code extension is not widened to start a headless service — its MCP path already works standalone, and this round gave it multi-source binary resolution, silent registration and a diagnostics panel.
+
+## JetBrains Marketplace publishing (2026-10-22, revising ruling 2)
+
+The owner explicitly required the IDEA plugin to be published to the plugin store, so ruling 2 moves from "private-first" to "Marketplace plus the GitHub Release zip". Code and release changes:
+
+| Surface | Change |
+|---|---|
+| Build | `build.gradle.kts` gains `publishing { token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN") }`; `gradle publishPlugin` uploads the `buildPlugin` artifact. The three signing environment variables (`CERTIFICATE_CHAIN` / `PRIVATE_KEY` / `PRIVATE_KEY_PASSWORD`) configure `signing` **only when all three exist**; otherwise the upload is unsigned (Marketplace accepts it; only the "verified vendor" badge is missing) |
+| Metadata | `pluginConfiguration.changeNotes` points at `CHANGELOG.md` (no second release narrative, ADR-0017 criterion 3); new `META-INF/pluginIcon.svg` / `pluginIcon_dark.svg` (40×40, the same R glyph re-fitted) |
+| CI | `release.yml` gains `publish-jetbrains-marketplace`: `needs: create-release`, tag-only. When `JETBRAINS_MARKETPLACE_TOKEN` is missing it emits `::warning::` and skips — the zip still ships on the GitHub Release, so a release never fails on a missing credential |
+| Version | No version argument is passed to `publishPlugin`: `build.gradle.kts` is stamped from `wails.json` by `scripts/bump-version.sh`, so the Marketplace listing, the GitHub zip and the desktop app share one number |
+
+**Two steps remain manual** (outside the codebase): ① the owner performs the **first** upload from a vendor account — Marketplace then creates the plugin page and assigns the numeric public URL, after which CI can publish every later version; ② Marketplace review of the first version. The plugin ID `dev.repotory.jetbrains` is immutable after the first upload, hence finalized before it.
+
+**Artifact check**: after `buildPlugin`, the jar's `plugin.xml` inside the zip was inspected — `<idea-version since-build="242" />` (no `until-build`), `<change-notes>` and both `pluginIcon*.svg` present; `gradle verifyPlugin` remains Compatible.
