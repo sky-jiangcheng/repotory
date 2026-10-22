@@ -40,7 +40,7 @@ func newTestServer(t *testing.T) *testServer {
 		t.Fatalf("init db: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	svc := service.New(database, "tester")
+	svc := service.New(database, "tester", nil)
 	s := server.NewMCPServer("repotory-mcp", "test")
 	registerTools(s, svc)
 	registerContextTools(s, svc)

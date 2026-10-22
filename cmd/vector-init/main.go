@@ -70,7 +70,7 @@ func main() {
 		log.Fatalf("vector-init: open db: %v", err)
 	}
 	defer database.Close()
-	svc := service.New(database, "vector-init")
+	svc := service.New(database, "vector-init", nil)
 
 	// 1. Environment: SQLite + vec extension.
 	var vecVersion string

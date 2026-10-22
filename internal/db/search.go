@@ -406,38 +406,59 @@ func escapeLike(s string) string {
 }
 
 func makeSnippet(content, query string) string {
-	// HTML-escape the content first so any HTML in note text is neutralised.
-	escaped := html.EscapeString(content)
 	// HTML-escape the query for safe insertion into <mark> tags.
 	escQuery := html.EscapeString(query)
 
-	if len(escaped) <= searchSnippetWindow {
+	// Find the match position in the original (unescaped) content first.
+	// We lowercase both for case-insensitive matching, but position is in original text.
+	lowerContent := strings.ToLower(content)
+	lowerQuery := strings.ToLower(query)
+	idx := strings.Index(lowerContent, lowerQuery)
+
+	start := 0
+	end := searchSnippetWindow
+
+	if idx >= 0 {
+		// Window centered on the match in the original content.
+		start = idx - searchSnippetWindow/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + searchSnippetWindow
+		if end > len(content) {
+			end = len(content)
+		}
+		// Clamp both ends to valid UTF-8 boundaries so we don't split a
+		// multi-byte character (common with CJK text where each rune is 3 bytes).
+		for end > start && end < len(content) && !utf8.RuneStart(content[end]) {
+			end--
+		}
+		for start < end && !utf8.RuneStart(content[start]) {
+			start++
+		}
+		// Only HTML-escape the window slice, not the full content.
+		window := content[start:end]
+		escaped := html.EscapeString(window)
 		return highlightQuery(escaped, escQuery)
 	}
-	idx := strings.Index(strings.ToLower(escaped), strings.ToLower(escQuery))
-	if idx < 0 {
-		return highlightQuery(escaped[:clampToRuneStart(escaped, searchSnippetWindow)], escQuery)
+
+	// No match found: fall back to centering on the start of the content,
+	// using only a window and escaping that.
+	if len(content) <= searchSnippetWindow {
+		escaped := html.EscapeString(content)
+		return highlightQuery(escaped, escQuery)
 	}
-	start := idx - searchSnippetWindow/2
-	if start < 0 {
-		start = 0
-	}
-	end := start + searchSnippetWindow
-	if end > len(escaped) {
-		end = len(escaped)
-	}
-	// Clamp both ends to valid UTF-8 boundaries so we don't split a
-	// multi-byte character (common with CJK text where each rune is 3 bytes).
-	// The `end < len(escaped)` guard is essential: when end == len(escaped)
-	// the slice already ends on a valid boundary and escaped[end] would panic.
-	for end > start && end < len(escaped) && !utf8.RuneStart(escaped[end]) {
+	start = 0
+	end = searchSnippetWindow
+	for end > start && end < len(content) && !utf8.RuneStart(content[end]) {
 		end--
 	}
-	for start < end && !utf8.RuneStart(escaped[start]) {
+	for start < end && !utf8.RuneStart(content[start]) {
 		start++
 	}
-	snippet := escaped[start:end]
-	return highlightQuery(snippet, escQuery)
+	window := content[start:end]
+	escaped := html.EscapeString(window)
+	return highlightQuery(escaped, escQuery)
 }
 
 // clampToRuneStart backs an end offset up to the start of the rune containing

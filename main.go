@@ -45,7 +45,7 @@ func main() {
 	// Create the service core and the thin Wails binding layer over it. Scan
 	// roots are seeded through the service (shared with the MCP server) so the
 	// first-run behaviour is identical on both entry points.
-	svc := service.New(database, gitUser)
+	svc := service.New(database, gitUser, nil)
 	svc.EnsureDefaultScanRoots()
 	a := app.New(svc)
 

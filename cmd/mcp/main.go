@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("database error: %v", err)
 	}
 	defer d.Close()
-	svc := service.New(d, platform.GetGitUserName())
+	svc := service.New(d, platform.GetGitUserName(), nil)
 
 	mcpServer := server.NewMCPServer("repotory-mcp", version.Version)
 	registerTools(mcpServer, svc)

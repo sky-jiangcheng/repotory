@@ -6,12 +6,76 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"repotory/internal/db"
 	"repotory/internal/domain"
 	"repotory/internal/search/hybrid"
 	"repotory/internal/search/vectordb"
 )
+
+// queryEmbedCache LRU cache for query embeddings within a single search cycle.
+// Key = (endpoint, model, query), value = []float32. Capacity 128, TTL 5 minutes.
+// Cache lives with the Service instance; it is NOT persisted to disk (privacy).
+// invalidateVectorStore also drops this cache so a reconfigured endpoint
+// starts fresh.
+type queryEmbedCache struct {
+	mu      sync.Mutex
+	entries map[string]cacheEntry
+	cap     int
+}
+
+type cacheEntry struct {
+	val    []float32
+	expire int64 // unix nanoseconds when entry expires
+}
+
+func newQueryEmbedCache(cap int) *queryEmbedCache {
+	return &queryEmbedCache{
+		entries: make(map[string]cacheEntry),
+		cap:     cap,
+	}
+}
+
+// get retrieves a cached embedding if present and not expired.
+func (c *queryEmbedCache) get(key string) ([]float32, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ent, ok := c.entries[key]
+	if !ok {
+		return nil, false
+	}
+	if ent.expire == 0 || ent.expire > nowNano() {
+		return ent.val, true
+	}
+	// expired -> delete and miss
+	delete(c.entries, key)
+	return nil, false
+}
+
+// set stores a new entry, evicting oldest if at capacity.
+func (c *queryEmbedCache) set(key string, val []float32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= c.cap {
+		// simple eviction: remove the first entry (unordered map, pick any)
+		for k := range c.entries {
+			delete(c.entries, k)
+			break
+		}
+	}
+	c.entries[key] = cacheEntry{
+		val:    val,
+		expire: nowNano() + 5*60*1e9, // 5 minutes in nanoseconds
+	}
+}
+
+// nowNano returns the current time in nanoseconds since Unix epoch.
+func nowNano() int64 {
+	return time.Now().UnixNano()
+}
+
+// ... rest of import and type definitions
 
 // M3-A semantic search wiring (ADR-0012). Default OFF: nothing here runs unless
 // `semantic_search=="1"`. Even when enabled, every failure (endpoint not set,

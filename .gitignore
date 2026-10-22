@@ -16,6 +16,7 @@
 /repotory-wiki-export
 /git-dashboard
 /mcp
+/searchbench
 
 # Wails build output / Wails 构建输出
 build/bin/

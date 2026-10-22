@@ -28,7 +28,7 @@ func newRPCHandler(t *testing.T) *handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	return &handler{svc: service.New(d, "me"), bound: reflect.ValueOf(fakeBound{})}
+	return &handler{svc: service.New(d, "me", nil), bound: reflect.ValueOf(fakeBound{})}
 }
 
 func rpc(t *testing.T, h *handler, body string) (int, map[string]any) {

@@ -80,7 +80,7 @@ func main() {
 	}
 
 	gitUser := platform.GetGitUserName()
-	svc := service.New(database, gitUser)
+	svc := service.New(database, gitUser, nil)
 
 	// Seed default scan roots like the desktop App and MCP entry points do
 	// (idempotent via the scan_roots_seeded flag): without it a fresh headless

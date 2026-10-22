@@ -49,7 +49,8 @@ func main() {
 	}
 	defer database.Close()
 
-	res, err := service.New(database, "claude-hook").CaptureClaudeSessionByCwd(cwd)
+	svc := service.New(database, "claude-hook", nil)
+	report, err := svc.CaptureClaudeSessionByCwd(cwd)
 	if err != nil {
 		// Disabled-by-config or no-matching-project are expected, non-fatal for a
 		// hook; still surface them so operators can debug, but exit 0 so a failed
@@ -57,7 +58,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "repotory-capture: %v\n", err)
 		return
 	}
-	fmt.Printf("repotory-capture: wrote handoff note %d (%q)\n", res.NoteID, res.Title)
+	fmt.Printf("repotory-capture: wrote handoff note %d (%q)\n", report.NoteID, report.Title)
 }
 
 // resolveCwd prefers the flag, then a {"cwd": "..."} stdin object (Claude Code

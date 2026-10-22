@@ -101,7 +101,7 @@ func runEvidenceGate(casesPath, dbPath string, k int, minRecall float64) int {
 	}
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
-	svc := service.New(database, "abeval")
+	svc := service.New(database, "abeval", nil)
 
 	// graphSearchEnabled() reads app_config on EVERY call, so the arms must flip
 	// the key immediately before searching — toggling once up front left both
