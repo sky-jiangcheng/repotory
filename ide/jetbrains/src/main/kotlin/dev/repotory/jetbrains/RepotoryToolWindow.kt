@@ -300,6 +300,23 @@ class RepotoryPanel : JPanel(), Disposable {
 }
 
 /**
+ * SearchAll returns the snippet as highlighted HTML (`…<mark>sqlite</mark>…`);
+ * the web UI renders it as HTML after DOMPurify. This panel is a plain JLabel,
+ * so the tags would otherwise show up literally. Strip them and decode the
+ * entities the server escaped, keeping the matched words in place.
+ *
+ * `&amp;` is decoded last: doing it first would turn `&amp;lt;` into `&lt;`
+ * and then into `<`, i.e. invent a tag the server never sent.
+ */
+private fun plainSnippet(raw: String): String =
+    raw.replace(Regex("<[^>]*>"), "")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+
+/**
  * Renders one hit on a single line: the title, then the kind and a trimmed
  * snippet.
  *
@@ -320,7 +337,7 @@ private class HitRenderer : javax.swing.DefaultListCellRenderer() {
         if (component is javax.swing.JLabel && value is RepotoryHit) {
             val line = StringBuilder(value.title.ifBlank { "(untitled)" })
             if (value.type.isNotBlank()) line.append("  ·  ").append(value.type)
-            if (value.snippet.isNotBlank()) line.append("  ·  ").append(value.snippet.take(120))
+            if (value.snippet.isNotBlank()) line.append("  ·  ").append(plainSnippet(value.snippet).take(120))
             component.text = line.toString()
             component.toolTipText = line.toString()
         }
