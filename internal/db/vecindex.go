@@ -108,15 +108,21 @@ func ClearVectorIndex(db *sql.DB) error {
 }
 
 // PutNoteEmbedding upserts a note's vector, keyed by note id (the vec0 rowid).
+// vec0 does NOT honour INSERT OR REPLACE for an existing rowid (it raises
+// "UNIQUE constraint failed ... primary key"), so the upsert is an explicit
+// delete-then-insert: the incremental drainer re-embeds edited notes through
+// this path.
 func PutNoteEmbedding(db *sql.DB, noteID int64, vec []float32) error {
 	blob, err := encodeVector(vec)
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(
-		fmt.Sprintf("INSERT OR REPLACE INTO %s(rowid, embedding) VALUES(?, ?)", vecTableName),
-		noteID, blob)
-	if err != nil {
+	if _, err := db.Exec("DELETE FROM "+vecTableName+" WHERE rowid = ?", noteID); err != nil {
+		return fmt.Errorf("db: replace embedding note %d: %w", noteID, err)
+	}
+	if _, err := db.Exec(
+		fmt.Sprintf("INSERT INTO %s(rowid, embedding) VALUES(?, ?)", vecTableName),
+		noteID, blob); err != nil {
 		return fmt.Errorf("db: put embedding note %d: %w", noteID, err)
 	}
 	return nil

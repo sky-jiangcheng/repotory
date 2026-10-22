@@ -5,6 +5,31 @@ import (
 	"testing"
 )
 
+// vec0 does NOT honour INSERT OR REPLACE for an existing rowid (it raises
+// "UNIQUE constraint failed ... primary key"), so PutNoteEmbedding's upsert
+// contract requires delete-then-insert: the incremental note drainer re-embeds
+// edited notes through this path.
+func TestPutNoteEmbedding_ReplacesExistingRow(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+	if err := EnsureVectorIndex(database, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := PutNoteEmbedding(database, 7, []float32{1, 0}); err != nil {
+		t.Fatalf("first put: %v", err)
+	}
+	if err := PutNoteEmbedding(database, 7, []float32{0, 1}); err != nil {
+		t.Fatalf("re-put existing row: %v", err)
+	}
+	ids, err := KnnNoteIDs(database, []float32{0, 1}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != 7 {
+		t.Fatalf("knn after re-put = %v, want exactly [7]", ids)
+	}
+}
+
 func TestVecIndexLifecycle(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
