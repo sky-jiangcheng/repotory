@@ -26,10 +26,6 @@
 
 - 实施计划总览：[outputs/process-logs/Repotory-知识图谱实施计划-2026-10-09.md](outputs/process-logs/Repotory-知识图谱实施计划-2026-10-09.md)（Phase 1-4）
 
-### 工具债
-
-- [ ] **abeval / abevaldiag 证据门工具小修**：快照已含页面向量时，内置 `RebuildPageEmbeddings` 撞 UNIQUE（工具假定评估快照无向量），且告警文案「graph arm seeds from FTS only」与实况不符——实测向量种子生效（k=2..20 与晋升 v4 逐点一致）。测量不受影响；重建路径（先清后插或改 upsert）与文案待修（2026-10-22 生产管线激活时发现）。
-
 ### 用户动作 / 外部依赖
 
 - [x] **真库事故收尾（2026-10-14）**：已完全闭环并归档至 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。源重导找回 48 条（笔记总数 107）、本地每日本地快照（L1）与 S3 远端推送（L2）均已交付。
