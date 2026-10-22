@@ -35,6 +35,14 @@
         "title": "Repotory: Register MCP Server (repotory-init)"
       },
       {
+        "command": "repotory.diagnose",
+        "title": "Repotory: Setup & Diagnostics"
+      },
+      {
+        "command": "repotory.setMcpPath",
+        "title": "Repotory: Set repotory-mcp Path"
+      },
+      {
         "command": "repotory.openDesktop",
         "title": "Repotory: Open Desktop App"
       }
@@ -67,6 +75,11 @@
           "command": "repotory.openDesktop",
           "when": "view == repotory.notesSearch",
           "group": "navigation"
+        },
+        {
+          "command": "repotory.diagnose",
+          "when": "view == repotory.notesSearch",
+          "group": "navigation"
         }
       ]
     },
@@ -77,6 +90,11 @@
           "type": "string",
           "default": "http://127.0.0.1:18765",
           "description": "Repotory headless service URL (repotory server)."
+        },
+        "repotory.mcpPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the repotory-mcp executable. Leave empty to auto-detect from PATH, Homebrew/Scoop directories and the extension storage. Set it from the Command Palette with \"Repotory: Set repotory-mcp Path\"."
         }
       }
     },

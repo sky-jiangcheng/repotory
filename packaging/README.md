@@ -13,11 +13,16 @@ tag, and the manifests below point at them:
 | `repotory-mcp-darwin-arm64.tar.gz` / `repotory-mcp-darwin-amd64.tar.gz` | macOS MCP server | Homebrew Cask |
 | `repotory-mcp-linux-amd64.tar.gz` | Linux MCP server | Homebrew Formula |
 | `repotory-mcp-windows-amd64.zip` | Windows MCP server | Scoop |
+| `repotory-server-darwin-arm64.tar.gz` / `repotory-server-darwin-amd64.tar.gz` | macOS headless server + web UI | JetBrains plugin one-click start |
+| `repotory-server-linux-amd64.tar.gz` | Linux headless server + web UI | JetBrains plugin one-click start |
+| `repotory-server-windows-amd64.zip` | Windows headless server + web UI | JetBrains plugin one-click start |
 
 The desktop app is macOS/Windows/Linux, but only macOS has a real installer
 artifact (`.dmg`); Linux ships a bare tarball and Windows a zip. The MCP server
 is a pure Go / zero-CGO binary, so it installs cleanly everywhere via a Formula
-or Cask `binary` stanza.
+or Cask `binary` stanza. The `repotory-server-*` bundles carry the binary plus
+its `web/` directory; the JetBrains plugin passes `--web-dist <bundle>/web`
+when it starts one, so result deep links work without any manual flag.
 
 ## Version is never edited by hand
 

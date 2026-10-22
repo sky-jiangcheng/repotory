@@ -12,9 +12,10 @@
 //   ② result jump — open the Repotory SPA in the system browser, deep-linked
 //   ③ settings page — server address + a health check
 //
-// Explicitly NOT in the MVP (per the 2026-10-22 decisions): session capture,
-// and hosting/managing the server lifecycle (this plugin only CONNECTS to an
-// instance the user already runs).
+// Explicitly NOT in the MVP (per the 2026-10-22 decisions): session capture.
+// Server lifecycle: connect to a running instance, or start a LOCAL one with
+// one click (2026-10-22 usability revision of decision 4); this plugin never
+// manages a remote server and never auto-downloads anything.
 package dev.repotory.jetbrains
 
 import com.google.gson.Gson
@@ -53,8 +54,13 @@ sealed interface SearchOutcome {
     /** Hits, possibly empty (an empty list is a real "nothing matched"). */
     data class Hits(val hits: List<RepotoryHit>) : SearchOutcome
 
-    /** The search could not be carried out; [message] says why, for the UI. */
-    data class Failure(val message: String) : SearchOutcome
+    /**
+     * The search could not be carried out; [message] says why, for the UI.
+     * [offline] marks a transport failure (nothing answered at the address),
+     * which is the one case where offering "start the local service" makes
+     * sense; a 4xx/5xx from a live server is not something a restart fixes.
+     */
+    data class Failure(val message: String, val offline: Boolean = false) : SearchOutcome
 }
 
 /** Raised when an RPC call yields no payload; the message is user-presentable. */
@@ -101,9 +107,10 @@ class RepotoryClient {
      * is API-only and every non-/api path 404s).
      *
      * Results deep-link into that UI, so a plain API-only server answers the API
-     * but turns every "Open in Repotory" click into a 404. The plugin only
-     * CONNECTS to a server (ADR-0027 decision 4) — it cannot add the flag for
-     * the user — so it asks this question and says the answer out loud.
+     * but turns every "Open in Repotory" click into a 404. The plugin starts its
+     * own local server with the sibling `web/` directory when the release bundle
+     * ships one (see RepotoryServer.kt); for a server the user started, the
+     * plugin asks this question and says the answer out loud.
      */
     fun servesWebUi(serverUrl: String): Boolean = try {
         val conn = open(serverUrl, "/", "GET")
@@ -143,7 +150,10 @@ class RepotoryClient {
             SearchOutcome.Failure(e.message ?: "SearchAll failed")
         } catch (e: Exception) {
             // IOException and friends: the service is not running, or not answering.
-            SearchOutcome.Failure("Cannot reach ${serverUrl.trimEnd('/')} — ${e.message ?: e.javaClass.simpleName}")
+            SearchOutcome.Failure(
+                "Cannot reach ${serverUrl.trimEnd('/')} — ${e.message ?: e.javaClass.simpleName}",
+                offline = true,
+            )
         }
     }
 

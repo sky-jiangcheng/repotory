@@ -66,8 +66,15 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "242"
-            // Until 243.* so the plugin stays installable on 2024.2 as well.
-            untilBuild = "243.*"
+            // No untilBuild on purpose. The old `243.*` cap meant the plugin
+            // declared itself incompatible with every IDE released after
+            // 2024.3 — including the 2025.2 it is BUILT against — so the IDE
+            // refused to load it on exactly the versions the owner runs.
+            // Omitting the upper bound is the correct signal here: the plugin
+            // uses only platform APIs that exist in 242 (tool window,
+            // settings page, Swing, java.net), so there is no upper bound to
+            // guess. If a future platform breaks one of them, the Plugin
+            // Verifier is what catches it, not a hard-coded year.
         }
     }
     pluginVerification {

@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **VS Code 扩展零命令行可用度改造（2026-10-22）**：此前 `repotory-mcp` 必须在 `PATH` 上，`Repotory: Register MCP Server` 还必须开终端跑 `node repotory-init`，对不熟悉命令行的用户等于不可用。现在：① 二进制按 `repotory.mcpPath` → `REPOTORY_MCP_BIN` → 扩展 globalStorage → `PATH` → Homebrew / Scoop / `~/.local/bin` 常见目录依次解析，`Repotory: Set repotory-mcp Path` 提供文件选择器；② 注册改为在扩展宿主内以 `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 静默执行内置安装器（仅 ENOENT / EACCES 时回退 `node`），终端不再是主路径，失败时给出「查看日志 / 手动运行」兜底；③ 新增 `Repotory: Setup & Diagnostics`，用一条 QuickPick 列出「二进制 / 本地服务 / 工作区解析 / MCP 客户端配置」四项状态，每项可点击就地修复；首次激活改为直接进入该面板。新增 `repotory.mcpPath` 设置（空 = 自动探测）。
+- **JetBrains 插件一键启动本地服务（ADR-0027 决策 4 可用度修订，2026-10-22）**：新增 `RepotoryServer.kt`（application service），按设置项 → `REPOTORY_SERVER_BIN` → `PATH` → 常见安装目录解析 `repotory-server`，先 `ping` 复用既有实例、只对 loopback 地址启动、只停止自己拉起的子进程（IDE 退出时经 `Disposer` 清理）。二进制同目录存在 `web/index.html` 时自动追加 `--web-dist`，发布包布局因此开箱可用。入口：工具窗检索在传输层失败时状态行旁出现 **Start local service** 按钮（4xx/5xx 不出现，那不是重启能修的），设置页新增 `Server binary` 路径 + `Locate…` + `Start local service`，启动成功后自动重跑当前查询。插件不下载、不构建任何东西，缺二进制时给「Set Path… / Open Download Page / Cancel」。
+- **发布资产新增 `repotory-server-<platform>`（2026-10-22）**：`release.yml` 新增 `Build headless server bundle`，构建 `repotory-server` 与 `npm run build:server` 产物 `web/`（base `/`，与桌面 `web/dist` 的 `./` 不可互换），按平台打成 `repotory-server-<target>.tar.gz` / `.zip`；`packaging/README.md` 资产表同步。没有这项，插件的一键启动对最终用户不可兑现。
+
+### 变更
+
+- **ADR-0027 决策 4 由「server 仅连接」修订为「连接优先，允许插件一键启动本地实例」（2026-10-22）**：原文把「先在终端把服务跑起来」这一步留给用户，正是本轮反馈里「不能纯手动操作」的根因。修订保留四条边界（只认用户已有二进制 / 只对 loopback 启动 / `/health` 有人应答即复用 / 只停自己拉起的子进程），中英正文与两处 ADR 索引行同批回写，并在正文末尾追加「可用度修订」节记录 `untilBuild` 缺陷、Java 8 说明与发布侧配套。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧据此落定；VS Code 扩展不扩围到启动 headless 服务。
+- **JetBrains README 重写安装与首次使用路径（2026-10-22）**：去掉「自行 `go build` + `npm run build:server` + `--web-dist`」作为前置要求，改为「下载 release bundle → 工具窗按 Start local service」；保留手动命令作为可选路径。新增 Java 8 说明：插件运行在 IDE 自带 JBR（2024.2+ 为 Java 21），**与项目 JDK 无关，JDK 8 项目可正常使用**，唯一需要 Java 21 的是从源码构建插件。
+
+### 修复
+
+- **JetBrains 插件在 IDEA 2025.x 上被判不兼容（`untilBuild = "243.*"`，2026-10-22）**：初版把上限锁在 2024.3，语义上是「2025.1 及以后（包括构建目标 2025.2 本身）都不支持」，IDE 会拒绝加载；原注释还把方向写反成「让插件也能装在 2024.2」。已改为只声明 `sinceBuild = "242"`、不设上限——插件只用 242 就存在的平台 API，未来平台若破坏由 Plugin Verifier 发现，而不是一个写死的年份。
+
 ## [2.11.0] - 2026-10-22
 
 ### 新增

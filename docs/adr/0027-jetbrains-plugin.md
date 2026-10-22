@@ -22,7 +22,7 @@
 2. **MVP 范围（平移 VS Code 扩展范式）**：
    - ① 知识库检索工具窗：笔记 + 待办的 FTS/hybrid 搜索（走既有检索绑定 `SearchAll`；语义与图感知随 `semantic_search` / `wiki_graph_search` 门控自然生效，插件不自带门控逻辑、不重复实现排序）；
    - ② 结果跳转：在系统浏览器打开 Repotory SPA 定位到该结果（同源 server 地址；深链路由以前端现状为准，不足处随 MVP 补最小路由参数，不在插件内嵌完整 UI）；
-   - ③ 设置页：server 地址（默认 `http://127.0.0.1:18765`）+ 连接健康检查；
+   - ③ 设置页：server 地址（默认 `http://127.0.0.1:18765`）+ 连接健康检查 + 可选的 `repotory-server` 二进制路径（空 = 自动探测）；
    - ④ MCP 一键注册（复用 `repotory-init` 的注册思路，写 JetBrains 侧的 MCP 客户端配置）——若实现时发现 IDE 配置面过于不稳定，降级为文档指引，不阻塞 MVP。
 3. **技术形态**：Kotlin + Gradle（IntelliJ Platform Plugin）；独立代码库。与 ADR-0009 预判一致的双倍维护面由此**明知接受**，其边界由薄客户端纪律压在 API 层。
 
@@ -31,7 +31,7 @@
 1. **目标 IDE 家族与版本基线 → IntelliJ IDEA CE 先行，平台级兼容，基线 242（2024.2+）**。本机实测所有者的 JetBrains 日常 IDE 为 IntelliJ IDEA CE（`/Applications/IntelliJ IDEA CE.app` = 2025.2.6.1，支持目录 `IdeaIC2025.2`，另有 `IntelliJIdea2024.3-backup`；全机无 GoLand——原问题「如 GoLand」的预设不成立）。插件声明 `com.intellij.modules.platform`：MVP 所需 API（工具窗 / 设置页 / 浏览器跳转 / HTTP）均为纯平台 API，同一构建即可装入全部 IntelliJ 家族（含本机 PyCharm CE），不按产品分叉。`sinceBuild=242` 覆盖所有者近期的 2024.3 与当前 2025.2 并留余量；开发与验收以 IDEA CE 2025.2 为准；公开分发前复核基线。
 2. **分发方式 → 私有分发先行**（磁盘安装 / 私有更新源，无签名与审核摩擦）；Marketplace 待插件稳定后另议（采纳原建议）。
 3. **会话捕捉 → 不入 MVP**：严格对齐 VS Code 扩展已验证的能力面，终端/捕捉集成留待真实痛点（采纳原建议）。
-4. **server 生命周期 → 仅连接**：连接既有实例（用户自启 / 开机自启），薄壳零托管（采纳原建议）；托管自启待真实痛点再议，届时沿用 dsh 插件实践落文档。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧按此落定。
+4. **server 生命周期 → 连接优先，允许插件一键启动本地实例**（2026-10-22 可用度修订，取代原文「仅连接」）：默认复用已在 `serverUrl` 上应答的实例；没有任何实例应答时，插件可以启动一个**本地** `repotory-server`。边界四条，缺一不可：① 只认用户已有的二进制（设置项 → `REPOTORY_SERVER_BIN` → `PATH` → 常见安装目录），插件不下载、不构建、不代管包管理器；② 只对 loopback 地址启动，远端地址一律拒绝；③ 只在 `/health` 无人应答时启动，绝不与既有实例抢端口；④ IDE 退出时只停止自己拉起的子进程，用户自启的实例不动。发布侧相应地新增 `repotory-server-<platform>` 资产（二进制 + `web/`，插件自动传 `--web-dist`），否则「一键启动」对最终用户不可兑现。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧按此落定；VS Code 扩展仍以 MCP + 按需 headless 连接为主，不在本轮扩围。
 
 ## 后果
 
@@ -42,7 +42,7 @@
 
 ## 实施修正记录（2026-10-22 MVP 落码时逐条核验）
 
-MVP 已落码于 `ide/jetbrains/`（Kotlin + Gradle，7 个源文件），`buildPlugin` 与 `verifyPlugin`（对 IDEA CE 2025.2）均通过。以下记录实现期实测到的事实与对决策文本的修正。
+MVP 已落码于 `ide/jetbrains/`（Kotlin + Gradle，8 个源文件），`buildPlugin` 与 `verifyPlugin`（对 IDEA CE 2025.2）均通过。以下记录实现期实测到的事实与对决策文本的修正。
 
 ### 决策 2① 的「wiki 页」检索 —— 实测两端都缺中间未接，已修正决策文本
 
@@ -82,3 +82,31 @@ VS Code 扩展（第一个 IDE 分发面，ADR-0027 要求「平移」其范式�
 另修一处 `plugin.xml` 缺 `<description>` —— Plugin Verifier 判定为「Invalid plugin descriptor」（`<description>` 是插件描述符的必填项），已补。
 
 `verifyPlugin` 对 IDEA CE 2025.2 报 **无 compatibility problem**；`sinceBuild=242` 低于构建目标 252 是有意的（决策 1 要求覆盖 2024.2+），已在 `build.gradle.kts` 注释中写明「构建目标是最新的 IDE，声明的底线是插件承诺支持的最低版本」——插件只用了 242 就存在的平台 API（工具窗、设置页、Swing、`java.net`），这正是 Verifier 要证明的事。
+
+## 可用度修订（2026-10-22，用户实测反馈后）
+
+用户实测反馈两条：① 不清楚项目用 JDK 8 时插件能否使用；② 插件必须先在终端把服务跑起来，纯界面操作走不通。前者是文档缺口，后者是决策 4 的产品缺口——「仅连接」把最麻烦的一步留给了用户。本轮修订如下。
+
+### `untilBuild = "243.*"` 是真实缺陷，已移除
+
+初版声明 `sinceBuild=242` + `untilBuild="243.*"`，本意是「覆盖 2024.2 到 2024.3」。实际语义是**上限锁死**：2025.1 及以后（包括构建目标 2025.2 本身）都会被判为不兼容而无法加载。`build.gradle.kts` 的注释还写着「untilBuild 243.* 让插件也能装在 2024.2」——方向写反了。已改为只声明 `sinceBuild=242`、不设上限。技术上站得住：插件只用 242 就存在的平台 API，未来平台若破坏这些 API，由 Plugin Verifier 而不是一个写死的年份来发现。
+
+### Java 8：与项目 JDK 无关，文档已写明
+
+插件运行在 IDE 自带的 JBR（2024.2+ 为 Java 21），不加载项目 JDK、不编译用户代码、不依赖 Java 8 API。因此 **JDK 8 项目可以正常使用插件**；唯一的 Java 21 要求出现在「从源码构建插件」这一步（`jvmToolchain(21)`），与最终用户无关。这条已写入 `ide/jetbrains/README.md` 的 Requirements 与 Compatibility 表，避免再被当成安装前提。
+
+### 一键启动本地服务（决策 4 修订的落地）
+
+新增 `RepotoryServer.kt`（应用级 service）：
+
+- 解析顺序：设置项 `Server binary` → `REPOTORY_SERVER_BIN` → `PATH` → Homebrew / Scoop / `~/.local/bin` 等常见目录；找不到时弹「Set Path… / Open Download Page / Cancel」，**不下载、不构建**。
+- 启动命令：`repotory-server --port <serverUrl 的端口>`；若二进制同目录存在 `web/index.html`，自动追加 `--web-dist <dir>/web`（发布包即此布局），深链因此开箱可用。
+- 安全边界：先 `ping`，有人应答就复用；非 loopback 地址拒绝启动；只停止自己拉起的子进程（`Disposer` 挂在 application 上，IDE 退出时清理）。
+- 入口：工具窗检索失败时状态行旁出现 **Start local service** 按钮（仅传输层失败时出现，4xx/5xx 不出现），设置页也有同名按钮；成功后自动重跑当前查询。
+
+发布侧同步：`release.yml` 新增 `Build headless server bundle`，构建 `repotory-server` + `npm run build:server` 产物 `web/`，按平台打成 `repotory-server-<target>.tar.gz` / `.zip`；`packaging/README.md` 资产表已补。没有这项，「一键启动」对最终用户仍然是一句空话。
+
+### 未随本轮改动
+
+- MCP 一键注册仍不在 JetBrains MVP（决策 2④ 的降级条款继续生效，`repotory-init` 只打印手动指引）。
+- VS Code 扩展不再扩围到「启动 headless 服务」——它的 MCP 路径已能独立工作，且本轮已改为多源二进制解析 + 静默注册 + 诊断面板。

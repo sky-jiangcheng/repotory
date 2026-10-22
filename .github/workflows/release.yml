@@ -147,6 +147,31 @@ jobs:
           fi
           ls -lh build/mcp/
 
+      # The JetBrains plugin can start this server with one click, so end users
+      # need it as a release asset (ADR-0027 usability revision). The bundle
+      # ships the SPA next to the binary: the plugin passes
+      # `--web-dist <binary dir>/web` automatically, which is what makes
+      # "Open in Repotory" deep links work out of the box. The server build of
+      # the web assets has base "/" — the desktop `web/dist` (base "./") is not
+      # interchangeable, hence the separate build:server invocation.
+      - name: Build headless server bundle
+        shell: bash
+        run: |
+          set -e
+          APP_VERSION=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          echo "Building repotory-server version: $APP_VERSION"
+          LDFLAGS="-X repotory/internal/version.Version=$APP_VERSION"
+          (cd web && npm run build:server)
+          mkdir -p build/server
+          rm -rf build/server/web
+          cp -R web/dist-server build/server/web
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "$LDFLAGS" -o build/server/repotory-server ./cmd/server
+          if [ "${{ runner.os }}" = "Windows" ] && [ -f build/server/repotory-server ]; then
+            mv build/server/repotory-server build/server/repotory-server.exe
+          fi
+          ls -lh build/server/
+
       - name: Package Linux
         if: runner.os == 'Linux'
         run: |
@@ -154,6 +179,7 @@ jobs:
           mkdir -p build/bin/release
           tar -czf "build/bin/release/repotory-linux-amd64.tar.gz" -C build/bin repotory
           tar -czf "build/bin/release/repotory-mcp-linux-amd64.tar.gz" -C build/mcp repotory-mcp
+          tar -czf "build/bin/release/repotory-server-linux-amd64.tar.gz" -C build/server repotory-server web
           echo "RELEASE_DIR=build/bin/release" >> $GITHUB_ENV
 
       - name: Package macOS
@@ -211,6 +237,7 @@ jobs:
           # MCP server: separate archive, same release, no codesign/notary impact
           # on the .dmg above.
           tar -czf "release/repotory-mcp-${{ matrix.target }}.tar.gz" -C build/mcp repotory-mcp
+          tar -czf "release/repotory-server-${{ matrix.target }}.tar.gz" -C build/server repotory-server web
 
           echo "RELEASE_DIR=release" >> $GITHUB_ENV
 
@@ -224,6 +251,9 @@ jobs:
           fi
           if [ -f "build/mcp/repotory-mcp.exe" ]; then
             powershell Compress-Archive -Path "build/mcp/repotory-mcp.exe" -DestinationPath "release/repotory-mcp-windows-amd64.zip"
+          fi
+          if [ -f "build/server/repotory-server.exe" ]; then
+            powershell Compress-Archive -Path "build/server/repotory-server.exe","build/server/web" -DestinationPath "release/repotory-server-windows-amd64.zip"
           fi
           echo "RELEASE_DIR=release" >> "$GITHUB_ENV"
 

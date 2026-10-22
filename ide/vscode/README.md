@@ -13,7 +13,9 @@ One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 | Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar with the matched snippet (the service returns the excerpt, not the full body) and open as a read-only preview |
 | Sidebar "Repotory: Knowledge Search" | Idle state shows the resolved `project · repository` (or "Repotory: not in the knowledge base yet"), then the search results. Title bar also carries **"Repotory: Open Desktop App"** to launch the Repotory desktop app from the IDE |
 | Status bar `$(repo) Repotory` | Click = load context; the tooltip names the resolved workspace (project / repository and its path) once resolved |
-| Command `Repotory: Register MCP Server` | Runs the bundled `repotory-init --with-hook` in a terminal: registers the MCP server for Claude Code / Cursor / VS Code / Windsurf and installs the SessionEnd hook. The installer ships inside the extension, so this works in any project — it is not limited to the Repotory repository |
+| Command `Repotory: Register MCP Server` | Runs the bundled `repotory-init --with-hook` silently in the background (no terminal): registers the MCP server for Claude Code / Cursor / VS Code / Windsurf and installs the SessionEnd hook. The installer ships inside the extension, so this works in any project — it is not limited to the Repotory repository |
+| Command `Repotory: Setup & Diagnostics` | One panel showing four checks — `repotory-mcp` binary, local service, workspace resolution, MCP client config — each with the fix action next to it. Use this instead of guessing why something is not working |
+| Command `Repotory: Set repotory-mcp Path` | File picker for the `repotory-mcp` executable; writes `repotory.mcpPath` so no PATH editing is needed |
 
 ## Keyboard shortcuts
 
@@ -27,18 +29,21 @@ The sidebar's title bar also carries a search button. All five commands remain i
 
 ## Requirements
 
-- The [`repotory-mcp`](https://github.com/sky-jiangcheng/repotory#quick-start) binary on your PATH — install it via Homebrew, Scoop or the GitHub Releases page. The desktop app is optional; the MCP server alone is enough.
-- Optional: a running `repotory server` for the status-bar health check (set `repotory.serverUrl` if you changed the port).
+- The `repotory-mcp` binary — install it via Homebrew, Scoop or the GitHub Releases page. It does **not** have to be on your PATH: the extension resolves it in this order and stops at the first hit — `repotory.mcpPath`, `REPOTORY_MCP_BIN`, the extension's own storage, `PATH`, then the usual Homebrew / Scoop / `~/.local/bin` directories. If none matches, **"Repotory: Set repotory-mcp Path"** opens a file picker. The desktop app is optional; the MCP server alone is enough.
+- Optional: a running `repotory server` for the status-bar health check and the sidebar's `project · repository` display (set `repotory.serverUrl` if you changed the port).
 
 ## First launch
 
-On first activation the extension shows a welcome prompt: install `repotory-mcp`, run **"Repotory: Register MCP Server"** to register the MCP server with your AI clients, or dismiss. You can always re-run registration from the Command Palette later.
+On first activation the extension opens **"Repotory: Setup & Diagnostics"** instead of a wall of instructions: it shows whether the binary was found (and from where), whether the local service answers, what the current folder resolves to, and whether the MCP client config exists. Each row carries its fix — locate the binary, open the download page, re-run registration, or open the folder.
+
+To wire the MCP server into your AI clients, run **"Repotory: Register MCP Server"**. It executes the bundled `repotory-init --with-hook` in the extension host (Electron-as-node), so no terminal opens; if that fails, the output channel has the full log and a "run it manually" fallback.
 
 ## Settings
 
 | Setting | Default | Description |
 |---|---|---|
 | `repotory.serverUrl` | `http://127.0.0.1:18765` | Repotory headless service URL |
+| `repotory.mcpPath` | `""` (auto-detect) | Explicit path to the `repotory-mcp` executable; empty means auto-detect. Pointing at a missing/unexecutable file is reported by the diagnostics panel instead of silently falling back |
 
 That is the whole surface. No project id to configure: the extension sends the workspace path and the service resolves it into a project and a repository, so there is no setting to keep in sync with your knowledge base.
 
