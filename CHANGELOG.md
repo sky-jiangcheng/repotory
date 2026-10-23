@@ -4,6 +4,12 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
+## [Unreleased]
+
+### 修复
+
+- **文档站 favicon 显式声明 + 内容 hash 破缓存（2026-10-23）**：用户反馈「文档站浏览器上显示的图标没统一」——实测线上 `favicon.ico`/`favicon.svg` 与本地新卡逐字节一致（hash 对比），站点文件本身早已统一，旧标来自浏览器对兜底路径 `/favicon.ico` 的顽固缓存（同 URL 不重拉，可挂数天）。根因是文档页从未显式声明 favicon，只靠浏览器兜底路径，既吃缓存又丢质量。`build-docs.mjs` 现为每页注入 `<link rel="icon" type="image/svg+xml">`（SVG 优先，标签页渲染更清晰）+ `<link rel="alternate icon">`（ICO 兜底老浏览器），两者带 favicon 内容 hash 查询参数（`?v=6ad3330a`）——图标再变 URL 即变，浏览器缓存无法再serve 旧标；路径按页面深度相对解析，与站内其他链接同机制。
+
 ## [2.12.2] - 2026-10-23
 
 ### 新增

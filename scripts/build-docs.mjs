@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync,
 import { dirname, join, relative, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const docsDir = join(root, 'docs')
@@ -431,11 +432,29 @@ function page(title, activeFile, contentHtml, locale, base, extraHead = '') {
   const landingScript = loc.landingRedirect && base === 'index'
     ? `try{if(!sessionStorage.getItem('rn-lang')&&(navigator.language||'').toLowerCase().startsWith('zh')&&document.referrer.indexOf(location.host)===-1){sessionStorage.setItem('rn-lang','zh');location.replace('zh/index.html')}}catch(e){}`
     : ''
+  // Explicit favicon declaration (the pages never had one — browsers fell
+  // back to /favicon.ico, the most cache-stubborn URL on the web, so a
+  // rebrand looked "not applied" for days). SVG first for crisp tabs, ICO
+  // as the alternate for old browsers. Both carry a content-hash query:
+  // the mark changes, the URL changes, the browser cache cannot serve the
+  // stale icon. Relative to the page's own depth, like every other link.
+  const iconHash = () => {
+    try {
+      return createHash('sha256').update(readFileSync(join(root, 'docs', 'favicon.svg'))).digest('hex').slice(0, 8)
+    } catch {
+      return ''
+    }
+  }
+  const faviconSvgHref = relative(pageOutDir, join(root, 'docs', 'favicon.svg')).split('\\').join('/')
+  const faviconIcoHref = relative(pageOutDir, join(root, 'docs', 'favicon.ico')).split('\\').join('/')
+  const iconV = iconHash()
   return `<!DOCTYPE html>
 <html lang="${loc.htmlLang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="${faviconSvgHref}${iconV ? `?v=${iconV}` : ''}">
+  <link rel="alternate icon" href="${faviconIcoHref}${iconV ? `?v=${iconV}` : ''}">
   <title>${title && !title.includes('Repotory') ? title + ' · ' : ''}${loc.titleSuffix}</title>
 ${extraHead}  <style>
     :root { --bg: #f8f9fa; --text: #1a1a2e; --muted: #6c757d; --accent: #4caf50; --border: #e2e8f0; --sidebar-w: 240px; }
