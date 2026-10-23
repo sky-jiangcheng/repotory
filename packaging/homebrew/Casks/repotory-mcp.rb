@@ -6,7 +6,7 @@
 # Version is stamped by scripts/update-manifests.sh from wails.json
 # (info.productVersion) — never edit it by hand.
 cask "repotory-mcp" do
-  version "2.12.1"
+  version "2.12.2"
   name "Repotory MCP Server"
   desc "MCP stdio server exposing the Repotory local knowledge base to AI agents"
   homepage "https://github.com/sky-jiangcheng/repotory"
@@ -14,12 +14,12 @@ cask "repotory-mcp" do
 
   on_arm do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-arm64.tar.gz"
-    sha256 "4801e0a7e4a03536d529e97d89bc3c898533fc0f653b3da2d428fc666a6395e1"
+    sha256 "0e0bdafa420a59cdf95df9830139b874ee3f4b339566281103b9066e81747cf3"
   end
 
   on_intel do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-amd64.tar.gz"
-    sha256 "3ae6cf181004b2f5aa950fcbeec478bcc075ac3b0ecfb28d260e80da7ed476c1"
+    sha256 "f6d96e68e2e3dfde4f5dfea1f0589c2e8796e0a0a651441d3bf50d65b632b6ce"
   end
 
   # The tarball stages a single bare `repotory-mcp` at its root; `binary` links
