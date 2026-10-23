@@ -6,6 +6,8 @@
   "placeholder": "Search notes, todos and projects…",
   "results": "Search results",
   "resultsCount": "{{count}} results",
+  "searching": "Searching…",
+  "searchFailed": "Search failed — make sure the local service is running, then retry",
   "groupProjects": "Projects",
   "groupNotes": "Notes",
   "groupTodos": "Todos",

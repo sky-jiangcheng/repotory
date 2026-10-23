@@ -32,6 +32,8 @@ export default function Search() {
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searched, setSearched] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   // Shared caches: the projects list is the same one the command palette and
   // dashboard use; tags join it so the recommendation row costs one request.
@@ -45,14 +47,19 @@ export default function Search() {
     setSearchParams(q ? { q } : {}, { replace: true })
     if (!q) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHits([]); setSearched(false)
+      setHits([]); setSearched(false); setSearching(false); setFailed(false)
       return
     }
     let cancelled = false
+    // Loading is the debounced-search lifecycle itself, not a derived value: a
+    // render-time derivation cannot know a fetch is in flight. The catch used
+    // to collapse failure into "no results" — a downed local service read as an
+    // empty corpus, which is the one interpretation a user must never make.
+    setSearching(true); setFailed(false)
     const timer = setTimeout(() => {
       searchAll(q)
-        .then(r => { if (!cancelled) { setHits(r ?? []); setSearched(true) } })
-        .catch(() => { if (!cancelled) { setHits([]); setSearched(true) } })
+        .then(r => { if (!cancelled) { setHits(r ?? []); setSearched(true); setFailed(false); setSearching(false) } })
+        .catch(() => { if (!cancelled) { setHits([]); setSearched(true); setFailed(true); setSearching(false) } })
     }, 150)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [query, setSearchParams])
@@ -80,7 +87,8 @@ export default function Search() {
 
   const hotTags = useMemo(() => (tagsData ?? []).slice(0, 12), [tagsData])
 
-  const noResults = searched && noteHits.length === 0 && todoHits.length === 0 && projectHits.length === 0
+  const noResults = searched && !failed
+    && noteHits.length === 0 && todoHits.length === 0 && projectHits.length === 0
 
   return (
     <div className={s.page}>
@@ -96,8 +104,19 @@ export default function Search() {
         autoFocus
       />
 
-      {searched ? (
+      {searched || searching ? (
         <div className={s.results} aria-label={t('search:results', { defaultValue: '搜索结果' })}>
+          {searching && (
+            <div className={s.loadingRow} role="status">
+              {t('search:searching', { defaultValue: '正在检索…' })}
+            </div>
+          )}
+          {failed && (
+            <div className={s.errorRow}>
+              {t('search:searchFailed', { defaultValue: '检索失败——请确认本地服务在运行后重试' })}
+            </div>
+          )}
+
           {projectHits.length > 0 && (
             <section className={s.group} aria-label={t('search:groupProjects', { defaultValue: '项目' })}>
               <h2 className={s.groupTitle}>
@@ -155,7 +174,13 @@ export default function Search() {
           )}
 
           <div className="visually-hidden" role="status" aria-live="polite">
-            {noResults ? t('search:noResults', { defaultValue: '没有匹配的结果' }) : t('search:resultsCount', { count: hits.length + projectHits.length, defaultValue: '{{count}} 条结果' })}
+            {searching
+              ? ''
+              : failed
+                ? t('search:searchFailed', { defaultValue: '检索失败——请确认本地服务在运行后重试' })
+                : noResults
+                  ? t('search:noResults', { defaultValue: '没有匹配的结果' })
+                  : t('search:resultsCount', { count: hits.length + projectHits.length, defaultValue: '{{count}} 条结果' })}
           </div>
         </div>
       ) : (

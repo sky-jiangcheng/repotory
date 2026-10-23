@@ -6,6 +6,8 @@
   "placeholder": "搜索笔记、待办与项目…",
   "results": "搜索结果",
   "resultsCount": "{{count}} 条结果",
+  "searching": "正在检索…",
+  "searchFailed": "检索失败——请确认本地服务在运行后重试",
   "groupProjects": "项目",
   "groupNotes": "笔记",
   "groupTodos": "待办",

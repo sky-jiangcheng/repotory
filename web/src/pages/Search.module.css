@@ -129,6 +129,22 @@
   color: var(--text-muted);
 }
 
+.loadingRow {
+  padding: 12px 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.errorRow {
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 12px 16px;
+  font-size: 13px;
+}
+
 /* Idle recommendation surface: hot projects as a card grid, hot tags as a
    chip row. Both are click-to-act — cards open the project, chips run the
    search — so the empty search box is never a dead end. */

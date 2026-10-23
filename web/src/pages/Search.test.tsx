@@ -146,4 +146,33 @@ describe('Search page (ADR-0024 top-level global search)', () => {
     const msgs = await screen.findAllByText('没有匹配的结果')
     expect(msgs.length).toBeGreaterThan(0)
   })
+
+  // The old catch collapsed failure into "no results": a downed local service
+  // read as an empty corpus, which is the one interpretation a user must never
+  // make on a local-first tool.
+  it('a failed search shows the error instead of pretending the corpus is empty', async () => {
+    mockSearch.mockRejectedValue(new Error('network down'))
+    await renderSearch()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '登录' } })
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('登录'), { timeout: 2000 })
+    // Renders twice (visible row + aria-live mirror) — assert on the list.
+    const errs = await screen.findAllByText('检索失败——请确认本地服务在运行后重试')
+    expect(errs.length).toBeGreaterThan(0)
+    expect(screen.queryAllByText('没有匹配的结果')).toHaveLength(0)
+  })
+
+  it('shows a loading indicator while the search is in flight, gone once settled', async () => {
+    let resolveSearch!: (v: SearchHit[]) => void
+    mockSearch.mockReturnValue(new Promise(resolve => { resolveSearch = resolve }))
+    await renderSearch()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '登录' } })
+    // Covers both the 150ms debounce and the request itself: the flag flips in
+    // the effect body, not only when the promise is pending.
+    expect(await screen.findByText('正在检索…')).toBeTruthy()
+    resolveSearch([
+      { type: 'note', id: 5, project_id: 2, project_name: 'Alpha', title: '登录排查笔记', snippet: '', updated_at: '2026-10-12 10:00:00' },
+    ] satisfies SearchHit[])
+    await screen.findByText('登录排查笔记')
+    expect(screen.queryByText('正在检索…')).toBeNull()
+  })
 })
