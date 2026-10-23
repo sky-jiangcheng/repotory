@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [2.12.3] - 2026-10-23
+
 ### 新增
 
 - **macOS 图标适配：应用图标 squircle 化 + 品牌图标双域规则（2026-10-23）**：品牌母图是方边奶油卡，而 macOS 从不给 icns 位图自动套圆角——Dock 里方角卡片夹在一排圆角邻居中，与 macOS 27（Tahoe 时代）系统观感割裂。现确立**双域规则**（已成文于 CONTRIBUTING「品牌图标双域规则」）：**品牌域**（favicon、商店 128、VS Code 活动栏 24、JetBrains 工具窗 13）保持方边原卡——这些容器本身方形或极小，卡边即识别；**OS 应用域**（`build/appicon.png` Wails 默认源、`build/icons/` 阶梯、`icon.ico`）换成 macOS squircle 容器（22.37% 圆角比例，超椭圆 n≈5.2 近似，角部连续曲率），内部 hairline 框按 Apple 同心原则重绘为内缩 squircle。`generate-icons.mjs` 从母图提取字母与色彩自动组装应用域变体（提取失败即报错，不做硬编码副本）；favicon ico 与应用 ico 拆分为两次独立构建（此前复制同一 buffer，圆角会污染浏览器标签页）。全尺寸（512→16）深色背景目检通过，CI 同步门覆盖。
@@ -398,7 +400,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...HEAD
+[2.12.3]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...v2.12.0
