@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **图标统一收口：文档站侧栏与 JetBrains 工具窗图标同步到新品牌标（2026-10-23）**：v2.12.1 补齐了 VS Code 活动栏图标，但同一类漏改还有两处——① 文档站每个页面侧栏的品牌标内联自 `build/icon.svg`（海军蓝 app 图标），`build-docs.mjs` 现改为读插件商店 SSOT `build/plugin-icon.svg`，并去掉品牌标的 6px 圆角（卡片设计是无圆角方边 + 发丝框）；文档页是 gitignore 的构建产物，`pages.yml` 在推送后自动重建部署，版本号角标随之从陈旧的 v2.11.0 刷新。② JetBrains 工具窗图标 `icons/repotory.svg`（13×13 灰 R、无卡片）换成新卡片标，与活动栏同样纳入 `generate-icons.mjs` 派生清单与 CI sha 同步门——这两个文件当初都是手养副本，恰是它们错过改版的原因，此后 SSOT 再变不可能只落一半。Marketplace 40×40 图标对（含深色反转变体）保持手工缩放，未纳入生成。
+
 ## [2.12.1] - 2026-10-23
 
 ### 修复

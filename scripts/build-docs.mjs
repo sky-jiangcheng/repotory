@@ -27,15 +27,16 @@ import { createRequire } from 'node:module'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const docsDir = join(root, 'docs')
 
-// The brand mark, inlined from the SSOT (build/icon.svg) that also generates the
-// app icon, favicons and the VS Code extension icon. Read at build time rather
-// than copied by hand so the docs sidebar, the desktop app and the shipped
-// artifacts cannot drift apart: change the SSOT, re-run generate-icons.mjs,
-// rebuild the docs, and every surface shows the same mark.
+// The brand mark, inlined from the plugin-store SSOT (build/plugin-icon.svg)
+// that also generates the VS Code / JetBrains marketplace icons and the
+// activity-bar marks. Read at build time rather than copied by hand so the
+// docs sidebar and the shipped artifacts cannot drift apart: change the
+// SSOT, re-run generate-icons.mjs, rebuild the docs, and every surface
+// shows the same mark.
 function brandMarkSvg(size) {
-  const svgPath = join(root, 'build', 'icon.svg')
+  const svgPath = join(root, 'build', 'plugin-icon.svg')
   if (!existsSync(svgPath)) {
-    console.warn('build-docs: build/icon.svg missing — sidebar falls back to wordmark only')
+    console.warn('build-docs: build/plugin-icon.svg missing — sidebar falls back to wordmark only')
     return ''
   }
   let svg = readFileSync(svgPath, 'utf8')
@@ -445,7 +446,7 @@ ${extraHead}  <style>
     .sidebar { width: var(--sidebar-w); background: #1a1a2e; color: #fff; padding: 24px 0; flex-shrink: 0; overflow-y: auto; position: fixed; height: 100vh; }
     .sidebar-brand { padding: 0 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px; }
     .sidebar-brand-row { display: flex; align-items: center; gap: 10px; }
-    .sidebar-brand-row svg { display: block; border-radius: 6px; flex-shrink: 0; }
+    .sidebar-brand-row svg { display: block; flex-shrink: 0; }
     .sidebar-brand h1 { font-size: 18px; font-weight: 700; }
     .sidebar-brand span { color: var(--accent); }
     .sidebar-brand small { display: block; font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; }
