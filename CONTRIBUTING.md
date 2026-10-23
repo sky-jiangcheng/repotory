@@ -45,6 +45,22 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 - **改绑定面必须同步文档**：`internal/app` 的方法签名是对外契约，变更需同步 [docs/api/reference.md](docs/api/reference.md)
 - **重大决策走 ADR**：在 [docs/adr/](docs/adr/index.md) 新增编号文件，说明背景、决策与代价；历史决策（分层、FTS5、块编辑器、范围冻结）见 ADR 索引
 
+## 品牌图标双域规则（macOS 适配，2026-10-23 立）
+
+品牌母图 `build/icon.svg` 是**方边**奶油卡——方边是品牌识别（「印出来的卡」），但 macOS 从不给 icns 位图自动套圆角：方边母图直接当 app 图标，Dock 里就是一张方角卡片夹在一排圆角邻居里。因此图标产物分两个域，**同一字母、两种容器**：
+
+| 域 | 产物 | 形状 | 理由 |
+|---|---|---|---|
+| 品牌域 | favicon（docs/web）、Marketplace 商店图标、VS Code 活动栏（24）、JetBrains 工具窗（13） | 方边原卡 | 容器本身是方形或极小尺寸，卡边即识别；squircle 在小尺寸下只会读作「破掉的矩形」 |
+| OS 应用域 | `build/appicon.png`（Wails 默认图标源）、`build/icons/` 阶梯、`build/icons/icon.ico` | squircle 容器 | macOS 规范：源图必须自带 squircle（≈22.37%，超椭圆 n≈5.2 近似），系统不裁 |
+
+规则条目：
+
+- **单点改动**：只改 `build/icon.svg`，`scripts/generate-icons.mjs` 自动派生两域全部产物，CI 同步门（`--check`）拦截任何半落地
+- **同心原则**：OS 域的内部 hairline 框不是「随机半径圆角矩形」，而是按容器曲线内缩的同心 squircle（Apple concentricity：嵌套圆角必须与容器相关）
+- **新增图标面前先分类**：OS 应用图标 → 继承 squircle；品牌展示 → 母图原样。**不要手养副本**——本品牌历史上四次半落地（活动栏/工具窗/favicon/README 各漏一次改版）根因全部是手养副本
+- **macOS 26+ Liquid Glass `.icon` 分层格式**（系统自动掩码 + 玻璃效果）是未来方向，但 Wails 仍产 icns 位图阶梯，在迁移前本规则是唯一适配路径；迁移时删掉应用域的预裁 squircle，改供方形图层
+
 ## 前端测试的异步落地（ADR-0026）
 
 组件在 effect 里用 promise 填状态，所以「元素已挂载」不等于「数据已到位」：`findBy*` 等一个**无条件挂载**的锚点时会立刻 resolve，随后同步读 effect 状态就是拿时序赌绿红。

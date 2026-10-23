@@ -30,3 +30,4 @@ bash scripts/dev.sh
 - **schema 变更**：`ExpectedSchemaVersion`（`internal/integrity/checks.go`）与迁移表（`internal/db/migrate.go`）+ 防漂移测试是守卫，版本号必须同步推进且可逆测试跟上
 - **CSS 语义色顺序不变量**由 `web/src/styles/semanticInk.test.ts` 钉住；改全局 CSS 顺序前先读它
 - **冻结标识**（`repotory` 二进制名/数据目录/MCP 前缀 `repotory_*`）绑定用户数据迁移史，不「顺手统一」——见 CONTRIBUTING「范围冻结」
+- **图标双域**：`build/icon.svg` 是唯一母图；`generate-icons.mjs` 派生「品牌域方边（favicon/商店/IDE 小图标）」与「OS 应用域 squircle（appicon.png/阶梯/ico，macOS 不自掩码）」两套形状，改母图后必须跑生成器，CI 同步门兜底——见 CONTRIBUTING「品牌图标双域规则」

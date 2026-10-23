@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **macOS 图标适配：应用图标 squircle 化 + 品牌图标双域规则（2026-10-23）**：品牌母图是方边奶油卡，而 macOS 从不给 icns 位图自动套圆角——Dock 里方角卡片夹在一排圆角邻居中，与 macOS 27（Tahoe 时代）系统观感割裂。现确立**双域规则**（已成文于 CONTRIBUTING「品牌图标双域规则」）：**品牌域**（favicon、商店 128、VS Code 活动栏 24、JetBrains 工具窗 13）保持方边原卡——这些容器本身方形或极小，卡边即识别；**OS 应用域**（`build/appicon.png` Wails 默认源、`build/icons/` 阶梯、`icon.ico`）换成 macOS squircle 容器（22.37% 圆角比例，超椭圆 n≈5.2 近似，角部连续曲率），内部 hairline 框按 Apple 同心原则重绘为内缩 squircle。`generate-icons.mjs` 从母图提取字母与色彩自动组装应用域变体（提取失败即报错，不做硬编码副本）；favicon ico 与应用 ico 拆分为两次独立构建（此前复制同一 buffer，圆角会污染浏览器标签页）。全尺寸（512→16）深色背景目检通过，CI 同步门覆盖。
+
 ### 修复
 
 - **文档站 favicon 显式声明 + 内容 hash 破缓存（2026-10-23）**：用户反馈「文档站浏览器上显示的图标没统一」——实测线上 `favicon.ico`/`favicon.svg` 与本地新卡逐字节一致（hash 对比），站点文件本身早已统一，旧标来自浏览器对兜底路径 `/favicon.ico` 的顽固缓存（同 URL 不重拉，可挂数天）。根因是文档页从未显式声明 favicon，只靠浏览器兜底路径，既吃缓存又丢质量。`build-docs.mjs` 现为每页注入 `<link rel="icon" type="image/svg+xml">`（SVG 优先，标签页渲染更清晰）+ `<link rel="alternate icon">`（ICO 兜底老浏览器），两者带 favicon 内容 hash 查询参数（`?v=6ad3330a`）——图标再变 URL 即变，浏览器缓存无法再serve 旧标；路径按页面深度相对解析，与站内其他链接同机制。
