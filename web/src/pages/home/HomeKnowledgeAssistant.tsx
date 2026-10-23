@@ -268,9 +268,17 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
       })
       cancelStreamRef.current = cancel
     } else {
-      // Local knowledge search fallback
+      // Local knowledge search fallback. There is no stream to abort, but the
+      // state writes must obey the same stop signal as the stream path: a
+      // searchAll resolving after Stop (or after a new question took over the
+      // asking slot) must not write stale cards into messages, and its
+      // finally must not setAsking(false) — that would kill the replacement
+      // question's spinner and elapsed timer mid-flight.
+      let cancelled = false
+      cancelStreamRef.current = () => { cancelled = true }
       try {
         const hits = await searchAll(promptText)
+        if (cancelled) return
         const relevantHits = (hits || [])
           .filter(h => scopeProjectId === 0 || h.project_id === scopeProjectId)
           .slice(0, 8)
@@ -302,6 +310,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
           ),
         )
       } catch (err) {
+        if (cancelled) return
         setMessages(prev =>
           prev.map(m =>
             m.id === assistantMsgId
@@ -314,7 +323,13 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
           ),
         )
       } finally {
-        setAsking(false)
+        // Only the owner clears the asking slot: when cancelled, Stop already
+        // set asking=false and nulled the ref, and a replacement question may
+        // own both — touching them here is the race this flag exists for.
+        if (!cancelled) {
+          setAsking(false)
+          cancelStreamRef.current = null
+        }
       }
     }
   }
