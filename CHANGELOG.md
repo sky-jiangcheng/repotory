@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [2.12.1] - 2026-10-23
+
 ### 修复
 
 - **VS Code 活动栏图标统一到新品牌标（2026-10-23）**：v2.12.0 的商店图标（`media/icon.png`）已换成奶油卡片风，但活动栏容器图标 `media/repotory.svg` 还是手养的旧灰色 R 字形（`currentColor`、无卡片）——扩展装上去，侧栏与商店列表是两个标。现改为由 `build/plugin-icon.svg`（插件商店 SSOT）原样派生：512 网格几何包进 24 viewBox（0.046875），固定品牌色（暖纸 `#F5F0E4` + 近墨 `#1B1B1B`），深浅色活动栏都是同一张印出来的卡（与 JetBrains 品牌带「品牌面不随主题」同规则）。同时把该文件纳入 `scripts/generate-icons.mjs` 的派生清单与 CI 同步门（sha 校验）——它当初正是因为是手养文件而错过改版，此后 SSOT 再变不可能只落一半。
@@ -377,7 +379,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...HEAD
+[2.12.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...v2.12.0
 [2.11.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.10.0...v2.11.0
