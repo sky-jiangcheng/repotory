@@ -349,7 +349,9 @@ export interface ImportCompletedEvent {
 // was built from, plus the budget accounting that shaped it.
 export interface EvidenceItem {
   ref: string // "P1" / "N2" — positional label from this retrieval only
-  type: 'page' | 'note'
+  // 'todo' never comes from the server (GatherEvidence emits page|note only);
+  // it marks the local no-AI fallback cards built from SearchAll hits.
+  type: 'page' | 'note' | 'todo'
   id: number
   project_id?: number
   project_name?: string

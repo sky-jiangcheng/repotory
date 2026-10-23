@@ -204,8 +204,21 @@ func (s *Service) GatherEvidence(projectID int64, query string, budget EvidenceB
 		_, _ = db.TouchWikiPages(s.db, pageIDs, time.Now())
 	}
 
-	// Populate project names for evidence items where project ID is known
-	if projs, err := db.GetAllProjects(s.db); err == nil {
+	// Populate project names for evidence items where project ID is known.
+	// Names are resolved for EVERY project kind, deliberately: the seeded
+	// 未分类 and import-placeholder buckets are synthetic, but a note filed in
+	// one is still that user's knowledge, and ADR-0023 keeps those buckets
+	// visible (badged) on desktop surfaces. The kind filter lives in
+	// filterRealProjects and belongs to *resolution/listing* surfaces, not to
+	// display attribution — filtering here would render such evidence
+	// unattributable.
+	projs, err := db.GetAllProjects(s.db)
+	if err != nil {
+		// Missing names must never turn into "AI 问答不可用", but silently
+		// swallowing them is what made this line invisible for so long: an
+		// evidence card that lost its project is a real bug with no trace.
+		log.Printf("wiki evidence: project names lookup failed, cards lose their project: %v", err)
+	} else {
 		pNames := make(map[int64]string, len(projs))
 		for _, pr := range projs {
 			pNames[pr.ID] = pr.Name

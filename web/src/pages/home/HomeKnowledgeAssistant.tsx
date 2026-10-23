@@ -12,6 +12,7 @@ import {
   type Project,
   type Evidence,
   type EvidenceItem,
+  type SearchHit,
 } from '../../api/client'
 import { renderMarkdown } from '../../utils/markdown'
 import type { PushToast } from '../../hooks/useToast'
@@ -34,6 +35,36 @@ interface Props {
   projects: Project[]
   onToast: PushToast
   onGoToSettings: () => void
+}
+
+// Local (no-AI) fallback cards come from SearchAll, which mixes notes and todos,
+// so the hit's own type is carried through rather than flattened to 'note'.
+export function cardFromSearchHit(hit: SearchHit, index: number, projectName?: string): EvidenceItem {
+  return {
+    ref: hit.type === 'note' ? `N${index + 1}` : `T${index + 1}`,
+    type: hit.type,
+    id: hit.id,
+    project_id: hit.project_id,
+    project_name: projectName,
+    title: hit.title,
+    kind: hit.type === 'note' ? 'knowledge' : 'todo',
+    snippet: hit.snippet,
+    rank: index + 1,
+  }
+}
+
+// A todo has no per-row deep link — ProjectDetail only focuses ?noteId=, so an
+// id there would open the notes tab and highlight the note that happens to
+// share the number. Landing on the todos tab is the same rule the Knowledge
+// page uses (Knowledge.tsx).
+export function knowledgeHref(item: EvidenceItem, fallbackProjectId: number): string {
+  if (item.type === 'page') {
+    return item.project_id && item.project_id > 0 ? `/project/${item.project_id}` : '/review'
+  }
+  const pid = item.project_id && item.project_id > 0 ? item.project_id : fallbackProjectId
+  return item.type === 'todo'
+    ? `/project/${pid}?tab=todos`
+    : `/project/${pid}?tab=notes&noteId=${item.id}`
 }
 
 export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettings }: Props) {
@@ -244,20 +275,9 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
           .filter(h => scopeProjectId === 0 || h.project_id === scopeProjectId)
           .slice(0, 8)
 
-        const kCards: EvidenceItem[] = relevantHits.map((h, i) => {
-          const p = projects.find(proj => proj.id === h.project_id)
-          return {
-            ref: h.type === 'note' ? `N${i + 1}` : `T${i + 1}`,
-            type: 'note',
-            id: h.id,
-            project_id: h.project_id,
-            project_name: p?.name,
-            title: h.title,
-            kind: h.type === 'note' ? 'knowledge' : 'todo',
-            snippet: h.snippet,
-            rank: i + 1,
-          }
-        })
+        const kCards: EvidenceItem[] = relevantHits.map((h, i) =>
+          cardFromSearchHit(h, i, projects.find(proj => proj.id === h.project_id)?.name),
+        )
 
         const matchedProjs = matchProjects(promptText, '', kCards)
 
@@ -381,16 +401,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
 
   // Navigate to knowledge item detail
   const handleOpenKnowledge = (item: EvidenceItem) => {
-    if (item.type === 'page') {
-      if (item.project_id && item.project_id > 0) {
-        navigate(`/project/${item.project_id}`)
-      } else {
-        navigate('/review')
-      }
-    } else {
-      const pid = item.project_id && item.project_id > 0 ? item.project_id : (projects[0]?.id || 0)
-      navigate(`/project/${pid}?tab=notes&noteId=${item.id}`)
-    }
+    navigate(knowledgeHref(item, projects[0]?.id || 0))
   }
 
   const promptSuggestions = [
@@ -610,7 +621,9 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
                                 <span className={s.kindBadge}>
                                   {item.type === 'page'
                                     ? item.kind || 'Wiki'
-                                    : t('dashboard.noteType', { defaultValue: '知识笔记' })}
+                                    : item.type === 'todo'
+                                      ? t('search:groupTodos', { defaultValue: '待办' })
+                                      : t('dashboard.noteType', { defaultValue: '知识笔记' })}
                                 </span>
                                 {item.source_path && (
                                   <span className={s.sourceBadge} title={`召回来源: ${item.source_path}`}>

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"repotory/internal/db"
+	"repotory/internal/domain"
 	"repotory/internal/search/abeval"
 )
 
@@ -503,5 +504,82 @@ func TestEvidenceReinforcesAccess(t *testing.T) {
 	}
 	if touched == 0 {
 		t.Error("no page was reinforced by evidence admission; the access signal is dead")
+	}
+}
+
+// Evidence attribution covers the synthetic buckets, too.
+//
+// GatherEvidence names every project kind, including the seeded 未分类 and
+// import-placeholder landing projects. That is deliberate and easy to "fix"
+// the wrong way: ADR-0023 keeps those buckets visible on desktop surfaces, and a
+// note filed in one is still the user's knowledge. Filtering the name lookup by
+// project_kind would blank out ProjectName exactly where attribution matters
+// most (an orphaned import), turning a diagnosable card into an anonymous one.
+// The kind filter belongs to resolution/listing surfaces (filterRealProjects),
+// not to display attribution — this test is what keeps that boundary from
+// quietly moving.
+func TestEvidenceProjectNamesCoverSyntheticBuckets(t *testing.T) {
+	svc, _ := setupService(t)
+
+	phID, err := db.EnsureImportPlaceholder(svc.db, "/code/ghost-repo", "ghost-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defaultID int64
+	if err := svc.db.QueryRow(`SELECT id FROM projects WHERE project_kind = 'default'`).Scan(&defaultID); err != nil {
+		t.Fatal(err)
+	}
+
+	buckets := []struct {
+		pid   int64
+		title string
+	}{
+		{phID, "invoice idempotency retry policy ghost"},
+		{defaultID, "invoice idempotency retry policy unfiled"},
+	}
+	for _, c := range buckets {
+		if _, err := db.CreateNoteEx(svc.db, c.pid, c.title,
+			"Idempotency keys and retry policy for invoices.", "", "knowledge", "manual"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ev := svc.GatherEvidence(0, "invoice idempotency retry policy", EvidenceBudget{})
+	if len(ev.Items) == 0 {
+		t.Fatal("no evidence at all; the fixture did not reach the retriever")
+	}
+	got := map[string]string{}
+	for _, it := range ev.Items {
+		got[it.Title] = it.ProjectName
+	}
+	want := map[string]string{
+		"invoice idempotency retry policy ghost":   "ghost-repo",
+		"invoice idempotency retry policy unfiled": domain.DefaultProjectName,
+	}
+	for title, wantName := range want {
+		name, ok := got[title]
+		if !ok {
+			t.Errorf("note %q did not reach evidence", title)
+			continue
+		}
+		if name != wantName {
+			t.Errorf("note %q project name = %q, want %q (bucket must stay attributable)", title, name, wantName)
+		}
+	}
+}
+
+// A project-name lookup failure costs the card its label and nothing else: the
+// answer still ships. The original code wrapped the whole block in
+// `if err == nil`, so the failure was invisible; it must stay visible in the log
+// while remaining non-fatal on the return path.
+func TestGatherEvidenceSurvivesProjectLookupFailure(t *testing.T) {
+	svc, _ := setupService(t)
+	projectID, _, _ := buildGateCorpus(t, svc)
+	if err := svc.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ev := svc.GatherEvidence(projectID, "release checklist migration dry run rollback", EvidenceBudget{})
+	if ev == nil {
+		t.Fatal("GatherEvidence returned nil on a closed db; it must degrade, not break")
 	}
 }
