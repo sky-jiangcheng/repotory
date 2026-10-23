@@ -14,13 +14,13 @@ class RepotoryMcp < Formula
 
   if OS.mac? && Hardware::CPU.arm?
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-arm64.tar.gz"
-    sha256 "6eddc25d11620add2e4ee9820a63014ed3944592bc9d93cf9591f2c61ccb7c8f"
+    sha256 "8b886fb2f0f5fa8c07d92d02696c6d73c9c716dab6ec2b837bcd5341f646cdbd"
   elsif OS.mac? && Hardware::CPU.is_64_bit?
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-darwin-amd64.tar.gz"
-    sha256 "b44d65d7031edb353de7b416318a61c078cda6398ac7cf7f343a48520b0ce43d"
+    sha256 "da33845b48001c317559a069fb0d1cf3128620159b591624c48fc8b5d15d458f"
   else
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-mcp-linux-amd64.tar.gz"
-    sha256 "bd7ecddad01e8a5d0d714eea98103e421a3c9c4c70ac57ceadfd74507bafced8"
+    sha256 "321f480890ff61c7d4be4f00a054b4e8e2561702521b304540762f22136b246f"
   end
 
   def install
