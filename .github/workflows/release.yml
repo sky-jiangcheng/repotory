@@ -147,6 +147,31 @@ jobs:
           fi
           ls -lh build/mcp/
 
+      # The JetBrains plugin can start this server with one click, so end users
+      # need it as a release asset (ADR-0027 usability revision). The bundle
+      # ships the SPA next to the binary: the plugin passes
+      # `--web-dist <binary dir>/web` automatically, which is what makes
+      # "Open in Repotory" deep links work out of the box. The server build of
+      # the web assets has base "/" — the desktop `web/dist` (base "./") is not
+      # interchangeable, hence the separate build:server invocation.
+      - name: Build headless server bundle
+        shell: bash
+        run: |
+          set -e
+          APP_VERSION=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          echo "Building repotory-server version: $APP_VERSION"
+          LDFLAGS="-X repotory/internal/version.Version=$APP_VERSION"
+          (cd web && npm run build:server)
+          mkdir -p build/server
+          rm -rf build/server/web
+          cp -R web/dist-server build/server/web
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "$LDFLAGS" -o build/server/repotory-server ./cmd/server
+          if [ "${{ runner.os }}" = "Windows" ] && [ -f build/server/repotory-server ]; then
+            mv build/server/repotory-server build/server/repotory-server.exe
+          fi
+          ls -lh build/server/
+
       - name: Package Linux
         if: runner.os == 'Linux'
         run: |
@@ -154,6 +179,7 @@ jobs:
           mkdir -p build/bin/release
           tar -czf "build/bin/release/repotory-linux-amd64.tar.gz" -C build/bin repotory
           tar -czf "build/bin/release/repotory-mcp-linux-amd64.tar.gz" -C build/mcp repotory-mcp
+          tar -czf "build/bin/release/repotory-server-linux-amd64.tar.gz" -C build/server repotory-server web
           echo "RELEASE_DIR=build/bin/release" >> $GITHUB_ENV
 
       - name: Package macOS
@@ -211,6 +237,7 @@ jobs:
           # MCP server: separate archive, same release, no codesign/notary impact
           # on the .dmg above.
           tar -czf "release/repotory-mcp-${{ matrix.target }}.tar.gz" -C build/mcp repotory-mcp
+          tar -czf "release/repotory-server-${{ matrix.target }}.tar.gz" -C build/server repotory-server web
 
           echo "RELEASE_DIR=release" >> $GITHUB_ENV
 
@@ -224,6 +251,9 @@ jobs:
           fi
           if [ -f "build/mcp/repotory-mcp.exe" ]; then
             powershell Compress-Archive -Path "build/mcp/repotory-mcp.exe" -DestinationPath "release/repotory-mcp-windows-amd64.zip"
+          fi
+          if [ -f "build/server/repotory-server.exe" ]; then
+            powershell Compress-Archive -Path "build/server/repotory-server.exe","build/server/web" -DestinationPath "release/repotory-server-windows-amd64.zip"
           fi
           echo "RELEASE_DIR=release" >> "$GITHUB_ENV"
 
@@ -391,6 +421,55 @@ jobs:
           # file is stamped by scripts/bump-version.sh at release time.
           npx @vscode/vsce publish --no-dependencies
           echo "Published repotory-vscode@$(node -p "require('./package.json').version") to the VS Code Marketplace."
+
+  # Publish the JetBrains plugin to the Marketplace with the same version as
+  # the product release (build.gradle.kts follows wails.json via
+  # scripts/bump-version.sh). Requires a permanent Marketplace token from the
+  # vendor account (https://plugins.jetbrains.com/author/me/tokens). The three
+  # signing secrets are optional: without them the upload is unsigned, which
+  # Marketplace accepts — the signature only carries the verified-vendor badge.
+  # Without the token this job skips with a warning and the zip stays on the
+  # GitHub Release for manual install, mirroring publish-marketplace above.
+  publish-jetbrains-marketplace:
+    name: Publish to JetBrains Marketplace
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Publish plugin
+        working-directory: ide/jetbrains
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JETBRAINS_MARKETPLACE_TOKEN:-}" ]; then
+            echo "::warning::JETBRAINS_MARKETPLACE_TOKEN is not set — skipping JetBrains Marketplace publish. The plugin zip is still attached to this release for manual install."
+            exit 0
+          fi
+          if [ -z "${CERTIFICATE_CHAIN:-}" ] || [ -z "${PRIVATE_KEY:-}" ] || [ -z "${PRIVATE_KEY_PASSWORD:-}" ]; then
+            echo "::notice::Signing secrets not set — publishing unsigned (Marketplace accepts this)."
+            unset CERTIFICATE_CHAIN PRIVATE_KEY PRIVATE_KEY_PASSWORD
+          fi
+          gradle publishPlugin --console=plain
+          echo "Published repotory-jetbrains to the JetBrains Marketplace."
 
   # After the release is published, the sha256 of every shipped asset is a
   # known fact. Homebrew and Scoop hard-fail on a missing/wrong digest, so the

@@ -7,19 +7,26 @@
 // repotory-mcp over stdio — zero logic duplication (thin-client discipline).
 import * as vscode from "vscode";
 import * as path from "node:path";
-import { accessSync } from "node:fs";
-import { exec } from "node:child_process";
+import * as os from "node:os";
+import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { exec, execFile } from "node:child_process";
 import { McpStdioClient } from "./mcpClient.js";
 import { getJson, parseSearchHits, postJson } from "./headless.js";
 import { NotesSearchProvider } from "./notesTree.js";
 
 const CONFIG_SECTION = "repotory";
 const SERVER_URL_KEY = "serverUrl";
+const MCP_PATH_KEY = "mcpPath";
+const MCP_ENV = "REPOTORY_MCP_BIN";
 const BINARY_NAMES = ["repotory-mcp", "repotory-mcp.exe"];
+const RELEASES_URL = "https://github.com/sky-jiangcheng/repotory/releases";
+const AI_INTEGRATION_DOC =
+  "https://github.com/sky-jiangcheng/repotory/blob/master/docs/features/ai-integration.md";
 
 export let output: vscode.OutputChannel;
 let statusItem: vscode.StatusBarItem;
 let mcp: McpStdioClient | null = null;
+let extensionContext: vscode.ExtensionContext | undefined;
 
 interface HandoffStatus {
   note_id?: number;
@@ -52,38 +59,169 @@ interface WorkspaceResolution {
 
 let lastResolution: WorkspaceResolution | null = null;
 
-export function findBinary(): string | undefined {
+type BinarySource = "setting" | "env" | "storage" | "path" | "common";
+
+interface BinaryResolution {
+  path?: string;
+  source?: BinarySource;
+  problem?: string;
+}
+
+function expandHome(value: string): string {
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  return value;
+}
+
+function isExecutable(candidate: string): boolean {
+  try {
+    accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    // Windows does not honour X_OK for most files; existence is the best
+    // signal there, and spawn will fail with a clear error if it is not.
+    return process.platform === "win32" && existsSync(candidate);
+  }
+}
+
+function commonBinaryDirs(): string[] {
+  const home = os.homedir();
+  if (process.platform === "darwin") {
+    return [
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/local/opt/repotory-mcp/bin",
+      path.join(home, ".local", "bin"),
+    ];
+  }
+  if (process.platform === "win32") {
+    const local = process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
+    return [
+      path.join(home, "scoop", "shims"),
+      path.join(home, "scoop", "apps", "repotory-mcp", "current"),
+      path.join(local, "Programs", "repotory-mcp"),
+      path.join(local, "repotory-mcp"),
+    ];
+  }
+  return [
+    "/usr/local/bin",
+    "/usr/bin",
+    path.join(home, ".local", "bin"),
+    "/home/linuxbrew/.linuxbrew/bin",
+  ];
+}
+
+function storageBinary(): string | undefined {
+  const dir = extensionContext?.globalStorageUri.fsPath;
+  if (!dir) return undefined;
   for (const name of BINARY_NAMES) {
-    for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-      if (!dir) continue;
-      const candidate = path.join(dir, name);
-      try {
-        accessSync(candidate);
-        return candidate;
-      } catch {
-        /* keep looking */
-      }
-    }
+    const candidate = path.join(dir, "bin", name);
+    if (isExecutable(candidate)) return candidate;
   }
   return undefined;
 }
 
+/**
+ * Resolve repotory-mcp without requiring it to be on PATH.
+ *
+ * Order: explicit setting -> env var -> extension storage -> PATH -> common
+ * package-manager directories. A configured-but-missing path is reported as a
+ * problem instead of silently falling through to PATH: the user pointed at a
+ * file, and pretending otherwise would hide the mistake.
+ */
+export function resolveMcpBinary(): BinaryResolution {
+  const configuredRaw =
+    vscode.workspace.getConfiguration(CONFIG_SECTION).get<string>(MCP_PATH_KEY)?.trim() ?? "";
+  if (configuredRaw) {
+    const configured = expandHome(configuredRaw);
+    return isExecutable(configured)
+      ? { path: configured, source: "setting" }
+      : { problem: `repotory.mcpPath 指向的文件不可执行：${configured}` };
+  }
+
+  const fromEnv = process.env[MCP_ENV]?.trim();
+  if (fromEnv) {
+    const expanded = expandHome(fromEnv);
+    return isExecutable(expanded)
+      ? { path: expanded, source: "env" }
+      : { problem: `环境变量 ${MCP_ENV} 指向的文件不可执行：${expanded}` };
+  }
+
+  const stored = storageBinary();
+  if (stored) return { path: stored, source: "storage" };
+
+  const common = commonBinaryDirs();
+  const seen = new Set<string>();
+  for (const dir of [...(process.env.PATH ?? "").split(path.delimiter), ...common]) {
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    for (const name of BINARY_NAMES) {
+      const candidate = path.join(dir, name);
+      if (isExecutable(candidate)) {
+        return { path: candidate, source: common.includes(dir) ? "common" : "path" };
+      }
+    }
+  }
+  return {
+    problem: "在 PATH、Homebrew / Scoop 常见目录和扩展存储中都没有找到 repotory-mcp",
+  };
+}
+
+export function findBinary(): string | undefined {
+  return resolveMcpBinary().path;
+}
+
+async function pickMcpBinary(): Promise<string | undefined> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    openLabel: "使用此文件",
+    title: "选择 repotory-mcp 可执行文件",
+  });
+  const file = picked?.[0];
+  if (!file) return undefined;
+  if (!isExecutable(file.fsPath)) {
+    void vscode.window.showWarningMessage(`Repotory: 该文件不可执行：${file.fsPath}`);
+    return undefined;
+  }
+  await vscode.workspace
+    .getConfiguration(CONFIG_SECTION)
+    .update(MCP_PATH_KEY, file.fsPath, vscode.ConfigurationTarget.Global);
+  resetMcp();
+  return file.fsPath;
+}
+
+function resetMcp(): void {
+  mcp?.stop();
+  mcp = null;
+}
+
 async function getMcp(): Promise<McpStdioClient> {
   if (mcp) return mcp;
-  const bin = findBinary();
-  if (!bin) {
+  const resolved = resolveMcpBinary();
+  if (!resolved.path) {
     const choice = await vscode.window.showErrorMessage(
-      "Repotory: repotory-mcp binary not found on PATH. Install it from Releases, then retry.",
-      "Open Releases",
+      `Repotory: 未找到 repotory-mcp。${resolved.problem ?? ""}`,
+      "定位可执行文件…",
+      "打开下载页",
+      "环境诊断",
     );
-    if (choice === "Open Releases") {
-      void vscode.env.openExternal(
-        vscode.Uri.parse("https://github.com/sky-jiangcheng/repotory/releases"),
-      );
+    if (choice === "定位可执行文件…") {
+      const picked = await pickMcpBinary();
+      if (picked) return getMcp();
+    } else if (choice === "打开下载页") {
+      void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+    } else if (choice === "环境诊断" && extensionContext) {
+      await diagnose(extensionContext);
     }
-    throw new Error("repotory-mcp not found");
+    throw new Error(resolved.problem ?? "repotory-mcp not found");
   }
-  const client = new McpStdioClient({ command: bin }, (line: string) => output?.appendLine(line));
+  const client = new McpStdioClient({ command: resolved.path }, (line: string) =>
+    output?.appendLine(line),
+  );
   await client.start();
   mcp = client;
   return client;
@@ -275,46 +413,289 @@ async function searchKnowledge(notes: NotesSearchProvider): Promise<void> {
 // extension itself (scripts/sync-init.mjs puts it there at compile time); fall
 // back to a workspace copy so developing inside this repository still uses the
 // live source.
-async function registerMcp(context: vscode.ExtensionContext): Promise<void> {
+async function findInitScript(
+  context: vscode.ExtensionContext,
+): Promise<vscode.Uri | undefined> {
   const folder = vscode.workspace.workspaceFolders?.[0];
-  const candidates = [
-    vscode.Uri.joinPath(context.extensionUri, "repotory-init", "index.mjs"),
-  ];
+  const candidates = [vscode.Uri.joinPath(context.extensionUri, "repotory-init", "index.mjs")];
   if (folder) {
     candidates.push(vscode.Uri.joinPath(folder.uri, "scripts", "repotory-init", "index.mjs"));
   }
-  let script: vscode.Uri | undefined;
   for (const candidate of candidates) {
     try {
       await vscode.workspace.fs.stat(candidate);
-      script = candidate;
-      break;
+      return candidate;
     } catch {
       /* keep looking */
     }
   }
+  return undefined;
+}
+
+/**
+ * Run the bundled installer without opening a terminal.
+ *
+ * The extension host is Electron, so `process.execPath` is the editor binary;
+ * ELECTRON_RUN_AS_NODE turns it into a plain Node runtime. Falling back to
+ * `node` on PATH covers forks that disable that switch. Only a spawn failure
+ * (ENOENT/EACCES) falls back — a non-zero exit is a real installer error and
+ * must not be retried with a second runtime.
+ */
+function runInitScript(
+  script: vscode.Uri,
+  cwd: string,
+  args: string[],
+): Promise<void> {
+  const attempt = (command: string, env: NodeJS.ProcessEnv): Promise<void> =>
+    new Promise((resolve, reject) => {
+      execFile(
+        command,
+        [script.fsPath, ...args],
+        { cwd, env, timeout: 60_000, windowsHide: true },
+        (err, stdout, stderr) => {
+          if (stdout.trim()) output.appendLine(stdout.trim());
+          if (stderr.trim()) output.appendLine(stderr.trim());
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+
+  return attempt(process.execPath, { ...process.env, ELECTRON_RUN_AS_NODE: "1" }).catch(
+    (err: NodeJS.ErrnoException) => {
+      if (err.code !== "ENOENT" && err.code !== "EACCES") throw err;
+      output.appendLine(`Electron-as-node unavailable (${err.code}); retrying with node on PATH.`);
+      return attempt("node", process.env);
+    },
+  );
+}
+
+async function registerMcp(context: vscode.ExtensionContext): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    void vscode.window.showErrorMessage(
+      "Repotory: 请先打开一个项目文件夹——MCP 注册会写入该项目的 .mcp.json / .vscode/mcp.json / .cursor/mcp.json。",
+    );
+    return;
+  }
+  const script = await findInitScript(context);
   if (!script) {
     const choice = await vscode.window.showWarningMessage(
-      "Repotory: repotory-init was not found. Reinstall the extension, or run the installer from the Repotory repository.",
-      "Open Docs",
+      "Repotory: 扩展内没有找到 repotory-init，请重新安装扩展。",
+      "打开文档",
     );
-    if (choice === "Open Docs") {
-      void vscode.env.openExternal(
-        vscode.Uri.parse(
-          "https://github.com/sky-jiangcheng/repotory/blob/master/docs/features/ai-integration.md",
-        ),
-      );
+    if (choice === "打开文档") {
+      void vscode.env.openExternal(vscode.Uri.parse(AI_INTEGRATION_DOC));
     }
     return;
   }
-  const terminal = vscode.window.createTerminal({
-    name: "repotory-init",
-    cwd: folder?.uri ?? context.extensionUri,
+
+  const bin = findBinary();
+  const args = ["--yes", "--with-hook"];
+  if (bin) args.push("--bin", bin);
+
+  await withProgress("registering MCP server", async () => {
+    try {
+      await runInitScript(script, folder.uri.fsPath, args);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const choice = await vscode.window.showErrorMessage(
+        `Repotory: 自动注册失败（${message}）。`,
+        "查看日志",
+        "在终端手动运行",
+      );
+      if (choice === "查看日志") output.show(true);
+      if (choice === "在终端手动运行") {
+        // Last-resort escape hatch, not the primary path: the terminal exists
+        // only when the silent run could not complete.
+        const terminal = vscode.window.createTerminal({ name: "repotory-init", cwd: folder.uri });
+        terminal.sendText(
+          `node "${script.fsPath}" ${args
+            .map((arg) => (arg.includes(" ") ? `"${arg}"` : arg))
+            .join(" ")}`,
+        );
+        terminal.show();
+      }
+      return;
+    }
+    const choice = await vscode.window.showInformationMessage(
+      "Repotory: MCP 服务器已写入当前项目的客户端配置（Claude Code / Cursor / VS Code / Windsurf），重载窗口后生效。",
+      "查看日志",
+    );
+    if (choice === "查看日志") output.show(true);
   });
-  // Quoted: extensionUri contains spaces on some machines, which would otherwise
-  // split the command across several arguments.
-  terminal.sendText(`node "${script.fsPath}" --with-hook`);
-  terminal.show();
+}
+
+function binarySourceLabel(source?: BinarySource): string {
+  switch (source) {
+    case "setting":
+      return "设置 repotory.mcpPath";
+    case "env":
+      return `环境变量 ${MCP_ENV}`;
+    case "storage":
+      return "扩展存储";
+    case "path":
+      return "PATH";
+    case "common":
+      return "常见安装目录";
+    default:
+      return "";
+  }
+}
+
+async function resolveWorkspaceForDiagnostics(): Promise<{
+  reachable: boolean;
+  resolution: WorkspaceResolution | null;
+}> {
+  const dir = workspacePath();
+  if (!dir) return { reachable: true, resolution: null };
+  try {
+    const response = (await postJson(serverUrl(), "/api/rpc", {
+      method: "ResolveWorkspacePath",
+      args: [dir],
+    })) as { result?: WorkspaceResolution | null };
+    return { reachable: true, resolution: response.result ?? null };
+  } catch {
+    return { reachable: false, resolution: null };
+  }
+}
+
+async function isMcpRegistered(dir: string | undefined): Promise<boolean> {
+  const files = [
+    ...(dir
+      ? [".mcp.json", path.join(".vscode", "mcp.json"), path.join(".cursor", "mcp.json")]
+      : []),
+    path.join(os.homedir(), ".codeium", "windsurf", "mcp_config.json"),
+  ];
+  for (const rel of files) {
+    const target = path.isAbsolute(rel) ? rel : path.join(dir ?? "", rel);
+    try {
+      const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(target));
+      if (/"repotory"\s*:/.test(Buffer.from(raw).toString("utf8"))) return true;
+    } catch {
+      /* missing or unreadable */
+    }
+  }
+  return false;
+}
+
+interface DiagnosticAction extends vscode.QuickPickItem {
+  run: () => Promise<void>;
+}
+
+/**
+ * One place that answers "why does this not work?" and offers the fix inline.
+ * Every row is clickable: binary missing -> file picker/releases; service down
+ * -> re-check; workspace unmatched -> explanation; MCP not registered -> run
+ * the bundled installer. This is the GUI replacement for the old
+ * "install this, run that command" error dialogs.
+ */
+async function diagnose(context: vscode.ExtensionContext): Promise<void> {
+  const binary = resolveMcpBinary();
+  const serverOk = await pingHeadless();
+  const dir = workspacePath();
+  const workspaceState = await resolveWorkspaceForDiagnostics();
+  const registered = await isMcpRegistered(dir);
+  const repositoryName = workspaceState.resolution?.Repository?.path
+    ? path.basename(workspaceState.resolution.Repository.path)
+    : undefined;
+
+  const items: DiagnosticAction[] = [
+    {
+      label: binary.path ? "$(check) repotory-mcp" : "$(error) repotory-mcp",
+      description: binary.path ?? binary.problem ?? "未找到",
+      detail: binary.path
+        ? `来源：${binarySourceLabel(binary.source)}`
+        : "点击选择可执行文件；取消后可改从 Releases 下载",
+      run: async () => {
+        if (binary.path) {
+          output.appendLine(`repotory-mcp: ${binary.path}`);
+          output.show(true);
+          return;
+        }
+        const picked = await pickMcpBinary();
+        if (!picked) {
+          void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+          return;
+        }
+        await diagnose(context);
+      },
+    },
+    {
+      label: serverOk ? "$(check) 本地服务" : "$(warning) 本地服务",
+      description: serverOk
+        ? serverUrl()
+        : `未连接到 ${serverUrl()}（搜索仍可经 repotory-mcp 完成）`,
+      detail: serverOk ? "健康检查通过" : "桌面版可在设置中修改 repotory.serverUrl；点击重新检测",
+      run: async () => {
+        await diagnose(context);
+      },
+    },
+    {
+      label: dir
+        ? workspaceState.resolution?.Project
+          ? "$(check) 工作区"
+          : "$(warning) 工作区"
+        : "$(circle-slash) 工作区",
+      description: !dir
+        ? "未打开文件夹"
+        : !workspaceState.reachable
+          ? "服务不可达，暂时无法解析"
+          : workspaceState.resolution?.Project
+            ? `${workspaceState.resolution.Project.name}${
+                repositoryName ? ` · ${repositoryName}` : ""
+              }`
+            : "未匹配知识库项目",
+      detail: dir ?? "",
+      run: async () => {
+        if (!dir) {
+          void vscode.window.showWarningMessage("先打开一个项目文件夹。");
+          return;
+        }
+        if (!workspaceState.reachable) {
+          void vscode.window.showWarningMessage(
+            "本地服务不可达，无法解析工作区；启动服务后再检测。",
+          );
+          return;
+        }
+        if (!workspaceState.resolution?.Project) {
+          void vscode.window.showInformationMessage(
+            "该文件夹还不在知识库中：先在 Repotory 桌面应用里扫描/导入；命令本身仍可用。",
+          );
+          return;
+        }
+        output.appendLine(
+          `workspace: ${dir} -> ${workspaceState.resolution.Project.name}${
+            workspaceState.resolution.Repository
+              ? ` / ${workspaceState.resolution.Repository.path}`
+              : ""
+          }`,
+        );
+        output.show(true);
+      },
+    },
+    {
+      label: registered ? "$(check) MCP 客户端配置" : "$(circle-outline) MCP 客户端配置",
+      description: registered ? "已写入 repotory 条目" : "当前项目尚未注册",
+      detail: dir
+        ? "写入 .mcp.json / .vscode/mcp.json / .cursor/mcp.json（后台执行，不打开终端）"
+        : "需要先打开项目文件夹",
+      run: async () => {
+        if (!dir) {
+          void vscode.window.showWarningMessage("先打开一个项目文件夹。");
+          return;
+        }
+        await registerMcp(context);
+        await diagnose(context);
+      },
+    },
+  ];
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: "Repotory 环境诊断",
+    placeHolder: "选择一项查看详情或修复",
+  });
+  if (picked) await picked.run();
 }
 
 // 打开 Repotory 桌面应用：优先用平台原生方式启动，找不到时引导到 Releases 下载。
@@ -351,28 +732,21 @@ async function openDesktop(): Promise<void> {
   });
 }
 
-// 首次安装引导：让新用户一眼看出这是 Repotory 扩展，并知道第一步该做什么。
+// 首次安装引导：让新用户一眼看出这是 Repotory 扩展，并一步进入配置向导。
 async function onboard(context: vscode.ExtensionContext): Promise<void> {
   const already = context.globalState.get<boolean>("repotory.onboarded");
   if (already) return;
 
   const choice = await vscode.window.showInformationMessage(
-    "👋 欢迎使用 Repotory 扩展 — 你的本地知识库已集成到 IDE。\n\n" +
-      "开始使用前，请先：\n" +
-      "1. 安装 repotory-mcp（GitHub Releases，或随桌面应用一同安装）；\n" +
-      '2. 运行 "Repotory: Register MCP Server" 把 MCP 服务器注册到你的 AI 客户端；\n' +
-      '3. 打开一个代码文件夹，点击状态栏 "Repotory"，或按 Ctrl+Cmd+R C（Windows/Linux 为 Ctrl+Alt+R C）加载会话上下文。',
-    "安装 repotory-mcp",
-    "注册 MCP 服务器",
+    "👋 欢迎使用 Repotory。\n\n" +
+      "配置向导会自动检测 repotory-mcp、检查本地服务、并把 MCP 写入当前项目——" +
+      "不需要手动敲命令。",
+    "开始配置",
     "稍后再说",
   );
 
-  if (choice === "安装 repotory-mcp") {
-    void vscode.env.openExternal(
-      vscode.Uri.parse("https://github.com/sky-jiangcheng/repotory/releases"),
-    );
-  } else if (choice === "注册 MCP 服务器") {
-    await registerMcp(context);
+  if (choice === "开始配置") {
+    await diagnose(context);
   }
 
   await context.globalState.update("repotory.onboarded", true);
@@ -381,7 +755,7 @@ async function onboard(context: vscode.ExtensionContext): Promise<void> {
 // ---------------------------------------------------------------- lifecycle
 
 export function activate(context: vscode.ExtensionContext): void {
-  void onboard(context);
+  extensionContext = context;
   output = vscode.window.createOutputChannel("Repotory", { log: true });
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 60);
   statusItem.text = "$(repo) Repotory";
@@ -393,6 +767,9 @@ export function activate(context: vscode.ExtensionContext): void {
   void refreshScope(notes);
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => void refreshScope(notes)),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(`${CONFIG_SECTION}.${MCP_PATH_KEY}`)) resetMcp();
+    }),
   );
 
   const handoffTimer = setInterval(() => void refreshLastHandoff(), 60_000);
@@ -415,6 +792,10 @@ export function activate(context: vscode.ExtensionContext): void {
   register("repotory.handoff", writeHandoff);
   register("repotory.search", () => searchKnowledge(notes));
   register("repotory.registerMcp", () => registerMcp(context));
+  register("repotory.diagnose", () => diagnose(context));
+  register("repotory.setMcpPath", async () => {
+    await pickMcpBinary();
+  });
   register("repotory.openDesktop", () => openDesktop());
 
   context.subscriptions.push(
@@ -440,6 +821,7 @@ export function activate(context: vscode.ExtensionContext): void {
         " — commands still work through repotory-mcp";
     }
   });
+  void onboard(context);
 }
 
 export function deactivate(): void {

@@ -182,7 +182,7 @@ repository 层（1、2）压过 project 层（3、4），因为命中 repository
 node scripts/repotory-init/index.mjs --with-hook
 ```
 
-**在任意项目里都能跑**：VS Code 扩展的 `Repotory: Register MCP Server` 命令用的是随扩展打包的那份 `repotory-init`（事实源仍在 `scripts/repotory-init/index.mjs`，由 `compile` 拷入 VSIX，CI 用 `git diff --exit-code` 钉住两者一致），所以不必先克隆本仓库。上面的裸命令则需要你在本仓库目录内执行。
+**在任意项目里都能跑**：VS Code 扩展的 `Repotory: Register MCP Server` 命令用的是随扩展打包的那份 `repotory-init`（事实源仍在 `scripts/repotory-init/index.mjs`，由 `compile` 拷入 VSIX，CI 用 `git diff --exit-code` 钉住两者一致），所以不必先克隆本仓库；执行时也不弹终端——扩展在宿主进程内静默跑完安装器（仅 `ENOENT`/`EACCES` 时才回退到 `node`）。上面的裸命令则需要你在本仓库目录内执行。
 
 - 自动探测 `repotory-mcp`（`--bin` 可显式指定），向 Claude Code（`.mcp.json`）、Cursor（`.cursor/mcp.json`）、VS Code（`.vscode/mcp.json`）、Windsurf 写入注册（配置只落在对应客户端目录已存在的地方），JetBrains 打印手动指引
 - `--with-hook` 同时安装下方的 SessionEnd hook（脚本 + `settings.json` 合并，改前备份）

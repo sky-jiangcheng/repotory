@@ -22,27 +22,27 @@
 2. **MVP 范围（平移 VS Code 扩展范式）**：
    - ① 知识库检索工具窗：笔记 + 待办的 FTS/hybrid 搜索（走既有检索绑定 `SearchAll`；语义与图感知随 `semantic_search` / `wiki_graph_search` 门控自然生效，插件不自带门控逻辑、不重复实现排序）；
    - ② 结果跳转：在系统浏览器打开 Repotory SPA 定位到该结果（同源 server 地址；深链路由以前端现状为准，不足处随 MVP 补最小路由参数，不在插件内嵌完整 UI）；
-   - ③ 设置页：server 地址（默认 `http://127.0.0.1:18765`）+ 连接健康检查；
+   - ③ 设置页：server 地址（默认 `http://127.0.0.1:18765`）+ 连接健康检查 + 可选的 `repotory-server` 二进制路径（空 = 自动探测）；
    - ④ MCP 一键注册（复用 `repotory-init` 的注册思路，写 JetBrains 侧的 MCP 客户端配置）——若实现时发现 IDE 配置面过于不稳定，降级为文档指引，不阻塞 MVP。
 3. **技术形态**：Kotlin + Gradle（IntelliJ Platform Plugin）；独立代码库。与 ADR-0009 预判一致的双倍维护面由此**明知接受**，其边界由薄客户端纪律压在 API 层。
 
 ## 开放问题拍板（2026-10-22，所有者委托统一裁定）
 
 1. **目标 IDE 家族与版本基线 → IntelliJ IDEA CE 先行，平台级兼容，基线 242（2024.2+）**。本机实测所有者的 JetBrains 日常 IDE 为 IntelliJ IDEA CE（`/Applications/IntelliJ IDEA CE.app` = 2025.2.6.1，支持目录 `IdeaIC2025.2`，另有 `IntelliJIdea2024.3-backup`；全机无 GoLand——原问题「如 GoLand」的预设不成立）。插件声明 `com.intellij.modules.platform`：MVP 所需 API（工具窗 / 设置页 / 浏览器跳转 / HTTP）均为纯平台 API，同一构建即可装入全部 IntelliJ 家族（含本机 PyCharm CE），不按产品分叉。`sinceBuild=242` 覆盖所有者近期的 2024.3 与当前 2025.2 并留余量；开发与验收以 IDEA CE 2025.2 为准；公开分发前复核基线。
-2. **分发方式 → 私有分发先行**（磁盘安装 / 私有更新源，无签名与审核摩擦）；Marketplace 待插件稳定后另议（采纳原建议）。
+2. **分发方式 → Marketplace 公开上架 + GitHub Release zip 双轨**（2026-10-22 修订原「私有分发先行」）：插件进入 JetBrains Marketplace，随产品 tag 用 `gradle publishPlugin` 发布同一版本号；zip 继续作为 GitHub Release 资产，供离线/内网手动安装。签名可选（缺失则发布未签名包，Marketplace 接受），首次上架需所有者用 vendor 账号人工完成一次、并由 Marketplace 审核。
 3. **会话捕捉 → 不入 MVP**：严格对齐 VS Code 扩展已验证的能力面，终端/捕捉集成留待真实痛点（采纳原建议）。
-4. **server 生命周期 → 仅连接**：连接既有实例（用户自启 / 开机自启），薄壳零托管（采纳原建议）；托管自启待真实痛点再议，届时沿用 dsh 插件实践落文档。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧按此落定。
+4. **server 生命周期 → 连接优先，允许插件一键启动本地实例**（2026-10-22 可用度修订，取代原文「仅连接」）：默认复用已在 `serverUrl` 上应答的实例；没有任何实例应答时，插件可以启动一个**本地** `repotory-server`。边界四条，缺一不可：① 只认用户已有的二进制（设置项 → `REPOTORY_SERVER_BIN` → `PATH` → 常见安装目录），插件不下载、不构建、不代管包管理器；② 只对 loopback 地址启动，远端地址一律拒绝；③ 只在 `/health` 无人应答时启动，绝不与既有实例抢端口；④ IDE 退出时只停止自己拉起的子进程，用户自启的实例不动。发布侧相应地新增 `repotory-server-<platform>` 资产（二进制 + `web/`，插件自动传 `--web-dist`），否则「一键启动」对最终用户不可兑现。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧按此落定；VS Code 扩展仍以 MCP + 按需 headless 连接为主，不在本轮扩围。
 
 ## 后果
 
 - 正面：JetBrains 家族获得 IDE 内可见存在（工具窗 / 设置页），传播货架补齐第二块；薄客户端纪律使维护面限于 API 层演进；检索后端直接受益于 lane 2 生产管线（`semantic_search` + 图感知取证已开启，2026-10-22），插件零额外成本继承全管线口径。
 - 负面：+1 个 Kotlin/Gradle 独立代码库（双倍维护面——0009 缓议的原始理由，由所有者在需求信号明确的前提下明知接受）；一份构建只覆盖 JetBrains 一家，无 VSIX 式 fork 家族摊薄。
 - 中性：不触碰范围冻结（`repotory` 二进制名 / 数据目录 / MCP 前缀 `repotory_*` 不变；插件是分发面不是平台化，ADR-0006 的调和条款继续适用）。
-- 遗留：Marketplace 上架材料（截图 / 描述 / 图标）与签名事宜——分发方式已拍板私有分发先行，此项推迟至插件稳定、转入 Marketplace 上架议程时处理；`sinceBuild` 基线届时一并复核。
+- 遗留：Marketplace 上架材料（描述 / 图标 / change notes）已随 2026-10-22 上架配置补齐，签名走 CI secrets（可选）；剩余的两件外部动作——所有者创建 vendor 账号并完成首次上传、Marketplace 侧的首版审核——不在代码库内，记于 `TODO.md`。
 
 ## 实施修正记录（2026-10-22 MVP 落码时逐条核验）
 
-MVP 已落码于 `ide/jetbrains/`（Kotlin + Gradle，7 个源文件），`buildPlugin` 与 `verifyPlugin`（对 IDEA CE 2025.2）均通过。以下记录实现期实测到的事实与对决策文本的修正。
+MVP 已落码于 `ide/jetbrains/`（Kotlin + Gradle，8 个源文件），`buildPlugin` 与 `verifyPlugin`（对 IDEA CE 2025.2）均通过。以下记录实现期实测到的事实与对决策文本的修正。
 
 ### 决策 2① 的「wiki 页」检索 —— 实测两端都缺中间未接，已修正决策文本
 
@@ -82,3 +82,48 @@ VS Code 扩展（第一个 IDE 分发面，ADR-0027 要求「平移」其范式�
 另修一处 `plugin.xml` 缺 `<description>` —— Plugin Verifier 判定为「Invalid plugin descriptor」（`<description>` 是插件描述符的必填项），已补。
 
 `verifyPlugin` 对 IDEA CE 2025.2 报 **无 compatibility problem**；`sinceBuild=242` 低于构建目标 252 是有意的（决策 1 要求覆盖 2024.2+），已在 `build.gradle.kts` 注释中写明「构建目标是最新的 IDE，声明的底线是插件承诺支持的最低版本」——插件只用了 242 就存在的平台 API（工具窗、设置页、Swing、`java.net`），这正是 Verifier 要证明的事。
+
+## 可用度修订（2026-10-22，用户实测反馈后）
+
+用户实测反馈两条：① 不清楚项目用 JDK 8 时插件能否使用；② 插件必须先在终端把服务跑起来，纯界面操作走不通。前者是文档缺口，后者是决策 4 的产品缺口——「仅连接」把最麻烦的一步留给了用户。本轮修订如下。
+
+### `untilBuild = "243.*"` 是真实缺陷，已移除
+
+初版声明 `sinceBuild=242` + `untilBuild="243.*"`，本意是「覆盖 2024.2 到 2024.3」。实际语义是**上限锁死**：2025.1 及以后（包括构建目标 2025.2 本身）都会被判为不兼容而无法加载。`build.gradle.kts` 的注释还写着「untilBuild 243.* 让插件也能装在 2024.2」——方向写反了。已改为只声明 `sinceBuild=242`、不设上限。技术上站得住：插件只用 242 就存在的平台 API，未来平台若破坏这些 API，由 Plugin Verifier 而不是一个写死的年份来发现。
+
+上架前复核打包产物时又发现第二层同一个坑：**只删掉 `untilBuild = "243.*"` 并不够**。IntelliJ Platform Gradle Plugin 的 `patchPluginXml` 在属性未被显式赋值时会自动补 `<idea-version until-build="<构建目标>.*"/>`（本仓库实际产出 `until-build="252.*"`），也就是把上限悄悄改回「构建它的那个 IDE」。必须显式写 `untilBuild = provider { null }` 才会真正省略；已按此修正，并从打好的 zip 内解出 `plugin.xml` 确认只剩 `<idea-version since-build="242" />`。
+
+### Java 8：与项目 JDK 无关，文档已写明
+
+插件运行在 IDE 自带的 JBR（2024.2+ 为 Java 21），不加载项目 JDK、不编译用户代码、不依赖 Java 8 API。因此 **JDK 8 项目可以正常使用插件**；唯一的 Java 21 要求出现在「从源码构建插件」这一步（`jvmToolchain(21)`），与最终用户无关。这条已写入 `ide/jetbrains/README.md` 的 Requirements 与 Compatibility 表，避免再被当成安装前提。
+
+### 一键启动本地服务（决策 4 修订的落地）
+
+新增 `RepotoryServer.kt`（应用级 service）：
+
+- 解析顺序：设置项 `Server binary` → `REPOTORY_SERVER_BIN` → `PATH` → Homebrew / Scoop / `~/.local/bin` 等常见目录；找不到时弹「Set Path… / Open Download Page / Cancel」，**不下载、不构建**。
+- 启动命令：`repotory-server --port <serverUrl 的端口>`；若二进制同目录存在 `web/index.html`，自动追加 `--web-dist <dir>/web`（发布包即此布局），深链因此开箱可用。
+- 安全边界：先 `ping`，有人应答就复用；非 loopback 地址拒绝启动；只停止自己拉起的子进程（`Disposer` 挂在 application 上，IDE 退出时清理）。
+- 入口：工具窗检索失败时状态行旁出现 **Start local service** 按钮（仅传输层失败时出现，4xx/5xx 不出现），设置页也有同名按钮；成功后自动重跑当前查询。
+
+发布侧同步：`release.yml` 新增 `Build headless server bundle`，构建 `repotory-server` + `npm run build:server` 产物 `web/`，按平台打成 `repotory-server-<target>.tar.gz` / `.zip`；`packaging/README.md` 资产表已补。没有这项，「一键启动」对最终用户仍然是一句空话。
+
+### 未随本轮改动
+
+- MCP 一键注册仍不在 JetBrains MVP（决策 2④ 的降级条款继续生效，`repotory-init` 只打印手动指引）。
+- VS Code 扩展不再扩围到「启动 headless 服务」——它的 MCP 路径已能独立工作，且本轮已改为多源二进制解析 + 静默注册 + 诊断面板。
+
+## Marketplace 上架（2026-10-22，修订拍板 2）
+
+所有者明确「IDEA 插件也要上插件商店」，拍板 2 由「私有分发先行」改为「Marketplace 公开上架 + GitHub Release zip 双轨」。代码与发布侧改动：
+
+| 面 | 改动 |
+|---|---|
+| 构建 | `build.gradle.kts` 增加 `publishing { token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN") }`，`gradle publishPlugin` 上传 `buildPlugin` 产物；三个签名环境变量（`CERTIFICATE_CHAIN` / `PRIVATE_KEY` / `PRIVATE_KEY_PASSWORD`）**仅在齐全时**配置 `signing`，缺省则发布未签名包（Marketplace 接受，只少「verified vendor」徽章） |
+| 元数据 | `pluginConfiguration.changeNotes` 指向 `CHANGELOG.md`（不复制第二份发布叙事，ADR-0017 准则 3）；新增 `META-INF/pluginIcon.svg` / `pluginIcon_dark.svg`（40×40，同一 R 字形几何重排） |
+| CI | `release.yml` 新增 `publish-jetbrains-marketplace`：`needs: create-release`，只在 tag 上跑；`JETBRAINS_MARKETPLACE_TOKEN` 缺失时 `::warning::` 跳过，zip 仍挂在 GitHub Release，发布不会因缺凭据失败 |
+| 版本 | 不向 `publishPlugin` 传版本参数：`build.gradle.kts` 的版本由 `scripts/bump-version.sh` 从 `wails.json` 同步，Marketplace、GitHub zip 与桌面端共用同一个号 |
+
+**仍属人工的两步**（不在代码库内）：① 所有者用 vendor 账号完成**首次**上传——Marketplace 会创建插件页并分配数值型公开 URL，此后版本可由 CI 自动发布；② 首版审核。插件 ID `dev.repotory.jetbrains` 一经首次上传不可更改，故在首次上传前定稿。
+
+**包内核验**：`buildPlugin` 成功后从 zip 解出 jar 内的 `plugin.xml`，确认 `<idea-version since-build="242" />`（无 `until-build`）、`<change-notes>` 与两个 `pluginIcon*.svg` 都在；`gradle verifyPlugin` 仍为 Compatible。

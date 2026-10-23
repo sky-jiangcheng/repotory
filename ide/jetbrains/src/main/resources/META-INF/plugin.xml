@@ -9,8 +9,10 @@
           without forking per product.
         · sinceBuild 242 covers the owner's 2024.3 and current 2025.2.
         · Session capture is NOT in the MVP.
-        · The server lifecycle is "connect only" — the plugin never starts or
-          supervises a server.
+        · Server lifecycle: connect to a running instance, or start a LOCAL one
+          with one click (usability revision of decision 4, 2026-10-22). The
+          plugin only launches a binary the user already has; it never
+          downloads, builds or supervises a remote server.
 
       The plugin is a DISTRIBUTION surface, not a platform (ADR-0006): the
       binary name, the data directory and the MCP prefix are untouched.
@@ -23,10 +25,10 @@
          the user, so it says what the plugin actually does. -->
     <description><![CDATA[
         Search your Repotory knowledge base from inside the IDE and jump
-        straight to a note. The plugin is a thin client: it talks to a running
-        Repotory service over its local HTTP API and opens results in the
-        Repotory web app. It starts no server of its own — point it at one
-        under Settings | Tools | Repotory.
+        straight to a note. The plugin is a thin client: it talks to a Repotory
+        service over its local HTTP API and opens results in the Repotory web
+        app. If no service is running, Settings | Tools | Repotory can start a
+        local repotory-server you already have with one click.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -37,6 +39,7 @@
                     icon="/icons/repotory.svg"
                     factoryClass="dev.repotory.jetbrains.RepotoryToolWindowFactory"/>
         <applicationService serviceImplementation="dev.repotory.jetbrains.RepotoryClient"/>
+        <applicationService serviceImplementation="dev.repotory.jetbrains.RepotoryServerManager"/>
         <applicationService serviceImplementation="dev.repotory.jetbrains.RepotorySettingsState"/>
         <applicationConfigurable parentId="tools"
                                  instance="dev.repotory.jetbrains.RepotoryConfigurable"

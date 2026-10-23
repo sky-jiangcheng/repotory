@@ -180,7 +180,7 @@ Step one of [ADR-0009](../adr/0009-ide-presence.md): detect the binary and regis
 node scripts/repotory-init/index.mjs --with-hook
 ```
 
-**It runs in any project**: the extension's `Repotory: Register MCP Server` command uses the copy of `repotory-init` bundled inside the VSIX (the source of truth stays at `scripts/repotory-init/index.mjs`, copied in by `compile` and pinned to it by a CI `git diff --exit-code`), so cloning this repository first is not required. The bare command above does require you to be inside this repository.
+**It runs in any project**: the extension's `Repotory: Register MCP Server` command uses the copy of `repotory-init` bundled inside the VSIX (the source of truth stays at `scripts/repotory-init/index.mjs`, copied in by `compile` and pinned to it by a CI `git diff --exit-code`), so cloning this repository first is not required; nor does it open a terminal — the extension runs the installer silently inside its host process (falling back to `node` only on `ENOENT`/`EACCES`). The bare command above does require you to be inside this repository.
 
 - Detects `repotory-mcp` (override with `--bin`) and registers it with Claude Code (`.mcp.json`), Cursor (`.cursor/mcp.json`), VS Code (`.vscode/mcp.json`) and Windsurf (configs land only where the client's directory exists); JetBrains gets printed manual guidance
 - `--with-hook` also installs the SessionEnd hook below (script + merged `settings.json`, backed up before changes)

@@ -70,6 +70,7 @@ class RepotoryPanel : JPanel(), Disposable {
     private val list = JList(model)
     private val status = JBLabel(" ")
     private val openButton = JButton("Open in Repotory")
+    private val startButton = JButton("Start local service")
     private var disposed = false
 
     /**
@@ -110,9 +111,19 @@ class RepotoryPanel : JPanel(), Disposable {
         openButton.addActionListener { openSelected() }
         list.addListSelectionListener { openButton.isEnabled = list.selectedIndex >= 0 }
 
+        // Only offered when a search failed because nothing answered at the
+        // configured address. Starting a local server cannot fix a 4xx from a
+        // live server, so the button stays out of the way otherwise.
+        startButton.isVisible = false
+        startButton.addActionListener { startLocalService() }
+
+        val buttons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0))
+        buttons.add(startButton)
+        buttons.add(openButton)
+
         val south = JPanel(BorderLayout(0, 4))
         south.add(status, BorderLayout.NORTH)
-        south.add(openButton, BorderLayout.SOUTH)
+        south.add(buttons, BorderLayout.SOUTH)
 
         add(input, BorderLayout.NORTH)
         add(JBScrollPane(list), BorderLayout.CENTER)
@@ -130,6 +141,7 @@ class RepotoryPanel : JPanel(), Disposable {
             searchSeq++
             model.clear()
             openButton.isEnabled = false
+            startButton.isVisible = false
             status.text = " "
             return
         }
@@ -155,6 +167,7 @@ class RepotoryPanel : JPanel(), Disposable {
                         model.clear()
                         outcome.hits.forEach { model.addElement(it) }
                         openButton.isEnabled = outcome.hits.isNotEmpty()
+                        startButton.isVisible = false
                         status.text = if (outcome.hits.isEmpty()) {
                             "No matches for \"$query\""
                         } else {
@@ -164,7 +177,62 @@ class RepotoryPanel : JPanel(), Disposable {
                     is SearchOutcome.Failure -> {
                         model.clear()
                         openButton.isEnabled = false
+                        // One click to fix the most common first-run state:
+                        // the plugin is installed but no service is running.
+                        startButton.isVisible = outcome.offline
+                        status.text = if (outcome.offline) {
+                            "${outcome.message} — or start the local service."
+                        } else {
+                            outcome.message
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Starts the local Repotory service and retries the query.
+     *
+     * The spawn waits on the binary and on /health, so it runs on a pooled
+     * thread; the EDT only gets the outcome. Nothing is downloaded: when no
+     * binary exists, the user is offered the file picker or the release page.
+     */
+    private fun startLocalService() {
+        if (disposed) return
+        startButton.isVisible = false
+        startButton.isEnabled = false
+        status.text = "Starting local service…"
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val outcome = repotoryServer.start(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                startButton.isEnabled = true
+                when (outcome) {
+                    is StartOutcome.Started -> {
+                        status.text = if (outcome.webUi) {
+                            "Started ${outcome.binary.file.name} on port ${outcome.port}. Searching again…"
+                        } else {
+                            "Started on port ${outcome.port} (API-only). Searching again…"
+                        }
+                        runSearch()
+                    }
+                    StartOutcome.AlreadyRunning -> {
+                        status.text = "Service already running. Searching again…"
+                        runSearch()
+                    }
+                    is StartOutcome.BinaryMissing -> {
+                        if (offerServerBinaryHelp(outcome.searched)) {
+                            startLocalService()
+                        } else {
+                            startButton.isVisible = true
+                        }
+                    }
+                    is StartOutcome.Failed -> {
                         status.text = outcome.message
+                        startButton.isVisible = true
                     }
                 }
             }
@@ -197,16 +265,18 @@ class RepotoryPanel : JPanel(), Disposable {
     /**
      * The headless server serves its web UI only when it was started with
      * `--web-dist` (cmd/server/main.go); without it every non-/api path is a
-     * 404 and the deep link goes nowhere. The plugin only CONNECTS to a server
-     * (ADR-0027 decision 4), so it cannot fix the deployment — but it can stop
-     * the user from landing on a bare 404 with no explanation.
+     * 404 and the deep link goes nowhere. A server the plugin started carries
+     * its sibling `web/` automatically (RepotoryServer.kt); for one the user
+     * started by hand, the plugin cannot add the flag — but it can stop the
+     * user from landing on a bare 404 with no explanation.
      */
     private fun offerFallback(url: String) {
         val choice = Messages.showDialog(
             "Repotory answered, but it is not serving its web UI, so this link lands on a 404 page.\n\n" +
-                "Start the server with the web UI:\n" +
-                "  repotory-server --port 18765 --web-dist <path to the built web dist>\n\n" +
-                "or open the Repotory desktop app, which serves the same UI.\n\n" +
+                "Either restart the running server with:\n" +
+                "  repotory-server --port 18765 --web-dist <release bundle>/web\n" +
+                "or stop it and press \"Start local service\", which launches the release bundle " +
+                "together with its web/ directory.\n\n" +
                 "URL: $url",
             "Repotory: web UI not available",
             arrayOf("Open Anyway", "Copy URL", "Cancel"),

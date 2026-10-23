@@ -66,15 +66,63 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "242"
-            // Until 243.* so the plugin stays installable on 2024.2 as well.
-            untilBuild = "243.*"
+            // No untilBuild on purpose. The old `243.*` cap meant the plugin
+            // declared itself incompatible with every IDE released after
+            // 2024.3 — including the 2025.2 it is BUILT against — so the IDE
+            // refused to load it on exactly the versions the owner runs.
+            // Omitting the upper bound is the correct signal here: the plugin
+            // uses only platform APIs that exist in 242 (tool window,
+            // settings page, Swing, java.net), so there is no upper bound to
+            // guess. If a future platform breaks one of them, the Plugin
+            // Verifier is what catches it, not a hard-coded year.
+            //
+            // `untilBuild = provider { null }` is REQUIRED, not decoration:
+            // when the property is left untouched, `patchPluginXml` fills in
+            // `<idea-version until-build="<build target>.*"/>` (252.* here),
+            // which silently re-caps the plugin at the IDE it was built
+            // against. Verified in the packaged zip — without this line the
+            // artifact still said until-build="252.*".
+            untilBuild = provider { null }
         }
+        // Marketplace shows this under "What's new" for every update. A link
+        // to the changelog keeps ONE release narrative (ADR-0017 criterion 3)
+        // instead of a second copy that would drift from CHANGELOG.md.
+        changeNotes = """
+            See the changelog for this release:
+            https://github.com/sky-jiangcheng/repotory/blob/master/CHANGELOG.md
+        """.trimIndent()
     }
     pluginVerification {
         ides {
             // The owner's daily IDE: IntelliJ IDEA CE. Verification against
             // the family is not needed — the plugin declares only platform APIs.
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2")
+        }
+    }
+    // Publishing to the JetBrains Marketplace (2026-10-22).
+    //
+    // The token is a permanent Marketplace token from the vendor account.
+    // `publishPlugin` uploads the zip built by `buildPlugin`; when the token
+    // is absent the task fails, but nothing else in the build is affected —
+    // local builds and the GitHub Release asset keep working.
+    publishing {
+        token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN")
+    }
+}
+
+// Signing is configured only when all three secrets exist. Marketplace accepts
+// unsigned uploads, so a missing secret degrades to an unsigned release
+// instead of failing `publishPlugin`; the signature is what shows the
+// "verified vendor" badge, not a gate.
+val signingCertificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+val signingPrivateKey = providers.environmentVariable("PRIVATE_KEY")
+val signingPrivateKeyPassword = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+if (signingCertificateChain.isPresent && signingPrivateKey.isPresent && signingPrivateKeyPassword.isPresent) {
+    intellijPlatform {
+        signing {
+            certificateChain = signingCertificateChain
+            privateKey = signingPrivateKey
+            password = signingPrivateKeyPassword
         }
     }
 }
