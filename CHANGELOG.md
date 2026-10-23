@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **品牌单一母图：奶油卡成为全品牌唯一标（2026-10-23）**：用户确认「SSOT 一改全链 regenerates」为目标形态后，将此前短暂并存的**双母图**合一——`build/plugin-icon.svg`（商店/文档域奶油卡）并入 `build/icon.svg` 并删除前者，`build/icon.svg` 成为全品牌唯一事实源：app 图标（appicon / Windows .ico / 图标阶梯）、浏览器 favicon、VS Code 商店 + 活动栏图标、JetBrains 工具窗图标、文档站侧栏标、README 横幅与 app UI 的 `BrandMark` 全部从这一个文件派生。改母图 → 跑 `generate-icons.mjs` → 重建文档，全链一次到位；CI 同步门（check 模式）把任何半落地拦下。选奶油卡放弃海军蓝的理由：商店列表与 13px 尺寸下它读作一张印出来的卡，海军蓝读作「又一块蓝色方块」；而两个文件共用同一 letterform 正是此前三连发半落地的温床。桌面 app 窗口图标、app UI 品牌标自此随 v2.12.2 换成奶油卡。`generate-icons.mjs` 同步简化为单源（favicon 链回主链、产物改名 `marketplace-icon-128.png`），`BrandMark` 组件换新卡几何（含发丝框）且测试断言同步更新。顺带修复上一轮编辑 `build/icon.svg` 注释时提前闭合注释块导致的 XML 损坏（裸文本 + 游离 `-->`，librsvg 容错渲染才未报错），并记下 XML 注释禁含 `--`（`--check` 字样即触发）。
+
 ### 修复
 
 - **README 与浏览器 favicon 统一到新品牌标（2026-10-23）**：v2.12.1 收口了文档站侧栏与 JetBrains 工具窗图标后，旧海军蓝标仍剩三处用户可见面——① README（中英双份）顶部的品牌图标还指向 `build/icon.svg`，现与文档站同源改为 `build/plugin-icon.svg`；② 文档站与 web app 的浏览器 favicon 链（`docs/favicon.svg|ico`、`web/public/favicon.svg|ico`）此前从 app SSOT 派生，标签页兜底图标还是旧海军蓝——`generate-icons.mjs` 的 favicon 链改从插件 SSOT 派生（新增 `build/icons/plugin-icon.ico`，sha 同步门覆盖）；③ `build/icon.svg` 与 `generate-icons.mjs` 的 SSOT 注释已 stale（仍声称 favicons/VS Code media 由 app 母图派生），随本次改为双 SSOT 域划分的真实描述——注释与现实脱节正是这几轮「半落地」的根因。app OS 域图标（Wails appicon、Windows `.ico`、`build/icons/` 阶梯）与 app UI 内联标（`BrandMark`）按早前决议保持海军蓝，不在本次范围。

@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-  <!-- Marketplace / plugin-list icon (40x40). The editorial paper-card
-       variant of the brand mark (build/plugin-icon.svg): warm field
-       #F5F0E4, one hairline ink frame, the same IBM Plex Sans Bold R as
-       the app icon. Geometry is the 512-grid master scaled by 40/512
-       (0.078125), so the letterform cannot drift from the app mark. -->
+  <!-- Marketplace / plugin-list icon (40x40). The brand mark from
+       build/icon.svg (the brand SSOT): warm field #F5F0E4, one hairline
+       ink frame, the same IBM Plex Sans Bold R across every surface.
+       Geometry is the 512-grid master scaled by 40/512 (0.078125), so
+       the letterform cannot drift from any other mark. -->
   <rect width="40" height="40" fill="#F5F0E4"/>
   <rect x="2.03" y="2.03" width="35.94" height="35.94" fill="none" stroke="#1B1B1B" stroke-width="0.7"/>
   <g transform="translate(1.645 1.020) scale(0.073529)">

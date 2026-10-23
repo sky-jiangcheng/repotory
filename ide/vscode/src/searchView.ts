@@ -100,8 +100,8 @@ function toThumbs(hits: NoteHit[]): Thumb[] {
 
 /**
  * The brand mark, inlined so the webview needs no resource roots and no
- * image loads. Same editorial paper-card as build/plugin-icon.svg (the
- * plugin-store icon): warm field, hairline ink frame, the brand R.
+ * image loads. Same construction as build/icon.svg (the brand SSOT): warm
+ * field, hairline ink frame, the brand R.
  */
 const MARK_SVG = `<svg viewBox="0 0 512 512" width="34" height="34" aria-hidden="true" focusable="false">
   <rect width="512" height="512" fill="#F5F0E4"/>

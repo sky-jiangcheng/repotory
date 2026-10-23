@@ -1,22 +1,24 @@
-// Regenerate every icon derivative from the two brand SSOTs:
+// Regenerate every icon derivative from the single brand SSOT:
 //   node scripts/generate-icons.mjs          # (re)generate all derivatives
 //   node scripts/generate-icons.mjs --check  # verify derivatives are in sync
 //
-// build/icon.svg is the single source of truth for the APP-side brand
-// mark — what the OS shows: the Wails appicon, the Windows .ico and the
-// size ladder in build/icons/. When an SSOT changes without regenerating,
-// `--check` fails (wired into CI), so a rebrand can never ship
-// half-applied.
+// build/icon.svg is the single source of truth for the Repotory brand mark
+// (the design rationale lives in the comment inside that file). Everything
+// else is derived: the app iconset (size ladder, Wails appicon, Windows
+// .ico), the browser favicons, the VS Code marketplace + activity-bar
+// icons, and the JetBrains tool-window icon. Change the SSOT, re-run this
+// script, and every surface shows the new mark. `--check` is wired into
+// CI, so a rebrand can never ship half-applied — that gate exists because
+// hand-kept copies are how this brand drifted for three releases running
+// (the activity bar, the tool window, the favicons and the README banner
+// each missed a move).
 //
-// Every user-facing store / web / docs surface has its own master,
-// build/plugin-icon.svg: same letterform, editorial paper-card field (see
-// the comment in that file). Derived from it: the browser favicons
-// (docs + web/public), the VS Code marketplace icon AND the activity-bar
-// icon, and the JetBrains tool-window icon. The JetBrains marketplace
-// pair (pluginIcon.svg / pluginIcon_dark.svg, 40×40) stays hand-scaled —
-// the dark variant is a colour inversion, not a resize. The docs sidebar
-// mark is inlined from the same file by scripts/build-docs.mjs, and the
-// README banners reference it directly.
+// Two surfaces stay outside the generated set, both deliberately: the
+// JetBrains Marketplace pair (pluginIcon.svg / pluginIcon_dark.svg, 40×40)
+// is hand-scaled because the dark variant is a colour inversion, not a
+// resize; the docs sidebar mark and the README banners reference the SSOT
+// itself (build-docs.mjs inlines it, the READMEs point at the file), so
+// there is no second copy to drift.
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -26,13 +28,12 @@ const SIZES = [512, 256, 128, 64, 48, 32, 16]
 
 const root = process.cwd()
 const svgPath = path.join(root, 'build/icon.svg')
-const pluginSvgPath = path.join(root, 'build/plugin-icon.svg')
 const outDir = path.join(root, 'build/icons')
 
 // Marketplace-facing bitmap: the VS Code extension icon (media/icon.png)
-// is the plugin mark at 128×128, the size the marketplace requires.
-const PLUGIN_ICON_SIZE = 128
-const pluginIconPng = path.join(outDir, `plugin-icon-${PLUGIN_ICON_SIZE}.png`)
+// is the brand mark at 128×128, the size the marketplace requires.
+const MARKETPLACE_ICON_SIZE = 128
+const marketplaceIconPng = path.join(outDir, `marketplace-icon-${MARKETPLACE_ICON_SIZE}.png`)
 
 function sha(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex')
@@ -53,15 +54,15 @@ function buildIco(svg) {
     let total = headerSize
     for (const e of entries) total += e.buf.length
     const ico = Buffer.alloc(total)
-    ico.writeUInt16LE(0, 0)
-    ico.writeUInt16LE(1, 2) // type: icon
-    ico.writeUInt16LE(entries.length, 4)
+  ico.writeUInt16LE(0, 0)
+  ico.writeUInt16LE(1, 2) // type: icon
+  ico.writeUInt16LE(entries.length, 4)
     let at = 6
     for (const e of entries) {
       ico.writeUInt8(e.size >= 256 ? 0 : e.size, at)
       ico.writeUInt8(e.size >= 256 ? 0 : e.size, at + 1)
       ico.writeUInt16LE(1, at + 4) // planes
-      ico.writeUInt16LE(32, at + 6) // bpp
+      ico.writeUInt32LE(32, at + 6) // bpp
       ico.writeUInt32LE(e.buf.length, at + 8)
       ico.writeUInt32LE(offset, at + 12)
       e.buf.copy(ico, offset)
@@ -100,13 +101,12 @@ async function pixelDiff(bufA, bufB) {
 async function main() {
   const check = process.argv.includes('--check')
   const svg = fs.readFileSync(svgPath)
-  const pluginSvg = fs.readFileSync(pluginSvgPath)
 
   if (!check) fs.mkdirSync(outDir, { recursive: true })
 
   const stale = []
 
-  // 1. Size ladder + appicon + ico (from the SSOT)
+  // 1. App iconset: size ladder + Wails appicon + Windows .ico
   for (const size of SIZES) {
     const png = await renderPng(svg, size)
     const file = path.join(outDir, `icon-${size}.png`)
@@ -138,23 +138,13 @@ async function main() {
     console.log(`  ✓ icon.ico (6 sizes)`)
   }
 
-  // 2. Browser favicons (docs + web/public), from the editorial master
-  //    The docs sidebar, the store listings and the README banners all
-  //    show the paper card, so the browser tab must not keep the navy
-  //    tile: favicons derive from build/plugin-icon.svg, NOT the app
-  //    SSOT. The .ico is the fallback every browser requests without a
-  //    <link>; the .svg is the same mark for pages that declare one.
-  //    (Favicons used to be derived from the app SSOT — that split is
-  //    what let the rebrand ship half-applied.)
-  const faviconSvg = pluginSvg
-  const pluginIco = await buildIco(pluginSvg)
-  const pluginIcoPath = path.join(outDir, 'plugin-icon.ico')
-  if (check) {
-    if (!fs.existsSync(pluginIcoPath) || sha(pluginIco) !== sha(fs.readFileSync(pluginIcoPath))) stale.push(`${pluginIcoPath} (stale)`)
-  } else {
-    fs.writeFileSync(pluginIcoPath, pluginIco)
-    console.log('  ✓ build/icons/plugin-icon.ico (6 sizes)')
-  }
+  // 2. Browser favicons (docs + web/public), verbatim from the SSOT
+  //    The mark has no bevel or gradient any more, so there is nothing
+  //    left to simplify for small sizes: one file, one letterform. The
+  //    .ico is the fallback every browser requests without a <link>; the
+  //    .svg is the same mark for pages that declare one (web/index.html
+  //    does; the docs pages rely on the .ico fallback).
+  const faviconSvg = svg
   if (check) {
     const favPath = path.join(root, 'docs/favicon.svg')
     if (!fs.existsSync(favPath) || sha(faviconSvg) !== sha(fs.readFileSync(favPath))) {
@@ -166,8 +156,8 @@ async function main() {
   }
 
   const DERIVED = [
-    { buf: pluginIco, rel: 'docs/favicon.ico' },
-    { buf: pluginIco, rel: 'web/public/favicon.ico' },
+    { buf: ico, rel: 'docs/favicon.ico' },
+    { buf: ico, rel: 'web/public/favicon.ico' },
     { buf: faviconSvg, rel: 'web/public/favicon.svg' },
   ]
   for (const d of DERIVED) {
@@ -183,45 +173,46 @@ async function main() {
     }
   }
 
-  // 3. Plugin-store mark → VS Code marketplace icon (media/icon.png)
-  const pluginPng = await renderPng(pluginSvg, PLUGIN_ICON_SIZE)
+  // 3. VS Code marketplace icon (media/icon.png, 128×128)
+  const marketplacePng = await renderPng(svg, MARKETPLACE_ICON_SIZE)
   const vscodeIcon = path.join(root, 'ide/vscode/media/icon.png')
   if (check) {
-    if (!fs.existsSync(pluginIconPng)) stale.push(`${pluginIconPng} (missing)`)
-    else if ((await pixelDiff(pluginPng, fs.readFileSync(pluginIconPng))) > 0.005) {
-      stale.push(`${pluginIconPng} (pixel drift)`)
+    if (!fs.existsSync(marketplaceIconPng)) stale.push(`${marketplaceIconPng} (missing)`)
+    else if ((await pixelDiff(marketplacePng, fs.readFileSync(marketplaceIconPng))) > 0.005) {
+      stale.push(`${marketplaceIconPng} (pixel drift)`)
     }
     if (!fs.existsSync(vscodeIcon)) stale.push(`${vscodeIcon} (missing)`)
-    else if (sha(pluginPng) !== sha(fs.readFileSync(vscodeIcon))) stale.push(`${vscodeIcon} (stale)`)
+    else if (sha(marketplacePng) !== sha(fs.readFileSync(vscodeIcon))) stale.push(`${vscodeIcon} (stale)`)
   } else {
-    fs.writeFileSync(pluginIconPng, pluginPng)
-    fs.writeFileSync(vscodeIcon, pluginPng)
-    console.log(`  ✓ build/icons/plugin-icon-${PLUGIN_ICON_SIZE}.png`)
-    console.log('  ✓ ide/vscode/media/icon.png (from build/plugin-icon.svg)')
+    fs.writeFileSync(marketplaceIconPng, marketplacePng)
+    fs.writeFileSync(vscodeIcon, marketplacePng)
+    console.log(`  ✓ build/icons/marketplace-icon-${MARKETPLACE_ICON_SIZE}.png`)
+    console.log('  ✓ ide/vscode/media/icon.png (128x128 from build/icon.svg)')
   }
 
-  // 4. Plugin-store mark → VS Code activity-bar icon (media/repotory.svg)
-  //    The same 512-grid SSOT geometry, verbatim, inside a 24 viewBox
-  //    (0.046875): the activity bar and the marketplace listing show one
-  //    printed card, not two marks. This file used to be a hand-drawn
-  //    currentColor glyph with no card at all — when the brand moved to the
-  //    paper card it was missed, so every install kept shipping the old
-  //    grey R in the activity bar. Generated and sha-checked now, so the
-  //    bar cannot drift from build/plugin-icon.svg again. Explicit brand
-  //    fills (not currentColor): the card reads the same on light and dark
-  //    activity bars, the same "brand face does not follow the theme" rule
-  //    the JetBrains tool window band applies.
-  const ACTIVITY_BAR_SIZE = 24
-  const pluginInner = pluginSvg
+  // The mark's inner geometry, reused by the two small IDE icons below.
+  const markInner = svg
     .toString()
     .replace(/^[\s\S]*?<svg[^>]*>/, '')
     .replace(/<\/svg>\s*$/, '')
+
+  // 4. VS Code activity-bar icon (media/repotory.svg)
+  //    The SSOT geometry, verbatim, inside a 24 viewBox (0.046875): the
+  //    activity bar and the marketplace listing show one printed card,
+  //    not two marks. This file used to be a hand-drawn currentColor
+  //    glyph with no card at all — when the brand moved to the paper
+  //    card it was missed, so every install kept shipping the old grey R
+  //    in the activity bar. Generated and sha-checked now. Explicit brand
+  //    fills (not currentColor): the card reads the same on light and
+  //    dark activity bars, the same "brand face does not follow the
+  //    theme" rule the JetBrains tool window band applies.
+  const ACTIVITY_BAR_SIZE = 24
   const activityBarSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ACTIVITY_BAR_SIZE} ${ACTIVITY_BAR_SIZE}" width="${ACTIVITY_BAR_SIZE}" height="${ACTIVITY_BAR_SIZE}">
-  <!-- Activity-bar icon: build/plugin-icon.svg (plugin-store SSOT) verbatim,
-       inside a 24 viewBox — the same printed card as the marketplace icon.
+  <!-- Activity-bar icon: build/icon.svg (brand SSOT) verbatim, inside a 24
+       viewBox — the same printed card as the marketplace icon.
        Generated by scripts/generate-icons.mjs; do not edit by hand. -->
   <g transform="scale(${ACTIVITY_BAR_SIZE / 512})">
-${pluginInner}
+${markInner}
   </g>
 </svg>
 `
@@ -233,23 +224,21 @@ ${pluginInner}
     }
   } else {
     fs.writeFileSync(activityBarIcon, activityBarSvg)
-    console.log('  ✓ ide/vscode/media/repotory.svg (activity bar, 24px from build/plugin-icon.svg)')
+    console.log('  ✓ ide/vscode/media/repotory.svg (activity bar, 24px from build/icon.svg)')
   }
 
-  // 5. Plugin-store mark → JetBrains tool-window icon (icons/repotory.svg)
+  // 5. JetBrains tool-window icon (icons/repotory.svg)
   //    Same rewrap as the VS Code activity bar, at the IntelliJ tool-window
   //    idiom's 13×13. This was the JetBrains twin of the missed activity-bar
   //    icon: a hand-drawn grey R with no card, so the tool window kept the
   //    pre-rebrand mark while the Marketplace listing showed the card.
-  //    Generated and sha-checked now. (The 40×40 Marketplace pair stays
-  //    hand-scaled — the dark variant is a colour inversion, not a resize.)
   const TOOL_WINDOW_SIZE = 13
   const toolWindowSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TOOL_WINDOW_SIZE}" height="${TOOL_WINDOW_SIZE}" viewBox="0 0 ${TOOL_WINDOW_SIZE} ${TOOL_WINDOW_SIZE}">
-  <!-- Tool-window icon: build/plugin-icon.svg (plugin-store SSOT) verbatim,
-       inside a 13 viewBox — the same printed card as the Marketplace icon.
+  <!-- Tool-window icon: build/icon.svg (brand SSOT) verbatim, inside a 13
+       viewBox — the same printed card as the Marketplace icon.
        Generated by scripts/generate-icons.mjs; do not edit by hand. -->
   <g transform="scale(${TOOL_WINDOW_SIZE / 512})">
-${pluginInner}
+${markInner}
   </g>
 </svg>
 `
@@ -261,19 +250,19 @@ ${pluginInner}
     }
   } else {
     fs.writeFileSync(toolWindowIcon, toolWindowSvg)
-    console.log('  ✓ ide/jetbrains/src/main/resources/icons/repotory.svg (tool window, 13px from build/plugin-icon.svg)')
+    console.log('  ✓ ide/jetbrains/src/main/resources/icons/repotory.svg (tool window, 13px from build/icon.svg)')
   }
 
   if (check) {
     if (stale.length) {
-      console.error(`✗ ${stale.length} icon derivative(s) out of sync with their brand SSOT (build/icon.svg / build/plugin-icon.svg):`)
+      console.error(`✗ ${stale.length} icon derivative(s) out of sync with build/icon.svg:`)
       for (const s of stale) console.error(`  - ${s}`)
       console.error('\nRun: node scripts/generate-icons.mjs')
       process.exit(1)
     }
-    console.log('✓ all icon derivatives are in sync with their brand SSOTs')
+    console.log('✓ all icon derivatives are in sync with build/icon.svg')
   } else {
-    console.log(`\nAll icons generated (SSOTs: build/icon.svg + build/plugin-icon.svg)`)
+    console.log(`\nAll icons generated (SSOT: build/icon.svg)`)
   }
 }
 

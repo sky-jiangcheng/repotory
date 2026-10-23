@@ -6,6 +6,11 @@
 // placeholder next to a real icon. These assertions make the mark a hard
 // dependency, so swapping it back out breaks a test rather than shipping
 // silently.
+//
+// Second regression these guard: the brand moved from a navy tile to the
+// paper card (warm field + hairline ink frame). The UI is generated from
+// the same SSOT as the shipped icons, so a half-applied move — card in the
+// dock, navy tile in the navbar — would look like two products.
 
 // 本文件的 DOM 访问是**显式登记**而非疏漏（ADR-0026 条件 4）：被测对象是装饰性
 // SVG——`aria-hidden` 正是设计意图，所以没有任何 role/name 可查。断言的是
@@ -27,16 +32,23 @@ describe('BrandMark', () => {
     expect(svg!.querySelectorAll('rect, path').length).toBeGreaterThan(1)
   })
 
-  it('carries one flat ink field, not a gradient or a bevel', () => {
+  it('carries the paper-card field, not a gradient or a bevel', () => {
     const { container } = render(<BrandMark />)
     const html = container.innerHTML
-    expect(html).toContain('#0F2244')
-    expect(html).toContain('#F6F8FC')
-    // Both were what made the mark read as stock app-icon chrome: a blue
-    // gradient and a white hairline that turned into a muddy rim at 16px.
+    // Warm-paper field + near-black ink, the brand SSOT's palette. A blue
+    // gradient and a white hairline were what made the old mark read as
+    // stock app-icon chrome.
+    expect(html).toContain('#F5F0E4')
+    expect(html).toContain('#1B1B1B')
     expect(container.querySelector('linearGradient')).toBeNull()
     expect(container.querySelector('clipPath')).toBeNull()
-    expect(container.querySelector('[stroke]')).toBeNull()
+    // The one stroke in the mark is the brand frame itself: the hairline
+    // that makes the card read as printed. It is a rect outline, not the
+    // old bevel rim on the glyph.
+    const stroked = [...container.querySelectorAll('[stroke]')]
+    expect(stroked).toHaveLength(1)
+    expect(stroked[0].tagName.toLowerCase()).toBe('rect')
+    expect(container.querySelector('path')!.getAttribute('stroke')).toBeNull()
   })
 
   it('draws the mark as one filled path with a real counter', () => {

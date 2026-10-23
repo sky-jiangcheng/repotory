@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/plugin-icon.svg" width="96" alt="Repotory" />
+  <img src="build/icon.svg" width="96" alt="Repotory" />
 </p>
 
 <h1 align="center">Repotory</h1>

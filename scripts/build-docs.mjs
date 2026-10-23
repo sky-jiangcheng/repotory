@@ -27,16 +27,16 @@ import { createRequire } from 'node:module'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const docsDir = join(root, 'docs')
 
-// The brand mark, inlined from the plugin-store SSOT (build/plugin-icon.svg)
-// that also generates the VS Code / JetBrains marketplace icons and the
-// activity-bar marks. Read at build time rather than copied by hand so the
-// docs sidebar and the shipped artifacts cannot drift apart: change the
-// SSOT, re-run generate-icons.mjs, rebuild the docs, and every surface
-// shows the same mark.
+// The brand mark, inlined from the brand SSOT (build/icon.svg) — the one
+// master that also generates the app icons, the favicons, the VS Code /
+// JetBrains icons and the README banners. Read at build time rather than
+// copied by hand so the docs sidebar and the shipped artifacts cannot
+// drift apart: change the SSOT, re-run generate-icons.mjs, rebuild the
+// docs, and every surface shows the same mark.
 function brandMarkSvg(size) {
-  const svgPath = join(root, 'build', 'plugin-icon.svg')
+  const svgPath = join(root, 'build', 'icon.svg')
   if (!existsSync(svgPath)) {
-    console.warn('build-docs: build/plugin-icon.svg missing — sidebar falls back to wordmark only')
+    console.warn('build-docs: build/icon.svg missing — sidebar falls back to wordmark only')
     return ''
   }
   let svg = readFileSync(svgPath, 'utf8')
