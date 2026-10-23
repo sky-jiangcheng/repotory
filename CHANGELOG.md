@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-10-23
+
 ### 新增
 
 - **笔记维护能力三端齐备：编辑 / 主题下新建 / AI 整理（2026-10-23）**：详情页（两个 IDE 插件）与桌面端笔记列表现在都能维护知识。① 后端 `internal/service/note_organize.go` 新增 `OrganizeNote`：按 `ai_chat_*` 配置调 AI 重写笔记——事实与语言保持不变、3+ 小节时生成目录索引、流程类内容插入 mermaid 流程图；输出用 `###TITLE` / `###TAGS` / `###CONTENT` 行标记协议（而非 JSON——正文含 ```mermaid 围栏时 JSON 转义极易被模型破坏），配容错解析（缺标记→整回复当正文并附 warning、截断按 finish_reason 提示、按字节裁剪匹配 store 校验）。`OrganizeNote` 只生成**提案**、不写库（ADR-0015 人工闸门），经 `App.OrganizeNote` binding 暴露，surface 注册表登记 `mcp-backed`（孪生工具 `repotory_notes_organize`）；`MoveNote` 刻意无 MCP 孪生，IDE 侧移动主题改走本地 HTTP RPC 桥。② 桌面端 `NoteSection`：笔记卡片操作行加「AI 整理」，提案直接进编辑器（带 accent 横幅），仅用户保存时落 `UpdateNoteFull`。③ VS Code `searchView.ts` 详情行加 Edit / New note here / AI Tidy，编辑器含主题下拉、实时预览与保存；mermaid 在 webview 中降级为标注「FLOWCHART · MERMAID SOURCE」的源码卡片（不把 5.3MB mermaid 塞进 VSIX）。④ JetBrains 新增 `NoteEditorDialog`（DialogWrapper 编辑器 + AI 提案横幅），工具窗状态行加 Edit / New note / AI Tidy 三按钮，保存先字段后主题、移动失败分别报告不丢草稿；mermaid 在详情与预览中渲染为标注「流程图 · mermaid 源码」的 `<pre>`。测试：服务层 11 项（含提案零写入、缺标记回退、字节裁剪）+ MCP 工具 3 项（库字节不变、未配置 AI 报错）+ 桌面组件 3 项 + webview 无头 Chromium 驱动验证。
@@ -371,7 +373,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...v2.12.0
 [2.11.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.9.0...v2.10.0
