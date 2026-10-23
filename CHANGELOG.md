@@ -4,7 +4,7 @@
 
 版本号 SSOT 为 `wails.json` 的 `info.productVersion`，由 `scripts/bump-version.sh` 同步至 `web/package.json`、`internal/version/version.go` 与文档站徽章。
 
-## [Unreleased]
+## [2.12.2] - 2026-10-23
 
 ### 新增
 
@@ -388,7 +388,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...HEAD
+[2.12.2]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...v2.12.0
 [2.11.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.0...v2.11.1
