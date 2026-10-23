@@ -13,6 +13,8 @@
 - Date: 2026-10-08
 - Relates to: [ADR-0006](0006-scope-freeze.md) (scope freeze and feature tiering), [ADR-0008](0008-pwa-removal.md) (legacy cleanup), [ADR-0009](0009-ide-presence.md) (distribution strategy), TODO D25 (dashboard trim; this ADR revises its remove/hide tendency), docs/positioning-brief.md
 
+> **Amendment note (2026-10-16, re-amended 2026-10-23)**: the **two-column side-by-side** layout described in the UI-alignment section was retired by [ADR-0024](0024-home-workbench-merge-search-page.md) — Home no longer embeds the dashboard; it became the **knowledge-assistant workbench**. Note that what shipped differs from ADR-0024's original decision 1: **the dashboard kept its own top-level route and navigation entry and was never merged into `/`** (that wording was amended on 2026-10-23 — see the amendment record at the end of that file). This ADR's stance "the dashboard is not moved off the first screen, not hidden by default, not deleted" is unchanged; how it is honored is: the first screen keeps a direct link to the dashboard, and the dashboard stays reachable as a top-level page. (This note previously existed only in the Chinese page — adding it here closes that bilingual drift.)
+
 ## Context
 
 The product narrative has converged on "local-first, cross-agent project memory layer" (the `scan → context → handoff` loop, see positioning-brief), but the repository still carries two narratives side by side: the **agent side** (13 MCP tools, CLI, init script, multi-agent importers) and the **human side** (desktop app: Dashboard, project state, goal ring, heatmap, knowledge editing). When asking "should we split into two products", two different questions must be separated:
