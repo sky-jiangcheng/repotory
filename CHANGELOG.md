@@ -8,6 +8,7 @@
 
 ### 修复
 
+- **README 与浏览器 favicon 统一到新品牌标（2026-10-23）**：v2.12.1 收口了文档站侧栏与 JetBrains 工具窗图标后，旧海军蓝标仍剩三处用户可见面——① README（中英双份）顶部的品牌图标还指向 `build/icon.svg`，现与文档站同源改为 `build/plugin-icon.svg`；② 文档站与 web app 的浏览器 favicon 链（`docs/favicon.svg|ico`、`web/public/favicon.svg|ico`）此前从 app SSOT 派生，标签页兜底图标还是旧海军蓝——`generate-icons.mjs` 的 favicon 链改从插件 SSOT 派生（新增 `build/icons/plugin-icon.ico`，sha 同步门覆盖）；③ `build/icon.svg` 与 `generate-icons.mjs` 的 SSOT 注释已 stale（仍声称 favicons/VS Code media 由 app 母图派生），随本次改为双 SSOT 域划分的真实描述——注释与现实脱节正是这几轮「半落地」的根因。app OS 域图标（Wails appicon、Windows `.ico`、`build/icons/` 阶梯）与 app UI 内联标（`BrandMark`）按早前决议保持海军蓝，不在本次范围。
 - **图标统一收口：文档站侧栏与 JetBrains 工具窗图标同步到新品牌标（2026-10-23）**：v2.12.1 补齐了 VS Code 活动栏图标，但同一类漏改还有两处——① 文档站每个页面侧栏的品牌标内联自 `build/icon.svg`（海军蓝 app 图标），`build-docs.mjs` 现改为读插件商店 SSOT `build/plugin-icon.svg`，并去掉品牌标的 6px 圆角（卡片设计是无圆角方边 + 发丝框）；文档页是 gitignore 的构建产物，`pages.yml` 在推送后自动重建部署，版本号角标随之从陈旧的 v2.11.0 刷新。② JetBrains 工具窗图标 `icons/repotory.svg`（13×13 灰 R、无卡片）换成新卡片标，与活动栏同样纳入 `generate-icons.mjs` 派生清单与 CI sha 同步门——这两个文件当初都是手养副本，恰是它们错过改版的原因，此后 SSOT 再变不可能只落一半。Marketplace 40×40 图标对（含深色反转变体）保持手工缩放，未纳入生成。
 
 ## [2.12.1] - 2026-10-23

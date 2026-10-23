@@ -1,19 +1,22 @@
-// Regenerate every icon derivative from the brand SSOT (build/icon.svg).
-//
+// Regenerate every icon derivative from the two brand SSOTs:
 //   node scripts/generate-icons.mjs          # (re)generate all derivatives
 //   node scripts/generate-icons.mjs --check  # verify derivatives are in sync
 //
-// build/icon.svg is the single source of truth for the Repotory app brand
-// mark. Everything else — the Wails appicon, the Windows .ico, the size
-// ladder in build/icons/ and the docs favicons — is a derived artifact.
-// When the SSOT changes without regenerating, `--check` fails (wired into
-// CI), so a rebrand can never ship half-applied.
+// build/icon.svg is the single source of truth for the APP-side brand
+// mark — what the OS shows: the Wails appicon, the Windows .ico and the
+// size ladder in build/icons/. When an SSOT changes without regenerating,
+// `--check` fails (wired into CI), so a rebrand can never ship
+// half-applied.
 //
-// The plugin stores get their own master, build/plugin-icon.svg: same
-// letterform, editorial paper-card field (see the comment in that file).
-// The VS Code marketplace icon AND the activity-bar icon are derived from
-// it; the JetBrains marketplace icons are hand-scaled 40×40 SVGs of the
-// same mark.
+// Every user-facing store / web / docs surface has its own master,
+// build/plugin-icon.svg: same letterform, editorial paper-card field (see
+// the comment in that file). Derived from it: the browser favicons
+// (docs + web/public), the VS Code marketplace icon AND the activity-bar
+// icon, and the JetBrains tool-window icon. The JetBrains marketplace
+// pair (pluginIcon.svg / pluginIcon_dark.svg, 40×40) stays hand-scaled —
+// the dark variant is a colour inversion, not a resize. The docs sidebar
+// mark is inlined from the same file by scripts/build-docs.mjs, and the
+// README banners reference it directly.
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -30,17 +33,6 @@ const outDir = path.join(root, 'build/icons')
 // is the plugin mark at 128×128, the size the marketplace requires.
 const PLUGIN_ICON_SIZE = 128
 const pluginIconPng = path.join(outDir, `plugin-icon-${PLUGIN_ICON_SIZE}.png`)
-
-// Every derived artifact: how it is produced, plus (for bitmaps) a pixel
-// diff tolerance for --check. sharp upgrades can shift anti-aliased edges
-// by a level, so the check compares pixel content with a small allowance
-// instead of bytes — enough to catch a stale derivative, tolerant of
-// renderer micro-drift.
-const DERIVED = [
-  { file: 'build/icons/icon.ico', rel: 'docs/favicon.ico', copy: true },
-  { file: 'build/icons/icon.ico', rel: 'web/public/favicon.ico', copy: true },
-  { file: 'docs/favicon.svg', rel: 'web/public/favicon.svg', copy: true },
-]
 
 function sha(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex')
@@ -108,6 +100,7 @@ async function pixelDiff(bufA, bufB) {
 async function main() {
   const check = process.argv.includes('--check')
   const svg = fs.readFileSync(svgPath)
+  const pluginSvg = fs.readFileSync(pluginSvgPath)
 
   if (!check) fs.mkdirSync(outDir, { recursive: true })
 
@@ -145,11 +138,23 @@ async function main() {
     console.log(`  ✓ icon.ico (6 sizes)`)
   }
 
-  // 2. Cross-target derivatives (VS Code media, browser favicons)
-  //    The favicon is the SSOT verbatim: the mark has no bevel or gradient
-  //    any more, so there is nothing left to simplify for small sizes. One
-  //    file, one letterform, no second copy to drift.
-  const faviconSvg = svg
+  // 2. Browser favicons (docs + web/public), from the editorial master
+  //    The docs sidebar, the store listings and the README banners all
+  //    show the paper card, so the browser tab must not keep the navy
+  //    tile: favicons derive from build/plugin-icon.svg, NOT the app
+  //    SSOT. The .ico is the fallback every browser requests without a
+  //    <link>; the .svg is the same mark for pages that declare one.
+  //    (Favicons used to be derived from the app SSOT — that split is
+  //    what let the rebrand ship half-applied.)
+  const faviconSvg = pluginSvg
+  const pluginIco = await buildIco(pluginSvg)
+  const pluginIcoPath = path.join(outDir, 'plugin-icon.ico')
+  if (check) {
+    if (!fs.existsSync(pluginIcoPath) || sha(pluginIco) !== sha(fs.readFileSync(pluginIcoPath))) stale.push(`${pluginIcoPath} (stale)`)
+  } else {
+    fs.writeFileSync(pluginIcoPath, pluginIco)
+    console.log('  ✓ build/icons/plugin-icon.ico (6 sizes)')
+  }
   if (check) {
     const favPath = path.join(root, 'docs/favicon.svg')
     if (!fs.existsSync(favPath) || sha(faviconSvg) !== sha(fs.readFileSync(favPath))) {
@@ -160,8 +165,13 @@ async function main() {
     console.log('  ✓ docs/favicon.svg')
   }
 
+  const DERIVED = [
+    { buf: pluginIco, rel: 'docs/favicon.ico' },
+    { buf: pluginIco, rel: 'web/public/favicon.ico' },
+    { buf: faviconSvg, rel: 'web/public/favicon.svg' },
+  ]
   for (const d of DERIVED) {
-    const gen = d.file.endsWith('.ico') ? ico : fs.readFileSync(path.join(root, d.file))
+    const gen = d.buf
     const target = path.join(root, d.rel)
     if (check) {
       if (!fs.existsSync(target)) stale.push(`${target} (missing)`)
@@ -174,7 +184,6 @@ async function main() {
   }
 
   // 3. Plugin-store mark → VS Code marketplace icon (media/icon.png)
-  const pluginSvg = fs.readFileSync(pluginSvgPath)
   const pluginPng = await renderPng(pluginSvg, PLUGIN_ICON_SIZE)
   const vscodeIcon = path.join(root, 'ide/vscode/media/icon.png')
   if (check) {
@@ -257,14 +266,14 @@ ${pluginInner}
 
   if (check) {
     if (stale.length) {
-      console.error(`✗ ${stale.length} icon derivative(s) out of sync with build/icon.svg:`)
+      console.error(`✗ ${stale.length} icon derivative(s) out of sync with their brand SSOT (build/icon.svg / build/plugin-icon.svg):`)
       for (const s of stale) console.error(`  - ${s}`)
       console.error('\nRun: node scripts/generate-icons.mjs')
       process.exit(1)
     }
-    console.log('✓ all icon derivatives are in sync with build/icon.svg')
+    console.log('✓ all icon derivatives are in sync with their brand SSOTs')
   } else {
-    console.log(`\nAll icons generated (SSOT: build/icon.svg)`)
+    console.log(`\nAll icons generated (SSOTs: build/icon.svg + build/plugin-icon.svg)`)
   }
 }
 

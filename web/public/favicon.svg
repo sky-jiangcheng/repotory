@@ -1,21 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Repotory">
   <title>Repotory</title>
 
-  <!-- Single source of truth for the brand mark. Every icon derivative
-       (iconset, appicon, .ico, favicons, VS Code media) is generated from
-       this file by scripts/generate-icons.mjs.
+  <!-- Plugin-store brand mark — the editorial variant of build/icon.svg.
+       Single source of truth for every plugin-store icon (VS Code
+       marketplace icon, JetBrains pluginIcon.svg / pluginIcon_dark.svg);
+       scripts/generate-icons.mjs renders the bitmap derivatives and the
+       CI sync gate keeps them in step.
 
-       Field: one flat ink (#0F2244). No gradient, no inner bevel — both read
-       as stock app-icon chrome at 16px and cheapen the mark at 512px.
+       Why a second master next to the app icon: the desktop app's navy
+       tile is the in-OS brand, but in a plugin-store list it reads as one
+       more blue square among hundreds. This variant keeps the SAME
+       letterform (the IBM Plex Sans Bold R, SIL OFL 1.1) and changes only
+       the field system to a warm-paper editorial card:
 
-       Letterform: the R from IBM Plex Sans Bold (© IBM Corp., SIL OFL 1.1),
-       outlined, scaled to a 320-unit cap height. Centred on visual mass, not
-       on the bounding box: an R is heavier on its stem side, so the glyph sits
-       6 units right and 2 up of dead centre. Typeface proportions are already
-       corrected by a type designer; the brand owns the field, colour and
-       application. Process: outputs/icon-redesign-v4. -->
-  <rect width="512" height="512" rx="116" fill="#0F2244"/>
+       · Field #F5F0E4 — warm paper, not white; reads as an object, not a
+         default swatch, and sits quietly on both light and dark store
+         themes.
+       · Frame — one hairline (#1B1B1B, 9 units on the 512 grid, inset 26)
+         around the whole tile. It is what makes the icon look printed
+         rather than drawn; without it the cream square has no edge.
+       · Ink #1B1B1B — the same near-black the frame uses, so glyph and
+         frame are one object, not two colours fighting.
+
+       No gradient, no shadow, no rounded corners: the square edge and the
+       hairline frame are the style. The glyph is centred on visual mass
+       exactly as in the app icon (6 units right, 2 up of dead centre), so
+       the two marks stay the same letter at different sizes. -->
+
+  <rect width="512" height="512" fill="#F5F0E4"/>
+  <rect x="26" y="26" width="460" height="460" fill="none" stroke="#1B1B1B" stroke-width="9"/>
   <g transform="translate(21.06 13.06) scale(0.941176)">
-    <path fill="#F6F8FC" fill-rule="nonzero" d="M195.6 426H121.56V86H282.79Q306.17 86 325.17 93.79Q344.17 101.59 357.56 115.96Q370.96 130.33 378.26 150.3Q385.57 170.27 385.57 194.62Q385.57 229.21 370.23 255.03Q354.88 280.84 323.71 292.53L390.44 426H308.12L248.69 301.3H195.6ZM273.54 238.95Q290.1 238.95 299.6 230.43Q309.09 221.9 309.09 205.34V183.91Q309.09 167.35 299.6 158.82Q290.1 150.3 273.54 150.3H195.6V238.95Z"/>
+    <path fill="#1B1B1B" fill-rule="nonzero" d="M195.6 426H121.56V86H282.79Q306.17 86 325.17 93.79Q344.17 101.59 357.56 115.96Q370.96 130.33 378.26 150.3Q385.57 170.27 385.57 194.62Q385.57 229.21 370.23 255.03Q354.88 280.84 323.71 292.53L390.44 426H308.12L248.69 301.3H195.6ZM273.54 238.95Q290.1 238.95 299.6 230.43Q309.09 221.9 309.09 205.34V183.91Q309.09 167.35 299.6 158.82Q290.1 150.3 273.54 150.3H195.6V238.95Z"/>
   </g>
 </svg>

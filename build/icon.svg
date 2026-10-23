@@ -1,9 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Repotory">
   <title>Repotory</title>
 
-  <!-- Single source of truth for the brand mark. Every icon derivative
-       (iconset, appicon, .ico, favicons, VS Code media) is generated from
-       this file by scripts/generate-icons.mjs.
+  <!-- Single source of truth for the APP-side brand mark — the navy tile
+       the OS shows (iconset, Wails appicon, Windows .ico). Generated into
+       derivatives by scripts/generate-icons.mjs.
+
+       The store / web / docs side of the brand lives in the editorial
+       paper-card master build/plugin-icon.svg: browser favicons, the
+       VS Code marketplace + activity-bar icons, the JetBrains icons, the
+       docs sidebar mark and the README banners all derive from it. The
+       favicons used to be derived from THIS file — that split is what let
+       the rebrand ship half-applied, so the two domains now each own one
+       master and the CI sync gate watches both. -->
 
        Field: one flat ink (#0F2244). No gradient, no inner bevel — both read
        as stock app-icon chrome at 16px and cheapen the mark at 512px.
