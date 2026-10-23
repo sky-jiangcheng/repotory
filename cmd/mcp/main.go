@@ -354,6 +354,38 @@ func registerTools(mcpServer *server.MCPServer, svc *service.Service) {
 		return makeJSONResult("note_updated", updated)
 	})
 
+	// The tidying draft. Deliberately a PROPOSAL tool: it returns the model's
+	// rewrite and writes nothing, so an agent can prepare a reorganized note
+	// but only a human save (repotory_notes_update) lands it — the review
+	// gate of ADR-0015 applies to machine-generated wording too.
+	mcpServer.AddTool(mcp.Tool{
+		Name: "repotory_notes_organize",
+		Description: "Ask the configured AI to restructure one note into clean Markdown: same facts, better structure, a table-of-contents index when the note grew sections, and a mermaid flowchart when the content is a process. " +
+			"Returns a PROPOSAL (title/tags/content) — nothing is saved; review it, edit if needed, then save with repotory_notes_update. " +
+			"Requires the AI endpoint to be configured (Settings → AI in the desktop app).",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]any{
+				"id": map[string]any{
+					"type":        "number",
+					"description": "Note ID to organize",
+				},
+			},
+			Required: []string{"id"},
+		},
+	}, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, _ := args["id"].(float64)
+		if id <= 0 {
+			return makeTextResult("a positive note id is required"), nil
+		}
+		res, err := svc.OrganizeNote(int64(id))
+		if err != nil {
+			return makeTextResult(fmt.Sprintf("error: %v", err)), nil
+		}
+		return makeJSONResult("note_organized", res)
+	})
+
 	mcpServer.AddTool(mcp.Tool{
 		Name:        "repotory_agent_score",
 		Description: "Check AI-readiness of the local Repotory installation (database, notes, search, MCP, llms.txt, SKILL.md, i18n)",

@@ -3,11 +3,16 @@
 //   node scripts/generate-icons.mjs          # (re)generate all derivatives
 //   node scripts/generate-icons.mjs --check  # verify derivatives are in sync
 //
-// build/icon.svg is the single source of truth for the Repotory brand mark.
-// Everything else — the Wails appicon, the Windows .ico, the size ladder in
-// build/icons/, the VS Code extension icon and the docs favicons — is a
-// derived artifact. When the SSOT changes without regenerating, `--check`
-// fails (wired into CI), so a rebrand can never ship half-applied.
+// build/icon.svg is the single source of truth for the Repotory app brand
+// mark. Everything else — the Wails appicon, the Windows .ico, the size
+// ladder in build/icons/ and the docs favicons — is a derived artifact.
+// When the SSOT changes without regenerating, `--check` fails (wired into
+// CI), so a rebrand can never ship half-applied.
+//
+// The plugin stores get their own master, build/plugin-icon.svg: same
+// letterform, editorial paper-card field (see the comment in that file).
+// The VS Code marketplace icon is derived from it; the JetBrains
+// marketplace icons are hand-scaled 40×40 SVGs of the same mark.
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -17,7 +22,13 @@ const SIZES = [512, 256, 128, 64, 48, 32, 16]
 
 const root = process.cwd()
 const svgPath = path.join(root, 'build/icon.svg')
+const pluginSvgPath = path.join(root, 'build/plugin-icon.svg')
 const outDir = path.join(root, 'build/icons')
+
+// Marketplace-facing bitmap: the VS Code extension icon (media/icon.png)
+// is the plugin mark at 128×128, the size the marketplace requires.
+const PLUGIN_ICON_SIZE = 128
+const pluginIconPng = path.join(outDir, `plugin-icon-${PLUGIN_ICON_SIZE}.png`)
 
 // Every derived artifact: how it is produced, plus (for bitmaps) a pixel
 // diff tolerance for --check. sharp upgrades can shift anti-aliased edges
@@ -25,7 +36,6 @@ const outDir = path.join(root, 'build/icons')
 // instead of bytes — enough to catch a stale derivative, tolerant of
 // renderer micro-drift.
 const DERIVED = [
-  { file: 'build/icons/icon-128.png', rel: 'ide/vscode/media/icon.png', copy: true },
   { file: 'build/icons/icon.ico', rel: 'docs/favicon.ico', copy: true },
   { file: 'build/icons/icon.ico', rel: 'web/public/favicon.ico', copy: true },
   { file: 'docs/favicon.svg', rel: 'web/public/favicon.svg', copy: true },
@@ -160,6 +170,24 @@ async function main() {
       fs.writeFileSync(target, gen)
       console.log(`  ✓ ${d.rel}`)
     }
+  }
+
+  // 3. Plugin-store mark → VS Code marketplace icon (media/icon.png)
+  const pluginSvg = fs.readFileSync(pluginSvgPath)
+  const pluginPng = await renderPng(pluginSvg, PLUGIN_ICON_SIZE)
+  const vscodeIcon = path.join(root, 'ide/vscode/media/icon.png')
+  if (check) {
+    if (!fs.existsSync(pluginIconPng)) stale.push(`${pluginIconPng} (missing)`)
+    else if ((await pixelDiff(pluginPng, fs.readFileSync(pluginIconPng))) > 0.005) {
+      stale.push(`${pluginIconPng} (pixel drift)`)
+    }
+    if (!fs.existsSync(vscodeIcon)) stale.push(`${vscodeIcon} (missing)`)
+    else if (sha(pluginPng) !== sha(fs.readFileSync(vscodeIcon))) stale.push(`${vscodeIcon} (stale)`)
+  } else {
+    fs.writeFileSync(pluginIconPng, pluginPng)
+    fs.writeFileSync(vscodeIcon, pluginPng)
+    console.log(`  ✓ build/icons/plugin-icon-${PLUGIN_ICON_SIZE}.png`)
+    console.log('  ✓ ide/vscode/media/icon.png (from build/plugin-icon.svg)')
   }
 
   if (check) {

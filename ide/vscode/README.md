@@ -1,6 +1,6 @@
 # Repotory for VS Code
 
-**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This extension surfaces it where you work: load a project's full session context, write a structured handoff when you stop, and search everything you ever captured, without leaving VS Code.
+**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This extension surfaces it where you work: load a project's full session context, write a structured handoff when you stop, browse your captured knowledge in a built-in reader, and search everything you ever captured, without leaving VS Code.
 
 One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 
@@ -10,12 +10,47 @@ One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 |---|---|
 | Command `Repotory: Load Session Context` | Pulls the working context for your project (tech stack, README excerpt, recent commits, open todos, the last session handoff) via `repotory_context`, sending the current workspace path so a subdirectory resolves to the repository it belongs to; shows it in the Repotory output channel |
 | Command `Repotory: Write Session Handoff` | Prompts for summary / changes / next steps, then records a structured handoff (`repotory_handoff`) — the project is resolved from the workspace path — the next session, yours or any agent's, starts from it |
-| Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar with the matched snippet (the service returns the excerpt, not the full body) and open as a read-only preview |
-| Sidebar "Repotory: Knowledge Search" | Idle state shows the resolved `project · repository` (or "Repotory: not in the knowledge base yet"), then the search results. Title bar also carries **"Repotory: Open Desktop App"** to launch the Repotory desktop app from the IDE |
+| Command `Repotory: Search Knowledge` | Full-text search (FTS5) across every note you captured; the workspace path is sent so notes recorded in the matched repository rank first (ranking only, nothing filtered). Hits render in the sidebar reader (see below); selecting one fetches and shows the full note |
+| Sidebar "Repotory: Knowledge Search" | The knowledge reader — see below. Idle state shows the resolved `project · repository` (or "Repotory: not in the knowledge base yet"), then the search results. A note's detail pane carries **Edit**, **New note here** and **AI Tidy** (see "Maintaining notes" below). Title bar also carries **"Repotory: Open Desktop App"** to launch the Repotory desktop app from the IDE |
 | Status bar `$(repo) Repotory` | Click = load context; the tooltip names the resolved workspace (project / repository and its path) once resolved |
 | Command `Repotory: Register MCP Server` | Runs the bundled `repotory-init --with-hook` silently in the background (no terminal): registers the MCP server for Claude Code / Cursor / VS Code / Windsurf and installs the SessionEnd hook. The installer ships inside the extension, so this works in any project — it is not limited to the Repotory repository |
 | Command `Repotory: Setup & Diagnostics` | One panel showing four checks — `repotory-mcp` binary, local service, workspace resolution, MCP client config — each with the fix action next to it. Use this instead of guessing why something is not working |
 | Command `Repotory: Set repotory-mcp Path` | File picker for the `repotory-mcp` executable; writes `repotory.mcpPath` so no PATH editing is needed |
+
+## The knowledge reader
+
+The sidebar is a reader, not a results dump. It opens in a **T-shaped layout**:
+
+```
+┌──────────────────────────────────────────────┐
+│ Repotory · your local knowledge base         │  ← brand header, always visible
+├─────────────────────┬────────────────────────┤
+│ search box          │  the selected note,    │
+│ ┌─────────────────┐ │  in full — markdown    │
+│ │ NOTE  FTS5 …    │ │  rendered, opened      │
+│ │ NOTE  Deploy …  │ │  right here            │
+│ │ TODO  Wiki …    │ │                        │
+│ └─────────────────┘ │                        │
+└─────────────────────┴────────────────────────┘
+```
+
+- **Top — identity and what this is.** The brand mark and the one-line pitch, plus the scope the search runs in (`project · repository`), so you always know which knowledge base you are looking at.
+- **Left — the thumbnails.** One card per hit: kind badge (note / todo), title, and the matched excerpt. Type in the search box (300 ms debounce) or use **Repotory: Search Knowledge** from the Command Palette; both run the same query through the same path.
+- **Right — the knowledge, expanded.** The first result is selected by default, so the pane is never empty while results are on screen. Selecting a note fetches its full body over `repotory_notes_read` and renders the markdown (headings, lists, code, links); todos show the matched excerpt, labelled as such. A `mermaid` fence becomes a labelled diagram card — the source stays visible and editable, and the same note renders as a drawn diagram in the Repotory desktop app. **Open in Repotory** deep-links the item into the Repotory web UI (`/project/<id>?noteId=<id>` for a note, `?tab=todos` for a todo); **Copy** puts the note on the clipboard.
+
+The pane follows your editor theme — every surface is a VS Code theme color — so it looks native in light and dark alike.
+
+## Maintaining notes without leaving the IDE
+
+The reader is also the editor. A note's detail pane carries three maintenance actions, and the desktop app's note list carries the same ones:
+
+| Action | What it does |
+|---|---|
+| **Edit** | Opens the note in the pane's editor: title, kind, tags, 主题 (topic = project, via a dropdown) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `repotory_notes_update` and then the 主题 change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge the JetBrains plugin uses). A failed save keeps your draft and says why |
+| **New note here** | Creates a note under the **same 主题** as the one you are reading — the editor opens empty, pre-set to that project. After creating, the note joins the result list and opens in full |
+| **AI Tidy** | Asks the configured AI to restructure the note: same facts, cleaner sections, a table-of-contents index when the note grew sections, and a mermaid flowchart when the content is really a process. The result is a **proposal** — it opens in the same editor with a "review, then save" banner, so machine-generated wording is never saved silently; your save (or your edits first) is what lands it. Requires the AI endpoint configured in the desktop app (Settings → AI) |
+
+The tidy proposal is generated server-side by the shared service layer (`OrganizeNote`, twin tool `repotory_notes_organize`) and writes nothing by itself — the human save is the gate, exactly as in the desktop app.
 
 ## Keyboard shortcuts
 

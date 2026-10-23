@@ -11,8 +11,8 @@ import * as os from "node:os";
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import { exec, execFile } from "node:child_process";
 import { McpStdioClient } from "./mcpClient.js";
-import { getJson, parseSearchHits, postJson } from "./headless.js";
-import { NotesSearchProvider } from "./notesTree.js";
+import { getJson, parseOrganizeProposal, parseProjects, parseSearchHits, postJson, type OrganizeProposal, type ProjectOption } from "./headless.js";
+import { parseNoteRead, RepotorySearchViewProvider, type EditorDraft, type Thumb } from "./searchView.js";
 
 const CONFIG_SECTION = "repotory";
 const SERVER_URL_KEY = "serverUrl";
@@ -243,11 +243,11 @@ export async function callTool(name: string, args: Record<string, unknown>): Pro
 // shows the answer. The matching rules live server-side on purpose: the MCP tools
 // resolve the same path, and a TypeScript reimplementation would let the sidebar
 // and an agent's repotory_context disagree about which knowledge a session gets.
-async function refreshScope(notes: NotesSearchProvider): Promise<void> {
+async function refreshScope(view: RepotorySearchViewProvider): Promise<void> {
   const dir = workspacePath();
   if (!dir) {
     lastResolution = null;
-    notes.setScope("");
+    view.setScope("");
     return;
   }
   try {
@@ -259,18 +259,18 @@ async function refreshScope(notes: NotesSearchProvider): Promise<void> {
     lastResolution = res;
     if (res?.Project) {
       const repo = res.Repository?.path ? res.Repository.path.split(/[\\/]/).pop() : undefined;
-      notes.setScope(repo ? `${res.Project.name} · ${repo}` : res.Project.name);
+      view.setScope(repo ? `${res.Project.name} · ${repo}` : res.Project.name);
       if (statusItem) {
         statusItem.tooltip =
           `Workspace: ${res.Project.name}${repo ? " / " + repo : ""}\n${dir}\n\nClick to load the session context`;
       }
     } else {
-      notes.setScope("Repotory: not in the knowledge base yet");
+      view.setScope("Repotory: not in the knowledge base yet");
     }
   } catch {
     // No headless service: the commands still work through repotory-mcp, so the
-    // sidebar stays silent about scope rather than asserting something unverified.
-    notes.setScope("");
+    // view stays silent about scope rather than asserting something unverified.
+    view.setScope("");
   }
 }
 
@@ -385,14 +385,18 @@ async function writeHandoff(): Promise<void> {
   void refreshLastHandoff();
 }
 
-async function searchKnowledge(notes: NotesSearchProvider): Promise<void> {
-  const query = await vscode.window.showInputBox({
-    prompt: "Repotory — search notes & todos (FTS5)",
-    placeHolder: "e.g. deploy hook",
-    ignoreFocusOut: true,
-  });
-  if (!query) return;
-  notes.setHint(`Searching "${query}"…`);
+/**
+ * Run one query and push the hits into the webview.
+ *
+ * The single search path for both entry points — the webview's own search
+ * box and the "Repotory: Search Knowledge" command both end here, so the
+ * two can never drift apart (same call, same ranking, same parser).
+ */
+async function runSearch(view: RepotorySearchViewProvider, query: string): Promise<void> {
+  if (!query) {
+    view.postHits("", [], scopeLabel());
+    return;
+  }
   try {
     const searchArgs: Record<string, unknown> = { query };
     // Ranking only: notes recorded in THIS repository lead the result list.
@@ -401,10 +405,232 @@ async function searchKnowledge(notes: NotesSearchProvider): Promise<void> {
     const text = await withProgress("searching knowledge", () =>
       callTool("repotory_notes_search", searchArgs),
     );
-    notes.setHits(parseSearchHits(text), query);
+    view.postHits(query, parseSearchHits(text), scopeLabel());
   } catch (err) {
-    notes.setHint(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
+    // A failed search must not look like an empty one (the desktop app's
+    // own rule): the view shows the reason instead of a blank list.
+    view.postError(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
     throw err;
+  }
+}
+
+function scopeLabel(): string {
+  const res = lastResolution;
+  if (!res?.Project) return "";
+  const repo = res.Repository?.path ? res.Repository.path.split(/[\\/]/).pop() : undefined;
+  return repo ? `${res.Project.name} · ${repo}` : res.Project.name;
+}
+
+/**
+ * Fetch the full body of the selected hit.
+ *
+ * Notes have a row to read (repotory_notes_read → the whole note); todos
+ * do not — the matched excerpt is the most the search contract returns, so
+ * the pane says "excerpt" rather than pretending it is the full item.
+ * Either way the user sees content immediately, never a spinner that dies
+ * into an empty pane.
+ */
+async function selectHit(view: RepotorySearchViewProvider, id: number): Promise<void> {
+  try {
+    const text = await callTool("repotory_notes_read", { id });
+    const detail = parseNoteRead(text);
+    if (detail) {
+      view.postDetail(detail);
+      return;
+    }
+  } catch {
+    /* fall through to the snippet below */
+  }
+  const hit = view.lastHits.find((h) => h.id === id);
+  view.postDetail({
+    type: hit?.type ?? "note",
+    id,
+    project_id: hit?.project_id ?? 0,
+    title: hit?.title ?? `note ${id}`,
+    body: hit?.snippet ?? "",
+    source: "snippet",
+  });
+}
+
+/** Deep-link a hit into the Repotory web UI, the same routes the JetBrains plugin opens. */
+async function openHit(hit: Thumb | undefined): Promise<void> {
+  if (!hit) return;
+  const route =
+    hit.type === "todo"
+      ? `/project/${hit.project_id}?tab=todos`
+      : `/project/${hit.project_id}?noteId=${hit.id}`;
+  const url = `${serverUrl().replace(/\/+$/, "")}${route}`;
+  await vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+// ---------------------------------------------------------------- note maintenance
+//
+// The detail pane is also the note editor: edit a note, create one under the
+// same 主题 (project), or let the AI tidy a note. Field writes go through the
+// MCP tools (the extension's knowledge transport); the one operation the MCP
+// surface deliberately does not carry — moving a note between projects
+// (MoveNote is desktop-only by design: re-filing knowledge is a human act) —
+// goes over the HTTP RPC bridge the extension already speaks for scope
+// resolution. Both paths end in the same service layer, so there is still
+// exactly one implementation (ADR-0009).
+
+/** The project list for the editor's 主题 dropdown. */
+async function fetchProjectOptions(): Promise<ProjectOption[]> {
+  try {
+    return parseProjects(await callTool("repotory_projects_list", {}));
+  } catch {
+    // A missing dropdown degrades to the read-only project chip in the
+    // webview; the rest of the editor works without it.
+    return [];
+  }
+}
+
+/** Open the editor on an existing note (its stored fields). */
+async function openEditorForNote(view: RepotorySearchViewProvider, id: number): Promise<void> {
+  const detail = parseNoteRead(await callTool("repotory_notes_read", { id }));
+  if (!detail) {
+    view.postError(`Note ${id} could not be read — nothing to edit.`);
+    return;
+  }
+  const projects = await fetchProjectOptions();
+  view.postEditor(
+    {
+      id: detail.id,
+      project_id: detail.project_id,
+      title: detail.title,
+      tags: detail.tags ?? "",
+      kind: detail.kind ?? "knowledge",
+      content: detail.body,
+    },
+    projects,
+    false,
+  );
+}
+
+/** Open the editor on a new note under the given 主题 (project). */
+async function openEditorForNew(view: RepotorySearchViewProvider, projectId: number): Promise<void> {
+  const projects = await fetchProjectOptions();
+  view.postEditor(
+    { id: 0, project_id: projectId, title: "", tags: "", kind: "knowledge", content: "" },
+    projects,
+    false,
+  );
+}
+
+/**
+ * Run the AI tidy and open its PROPOSAL in the editor.
+ *
+ * The service writes nothing: the proposal lands in the same editor a manual
+ * edit uses, so reviewing machine-generated wording IS the edit flow, and
+ * only the user's save persists it. The stored note is read once more to
+ * carry kind/pinned into the draft (the proposal only covers title/tags/
+ * content).
+ */
+async function organizeNoteInView(view: RepotorySearchViewProvider, id: number): Promise<void> {
+  const text = await withProgress("tidying note with AI", () =>
+    callTool("repotory_notes_organize", { id }),
+  );
+  const proposal: OrganizeProposal | undefined = parseOrganizeProposal(text);
+  if (!proposal) {
+    view.postError("AI tidy failed: the service returned no usable proposal.");
+    return;
+  }
+  const stored = parseNoteRead(await callTool("repotory_notes_read", { id }));
+  const projects = await fetchProjectOptions();
+  view.postEditor(
+    {
+      id: proposal.note_id || id,
+      project_id: stored?.project_id ?? 0,
+      title: proposal.title,
+      tags: proposal.tags,
+      kind: stored?.kind ?? "knowledge",
+      content: proposal.content,
+    },
+    projects,
+    true,
+    proposal.warning,
+  );
+}
+
+/**
+ * Persist an editor draft: update in place, or create under the chosen 主题.
+ *
+ * Fields are written first, the 主题 move second: a failed move (the HTTP
+ * service is down — MCP works without it) must not lose the edit the user
+ * just made. After a successful save the freshly written note replaces the
+ * editor, so what is on screen is what is in the store.
+ */
+async function saveEditorDraft(view: RepotorySearchViewProvider, draft: EditorDraft): Promise<void> {
+  try {
+    if (draft.id) {
+      const updatedText = await callTool("repotory_notes_update", {
+        id: draft.id,
+        content: draft.content,
+        title: draft.title,
+        tags: draft.tags,
+        category: draft.kind,
+      });
+      let detail = parseNoteRead(updatedText);
+      if (!detail) {
+        // The update succeeded (no throw) but the payload is unusable: one
+        // more read gets the truth rather than trusting a guess.
+        detail = parseNoteRead(await callTool("repotory_notes_read", { id: draft.id }));
+      }
+      if (!detail) {
+        view.postEditorError("Saved, but reading the note back failed — reopen it to see the result.");
+        return;
+      }
+      if (draft.project_id && detail.project_id && draft.project_id !== detail.project_id) {
+        try {
+          await moveNoteViaRpc(draft.id, draft.project_id);
+          detail = { ...detail, project_id: draft.project_id };
+        } catch (err) {
+          view.postEditorError(
+            `Fields saved, but moving the note failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return;
+        }
+      }
+      view.postSaved(detail);
+      return;
+    }
+    const createdText = await callTool("repotory_notes_create", {
+      project_id: draft.project_id,
+      title: draft.title,
+      content: draft.content,
+      tags: draft.tags,
+      category: draft.kind,
+    });
+    const created = parseNoteRead(createdText);
+    if (!created) {
+      view.postEditorError("Created, but reading the note back failed — search for it to see the result.");
+      return;
+    }
+    view.postCreated(
+      { type: "note", id: created.id, project_id: created.project_id, title: created.title, snippet: "" },
+      created,
+    );
+  } catch (err) {
+    view.postEditorError(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Move a note to another project over the HTTP RPC bridge.
+ *
+ * The MCP surface has no move tool on purpose (MoveNote is registered
+ * desktop-only: re-filing knowledge is a human decision an agent must not
+ * make), and this extension is a human-driven client — the same bridge the
+ * JetBrains plugin and the browser frontend use. Throws on failure so the
+ * caller can report the partial save honestly.
+ */
+async function moveNoteViaRpc(noteId: number, projectId: number): Promise<void> {
+  const response = (await postJson(serverUrl(), "/api/rpc", {
+    method: "MoveNote",
+    args: [noteId, projectId],
+  })) as { error?: string } | null;
+  if (response?.error) {
+    throw new Error(response.error);
   }
 }
 
@@ -763,10 +989,17 @@ export function activate(context: vscode.ExtensionContext): void {
   statusItem.command = "repotory.loadContext";
   void refreshLastHandoff();
 
-  const notes = new NotesSearchProvider();
-  void refreshScope(notes);
+  const searchView = new RepotorySearchViewProvider(context);
+  searchView.onSearch = (query) => runSearch(searchView, query);
+  searchView.onSelect = (id) => selectHit(searchView, id);
+  searchView.onOpen = (hit) => openHit(hit);
+  searchView.onEdit = (id) => openEditorForNote(searchView, id);
+  searchView.onCreate = (projectId) => openEditorForNew(searchView, projectId);
+  searchView.onOrganize = (id) => organizeNoteInView(searchView, id);
+  searchView.onSave = (draft) => saveEditorDraft(searchView, draft);
+  void refreshScope(searchView);
   context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void refreshScope(notes)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => void refreshScope(searchView)),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration(`${CONFIG_SECTION}.${MCP_PATH_KEY}`)) resetMcp();
     }),
@@ -790,7 +1023,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   register("repotory.loadContext", loadContext);
   register("repotory.handoff", writeHandoff);
-  register("repotory.search", () => searchKnowledge(notes));
+  register("repotory.search", async () => {
+    const query = await vscode.window.showInputBox({
+      prompt: "Repotory — search notes & todos (FTS5)",
+      placeHolder: "e.g. deploy hook",
+      ignoreFocusOut: true,
+    });
+    if (!query) return;
+    await runSearch(searchView, query);
+  });
   register("repotory.registerMcp", () => registerMcp(context));
   register("repotory.diagnose", () => diagnose(context));
   register("repotory.setMcpPath", async () => {
@@ -800,15 +1041,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     statusItem,
-    vscode.workspace.registerTextDocumentContentProvider(
-      "repotory-notes",
-      new (class implements vscode.TextDocumentContentProvider {
-        provideTextDocumentContent(uri: vscode.Uri): string {
-          return Buffer.from(uri.query, "base64").toString("utf8");
-        }
-      })(),
-    ),
-    vscode.window.createTreeView("repotory.notesSearch", { treeDataProvider: notes }),
+    vscode.window.registerWebviewViewProvider("repotory.notesSearch", searchView, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
     { dispose: () => mcp?.stop() },
   );
 

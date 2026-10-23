@@ -8,11 +8,35 @@
 // browser, deep-linked to that result. The plugin does not embed the SPA:
 // one rendering of the knowledge UI, the desktop app's.
 //
-// Two runtime properties this file is responsible for:
+// Layout (2026-10-23 revision) — a T-shape, same reader the VS Code
+// extension ships:
+//
+//   ┌───────────────────────────────────────────────────┐
+//   │ brand header: mark · wordmark · tagline · local-only│  ← identity & promo
+//   ├────────────────────────┬──────────────────────────┤
+//   │ search box             │ detail pane (HTML)       │
+//   │ thumbnail list         │ first hit selected by    │
+//   │ (kind · title · excerpt)│ default, full body      │
+//   ├────────────────────────┴──────────────────────────┤
+//   │ status line · Edit · New · AI Tidy · Copy · Open … │
+//   └───────────────────────────────────────────────────┘
+//
+// The full body of a note is fetched on selection (GetNote over the same
+// RPC bridge); todos carry their whole content in the excerpt, and a note
+// whose read fails falls back to the excerpt with a label that says so.
+//
+// The action row is the maintenance surface (2026-10-23): Edit and New open
+// the shared NoteEditorDialog, AI Tidy asks the service for a reorganization
+// PROPOSAL that opens the SAME dialog — machine-generated wording is never
+// saved silently; the user's save is the gate.
+//
+// Three runtime properties this file is responsible for:
 //   · typing debounces (300 ms) and every search carries a sequence number, so
 //     a slow early response can never overwrite the results of a later query;
 //   · nothing fails silently — a transport error, a 4xx/5xx and an unavailable
-//     web UI each become visible text in the panel, never just an empty list.
+//     web UI each become visible text in the panel, never just an empty list;
+//   · the EDT never waits on the network: search and note reads run on
+//     pooled threads, the pane is repainted from invokeLater.
 package dev.repotory.jetbrains
 
 import com.intellij.ide.BrowserUtil
@@ -27,13 +51,26 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.util.ui.JBUI
+import com.intellij.openapi.wm.ex.ToolWindowManagerEx
 import com.intellij.ui.content.ContentFactory
-import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Component
+import java.awt.Dimension
+import java.awt.Font
+import java.awt.GridLayout
 import java.awt.datatransfer.StringSelection
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
+import javax.swing.BorderFactory
 import javax.swing.DefaultListModel
+import javax.swing.ImageIcon
 import javax.swing.JButton
+import javax.swing.JEditorPane
+import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JTextField
@@ -45,6 +82,19 @@ import javax.swing.event.DocumentListener
 /** Trailing-edge debounce: the query runs 300 ms after the last keystroke. */
 private const val DEBOUNCE_MS = 300
 
+/** Fixed width of the thumbnail column; the detail pane takes the rest. */
+private val LIST_WIDTH = JBUI.scale(280)
+
+/** The brand surfaces are FIXED, not themed: the cream card and ink type are the mark. */
+private val BRAND_FIELD = Color(0xF5, 0xF0, 0xE4)
+private val BRAND_INK = Color(0x1B, 0x1B, 0x1B)
+private val BRAND_INK_SOFT = Color(0x55, 0x55, 0x55)
+private val BRAND_INK_FAINT = Color(0x6A, 0x6A, 0x6A)
+
+/** Kind badge colours, paired light/dark so they follow the IDE theme. */
+private val BADGE_NOTE = JBColor(Color(0x1D, 0x4E, 0xD8), Color(0x60, 0xA5, 0xFA))
+private val BADGE_TODO = JBColor(Color(0x8B, 0x6F, 0x3A), Color(0xD9, 0xB7, 0x73))
+
 class RepotoryToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val panel = RepotoryPanel()
@@ -54,22 +104,17 @@ class RepotoryToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 }
 
-/**
- * The tool window body: a search box, a result list, a status line and an
- * "open in browser" action.
- *
- * The search runs on a background thread — the HTTP call can take up to the
- * client's read timeout, and doing that on the EDT would freeze the IDE.
- *
- * It is a JPanel (the tool window needs a Swing component) that ALSO
- * implements Disposable, so the content can be torn down with it.
- */
 class RepotoryPanel : JPanel(), Disposable {
     private val model = DefaultListModel<RepotoryHit>()
     private val input = JTextField()
     private val list = JList(model)
+    private val detail = JEditorPane()
     private val status = JBLabel(" ")
+    private val editButton = JButton("Edit")
+    private val newButton = JButton("New note")
+    private val organizeButton = JButton("AI Tidy")
     private val openButton = JButton("Open in Repotory")
+    private val copyButton = JButton("Copy")
     private val startButton = JButton("Start local service")
     private var disposed = false
 
@@ -81,6 +126,9 @@ class RepotoryPanel : JPanel(), Disposable {
      */
     private var searchSeq = 0
 
+    /** Same guard for the detail pane: a slow note read must not overwrite a newer selection. */
+    private var detailSeq = 0
+
     /** Keystrokes restart this timer; only the last one survives to fire. */
     private val debounce = Timer(DEBOUNCE_MS) { runSearch() }
 
@@ -89,27 +137,130 @@ class RepotoryPanel : JPanel(), Disposable {
         // before the regions are added, and removeAll() clears the
         // default layout manager's single placeholder component.
         removeAll()
-        layout = BorderLayout(0, 6)
+        layout = java.awt.BorderLayout(0, 0)
         debounce.isRepeats = false
 
+        add(brandHeader(), java.awt.BorderLayout.NORTH)
+        add(readerBody(), java.awt.BorderLayout.CENTER)
+        add(statusBar(), java.awt.BorderLayout.SOUTH)
+    }
+
+    // ------------------------------------------------------------- brand header
+
+    /**
+     * The top band: the mark, the wordmark, the one-line pitch and the
+     * local-only chip. Fixed cream field in both themes — it is a printed
+     * card, not a themed surface, which is what makes the window feel like
+     * a product rather than a panel.
+     */
+    private fun brandHeader(): JPanel {
+        val header = JPanel(java.awt.BorderLayout(JBUI.scale(12), 0))
+        header.background = BRAND_FIELD
+        header.border = JBUI.Borders.empty(10, 12)
+
+        val mark = markLabel(JBUI.scale(44))
+        val text = JPanel(GridLayout(0, 1))
+        text.isOpaque = false
+        val name = JLabel("Repotory")
+        name.font = name.font.deriveFont(Font.BOLD, JBUI.scale(15f))
+        name.foreground = BRAND_INK
+        val tagline = JLabel("Your local knowledge base — decisions, gotchas, next steps")
+        tagline.font = tagline.font.deriveFont(JBUI.scale(11f))
+        tagline.foreground = BRAND_INK_SOFT
+        text.add(name)
+        text.add(tagline)
+
+        val chip = JLabel("local-only")
+        chip.font = chip.font.deriveFont(JBUI.scale(10f))
+        chip.foreground = BRAND_INK_FAINT
+        chip.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BRAND_INK, 1),
+            JBUI.Borders.empty(2, 6),
+        )
+
+        if (mark != null) header.add(mark, java.awt.BorderLayout.WEST)
+        header.add(text, java.awt.BorderLayout.CENTER)
+        header.add(chip, java.awt.BorderLayout.EAST)
+        return header
+    }
+
+    /** The brand mark as an ImageIcon, scaled from the bundled PNG (Swing has no SVG). */
+    private fun markLabel(size: Int): JLabel? {
+        val stream = javaClass.getResourceAsStream("/icons/repotory-mark.png") ?: return null
+        val image: BufferedImage = ImageIO.read(stream) ?: return null
+        val scaled = image.getScaledInstance(size, size, java.awt.Image.SCALE_SMOOTH)
+        return JLabel(ImageIcon(scaled))
+    }
+
+    // ------------------------------------------------------------- reader body
+
+    /** Left: search box + thumbnails. Right: the expanded knowledge. */
+    private fun readerBody(): JPanel {
+        val body = JPanel(java.awt.BorderLayout())
+
+        val left = JPanel(java.awt.BorderLayout(0, 0))
         input.toolTipText = "Search notes and todos"
         input.document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent) = scheduleSearch()
             override fun removeUpdate(e: DocumentEvent) = scheduleSearch()
             override fun changedUpdate(e: DocumentEvent) = scheduleSearch()
         })
+        left.add(input, java.awt.BorderLayout.NORTH)
 
         list.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        list.cellRenderer = HitRenderer()
+        list.cellRenderer = ThumbRenderer()
+        list.fixedCellHeight = JBUI.scale(64)
         list.addMouseListener(object : java.awt.event.MouseAdapter() {
             override fun mouseClicked(e: java.awt.event.MouseEvent) {
                 if (e.clickCount == 2) openSelected()
             }
         })
+        list.addListSelectionListener { event ->
+            if (event.valueIsAdjusting) return@addListSelectionListener
+            val has = list.selectedValue != null
+            val isNote = list.selectedValue?.type == "note"
+            openButton.isEnabled = has
+            copyButton.isEnabled = has
+            editButton.isEnabled = isNote
+            newButton.isEnabled = isNote
+            organizeButton.isEnabled = isNote
+            showDetail(list.selectedValue)
+        }
+        left.add(JBScrollPane(list), java.awt.BorderLayout.CENTER)
+        left.preferredSize = Dimension(LIST_WIDTH, 0)
+        left.minimumSize = Dimension(JBUI.scale(200), 0)
+
+        detail.contentType = "text/html"
+        detail.isEditable = false
+        detail.editorKit = detailHtmlKit()
+        detail.text = promoHtml()
+        detail.border = JBUI.Borders.empty(10, 14)
+
+        body.add(left, java.awt.BorderLayout.WEST)
+        body.add(JBScrollPane(detail), java.awt.BorderLayout.CENTER)
+        return body
+    }
+
+    // ------------------------------------------------------------- status bar
+
+    private fun statusBar(): JPanel {
+        val bar = JPanel(java.awt.BorderLayout(JBUI.scale(8), 0))
+        bar.border = JBUI.Borders.empty(6, 10)
 
         openButton.isEnabled = false
         openButton.addActionListener { openSelected() }
-        list.addListSelectionListener { openButton.isEnabled = list.selectedIndex >= 0 }
+        copyButton.isEnabled = false
+        copyButton.addActionListener { copySelected() }
+
+        // Maintenance: only meaningful for a note (a todo has no note row to
+        // edit), so they stay disabled until one is selected.
+        editButton.isEnabled = false
+        editButton.addActionListener { editSelected() }
+        newButton.isEnabled = false
+        newButton.addActionListener { newNoteUnderSelectedTopic() }
+        organizeButton.isEnabled = false
+        organizeButton.toolTipText = "Let the AI restructure this note — review the proposal, then save"
+        organizeButton.addActionListener { organizeSelected() }
 
         // Only offered when a search failed because nothing answered at the
         // configured address. Starting a local server cannot fix a 4xx from a
@@ -117,18 +268,20 @@ class RepotoryPanel : JPanel(), Disposable {
         startButton.isVisible = false
         startButton.addActionListener { startLocalService() }
 
-        val buttons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0))
+        val buttons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(6), 0))
         buttons.add(startButton)
+        buttons.add(editButton)
+        buttons.add(newButton)
+        buttons.add(organizeButton)
+        buttons.add(copyButton)
         buttons.add(openButton)
 
-        val south = JPanel(BorderLayout(0, 4))
-        south.add(status, BorderLayout.NORTH)
-        south.add(buttons, BorderLayout.SOUTH)
-
-        add(input, BorderLayout.NORTH)
-        add(JBScrollPane(list), BorderLayout.CENTER)
-        add(south, BorderLayout.SOUTH)
+        bar.add(status, java.awt.BorderLayout.WEST)
+        bar.add(buttons, java.awt.BorderLayout.EAST)
+        return bar
     }
+
+    // ------------------------------------------------------------- search
 
     private fun scheduleSearch() {
         if (disposed) return
@@ -140,7 +293,6 @@ class RepotoryPanel : JPanel(), Disposable {
             // like a bug.
             searchSeq++
             model.clear()
-            openButton.isEnabled = false
             startButton.isVisible = false
             status.text = " "
             return
@@ -166,7 +318,9 @@ class RepotoryPanel : JPanel(), Disposable {
                     is SearchOutcome.Hits -> {
                         model.clear()
                         outcome.hits.forEach { model.addElement(it) }
-                        openButton.isEnabled = outcome.hits.isNotEmpty()
+                        // Default selection: the first hit, so the detail pane
+                        // is never empty while results are on screen.
+                        if (outcome.hits.isNotEmpty()) list.selectedIndex = 0
                         startButton.isVisible = false
                         status.text = if (outcome.hits.isEmpty()) {
                             "No matches for \"$query\""
@@ -176,7 +330,6 @@ class RepotoryPanel : JPanel(), Disposable {
                     }
                     is SearchOutcome.Failure -> {
                         model.clear()
-                        openButton.isEnabled = false
                         // One click to fix the most common first-run state:
                         // the plugin is installed but no service is running.
                         startButton.isVisible = outcome.offline
@@ -186,6 +339,246 @@ class RepotoryPanel : JPanel(), Disposable {
                             outcome.message
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- detail pane
+
+    /**
+     * Expands the selected hit. Notes get their full body over GetNote;
+     * todos (and failed reads) show the matched excerpt, labelled.
+     *
+     * The pane shows the excerpt immediately — a reader that blanks out
+     * while the note loads reads as a bug — and swaps in the full body when
+     * it arrives. detailSeq drops a read that a newer selection overtook.
+     */
+    private fun showDetail(hit: RepotoryHit?) {
+        val seq = ++detailSeq
+        if (hit == null) {
+            detail.text = promoHtml()
+            detail.caretPosition = 0
+            return
+        }
+        detail.text = loadingHtml(hit)
+        detail.caretPosition = 0
+        if (hit.type != "note") {
+            detail.text = excerptHtml(hit)
+            return
+        }
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val note = repotoryClient.note(serverUrl, hit.id)
+            app.invokeLater {
+                if (disposed || seq != detailSeq) return@invokeLater
+                detail.text = if (note != null) noteHtml(note) else excerptHtml(hit, full = true)
+                detail.caretPosition = 0
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- actions
+
+    private fun copySelected() {
+        val hit = list.selectedValue ?: return
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        // The full body is one loopback call away, but the EDT must not wait
+        // for it: copy on a pooled thread, then report on the EDT.
+        app.executeOnPooledThread {
+            val body = if (hit.type == "note") repotoryClient.note(serverUrl, hit.id)?.body else null
+            val text = buildString {
+                appendLine(hit.title.ifBlank { "(untitled)" })
+                appendLine()
+                append(body ?: hit.snippet)
+            }
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                CopyPasteManager.getInstance().setContents(StringSelection(text))
+                status.text = "Copied to clipboard"
+            }
+        }
+    }
+
+    // ------------------------------------------------------- maintenance
+
+    /**
+     * Edit the selected note. The hit is re-read (it carries only the
+     * excerpt), the shared editor dialog opens, and an OK saves fields first
+     * and the 主题 (topic) change second — a failed move must not lose the
+     * edit the user just made.
+     */
+    private fun editSelected() {
+        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val serverUrl = RepotorySettings.serverUrl()
+        status.text = "Loading note #${hit.id}…"
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val note = repotoryClient.note(serverUrl, hit.id)
+            val projects = repotoryClient.projects(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                if (note == null) {
+                    status.text = "Note #${hit.id} could not be read — nothing to edit"
+                    return@invokeLater
+                }
+                openEditor(
+                    NoteDraft(
+                        id = note.id,
+                        projectId = note.projectId,
+                        title = note.title,
+                        tags = note.tags,
+                        kind = note.kind.ifBlank { "knowledge" },
+                        content = note.body,
+                        pinned = note.pinned,
+                    ),
+                    projects, proposal = false, warning = "",
+                )
+            }
+        }
+    }
+
+    /** New note under the SAME 主题 (project) as the selected note. */
+    private fun newNoteUnderSelectedTopic() {
+        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val projects = repotoryClient.projects(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                openEditor(
+                    NoteDraft(id = 0, projectId = hit.projectId, title = "", tags = "", kind = "knowledge", content = ""),
+                    projects, proposal = false, warning = "",
+                )
+            }
+        }
+    }
+
+    /**
+     * AI tidy: ask the service for a reorganization PROPOSAL and open the
+     * SAME editor with it. Nothing is written by the service; the user's save
+     * is the gate. The stored note is re-read so kind and pinned carry into
+     * the draft (the proposal covers title/tags/content only).
+     */
+    private fun organizeSelected() {
+        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val serverUrl = RepotorySettings.serverUrl()
+        organizeButton.isEnabled = false
+        status.text = "AI tidying note #${hit.id}… (this can take a while)"
+        val app = ApplicationManager.getApplication()
+        val reportFailure = { message: String ->
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                organizeButton.isEnabled = true
+                status.text = message
+            }
+        }
+        app.executeOnPooledThread {
+            val proposal = try {
+                repotoryClient.organizeNote(serverUrl, hit.id)
+            } catch (e: RepotoryRpcException) {
+                reportFailure(e.message ?: "整理失败")
+                return@executeOnPooledThread
+            } catch (e: Exception) {
+                reportFailure("整理失败：${e.message ?: e.javaClass.simpleName}")
+                return@executeOnPooledThread
+            }
+            val note = repotoryClient.note(serverUrl, hit.id)
+            val projects = repotoryClient.projects(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                organizeButton.isEnabled = true
+                openEditor(
+                    NoteDraft(
+                        id = if (proposal.noteId > 0) proposal.noteId else hit.id,
+                        projectId = note?.projectId ?: hit.projectId,
+                        title = proposal.title,
+                        tags = proposal.tags,
+                        kind = note?.kind?.ifBlank { "knowledge" } ?: "knowledge",
+                        content = proposal.content,
+                        pinned = note?.pinned ?: false,
+                    ),
+                    projects, proposal = true, warning = proposal.warning,
+                )
+            }
+        }
+    }
+
+    /** Opens the shared editor; an OK saves through [saveDraft]. */
+    private fun openEditor(
+        original: NoteDraft,
+        projects: List<ProjectOption>,
+        proposal: Boolean,
+        warning: String,
+    ) {
+        val dialog = NoteEditorDialog(null, original, projects, proposal, warning)
+        if (!dialog.showAndGet()) {
+            status.text = "Edit cancelled — nothing saved"
+            return
+        }
+        saveDraft(original, dialog.editedDraft())
+    }
+
+    /**
+     * Persists an edited draft: UpdateNoteFull, then MoveNote when the 主题
+     * changed. The detail pane is repainted from the freshly stored note, so
+     * what is on screen is what is in the database.
+     */
+    private fun saveDraft(original: NoteDraft, edited: NoteDraft) {
+        val serverUrl = RepotorySettings.serverUrl()
+        status.text = if (edited.id == 0L) "Creating note…" else "Saving note #${edited.id}…"
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            if (edited.id == 0L) {
+                val created = try {
+                    repotoryClient.createNote(serverUrl, edited)
+                } catch (e: Exception) {
+                    app.invokeLater {
+                        if (disposed) return@invokeLater
+                        status.text = "Create failed: ${e.message ?: e.javaClass.simpleName}"
+                    }
+                    return@executeOnPooledThread
+                }
+                app.invokeLater {
+                    if (disposed) return@invokeLater
+                    // The new note is not in the current result list; show it
+                    // in full so the user sees exactly what was stored.
+                    status.text = "Created note #${created.id}"
+                    detail.text = noteHtml(created)
+                    detail.caretPosition = 0
+                }
+                return@executeOnPooledThread
+            }
+            try {
+                repotoryClient.updateNote(serverUrl, edited)
+            } catch (e: Exception) {
+                app.invokeLater {
+                    if (disposed) return@invokeLater
+                    status.text = "Save failed: ${e.message ?: e.javaClass.simpleName}"
+                }
+                return@executeOnPooledThread
+            }
+            val moveError = if (original.projectId != 0L && edited.projectId != original.projectId) {
+                try {
+                    repotoryClient.moveNote(serverUrl, edited.id, edited.projectId)
+                    null
+                } catch (e: Exception) {
+                    e.message ?: e.javaClass.simpleName
+                }
+            } else {
+                null
+            }
+            val fresh = repotoryClient.note(serverUrl, edited.id)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                status.text = moveError?.let { "Fields saved, but the topic move failed: $it" }
+                    ?: "Saved note #${edited.id}"
+                if (fresh != null) {
+                    detail.text = noteHtml(fresh)
+                    detail.caretPosition = 0
                 }
             }
         }
@@ -264,8 +657,8 @@ class RepotoryPanel : JPanel(), Disposable {
 
     /**
      * The headless server serves its web UI only when it was started with
-     * `--web-dist` (cmd/server/main.go); without it every non-/api path is a
-     * 404 and the deep link goes nowhere. A server the plugin started carries
+     * `--web-dist` (cmd/server/main.go); without it every non-/api path is
+     * a 404 and the deep link goes nowhere. A server the plugin started carries
      * its sibling `web/` automatically (RepotoryServer.kt); for one the user
      * started by hand, the plugin cannot add the flag — but it can stop the
      * user from landing on a bare 404 with no explanation.
@@ -300,31 +693,74 @@ class RepotoryPanel : JPanel(), Disposable {
 }
 
 /**
- * Renders one hit on a single line: the title, then the kind and a trimmed
- * snippet.
+ * One thumbnail: kind badge, title, matched excerpt.
  *
- * DefaultListCellRenderer hands back an ordinary JLabel (never a
- * SimpleColoredComponent), so the body sets that label's text directly. Kotlin
- * data-class output ("RepotoryHit(type=note, id=345, …)") would otherwise leak
- * into the list.
+ * A JPanel (not a JLabel) so the badge and the title sit on one row with
+ * different colours; opaque, because a transparent renderer shows the
+ * list's own stripes through the card. Selection colours come from the
+ * JList, so the row follows the IDE theme.
  */
-private class HitRenderer : javax.swing.DefaultListCellRenderer() {
+private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), javax.swing.ListCellRenderer<RepotoryHit> {
+    private val badge = JLabel()
+    private val title = JLabel()
+    private val snippet = JLabel()
+
+    init {
+        isOpaque = true
+        border = JBUI.Borders.empty(8, 10)
+        val row = JPanel(java.awt.BorderLayout(JBUI.scale(6), 0))
+        row.isOpaque = false
+        badge.font = badge.font.deriveFont(JBUI.scale(9f))
+        badge.border = JBUI.Borders.empty(1, 4)
+        row.add(badge, java.awt.BorderLayout.WEST)
+        title.font = title.font.deriveFont(Font.BOLD, JBUI.scale(12f))
+        row.add(title, java.awt.BorderLayout.CENTER)
+        add(row, java.awt.BorderLayout.NORTH)
+        snippet.font = snippet.font.deriveFont(JBUI.scale(11f))
+        add(snippet, java.awt.BorderLayout.CENTER)
+    }
+
     override fun getListCellRendererComponent(
-        list: javax.swing.JList<*>?,
-        value: Any?,
+        list: javax.swing.JList<out RepotoryHit>?,
+        value: RepotoryHit?,
         index: Int,
-        selected: Boolean,
-        focused: Boolean,
-    ): java.awt.Component {
-        val component = super.getListCellRendererComponent(list, value, index, selected, focused)
-        if (component is javax.swing.JLabel && value is RepotoryHit) {
-            val line = StringBuilder(value.title.ifBlank { "(untitled)" })
-            if (value.type.isNotBlank()) line.append("  ·  ").append(value.type)
-            if (value.snippet.isNotBlank()) line.append("  ·  ").append(value.snippet.take(120))
-            component.text = line.toString()
-            component.toolTipText = line.toString()
+        isSelected: Boolean,
+        cellHasFocus: Boolean,
+    ): Component {
+        val hit = value
+        if (hit == null) {
+            title.text = ""
+            return this
         }
-        return component
+        badge.text = hit.type.uppercase()
+        badge.foreground = if (hit.type == "todo") BADGE_TODO else BADGE_NOTE
+        badge.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(badge.foreground, 1),
+            JBUI.Borders.empty(1, 4),
+        )
+        title.text = hit.title.ifBlank { "(untitled)" }
+        title.toolTipText = hit.title
+        snippet.text = if (hit.snippet.isBlank()) " " else excerptOf(hit.snippet, 110)
+        snippet.toolTipText = hit.snippet
+
+        if (isSelected) {
+            background = list?.selectionBackground
+            foreground = list?.selectionForeground
+            title.foreground = list?.selectionForeground
+            snippet.foreground = list?.selectionForeground
+        } else {
+            background = list?.background
+            foreground = list?.foreground
+            title.foreground = list?.foreground
+            snippet.foreground = JBColor(Color(0x6A, 0x6A, 0x6A), Color(0x94, 0x94, 0x94))
+        }
+        return this
+    }
+
+    /** Two lines' worth of excerpt at the column's width; the tooltip carries the rest. */
+    private fun excerptOf(text: String, max: Int): String {
+        val flat = text.replace(Regex("\\s+"), " ").trim()
+        return if (flat.length <= max) flat else flat.take(max - 1) + "…"
     }
 }
 
@@ -338,7 +774,7 @@ class OpenRepotoryAction : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val toolWindow = com.intellij.openapi.wm.ex.ToolWindowManagerEx
+        val toolWindow = ToolWindowManagerEx
             .getInstanceEx(project)
             .getToolWindow("Repotory") ?: return
         toolWindow.activate(null)

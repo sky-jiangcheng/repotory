@@ -125,3 +125,70 @@ export function excerpt(text: unknown, max = 90): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
+
+/** One project as the webview's 主题 (topic) dropdown needs it. */
+export interface ProjectOption {
+  id: number;
+  name: string;
+}
+
+/**
+ * Parse the `repotory_projects_list` tool result into dropdown options.
+ *
+ * Same whole-document-first discipline as parseSearchHits: the tool returns
+ * a bare JSON array, and a tolerant retry only runs when that fails.
+ */
+export function parseProjects(text: string): ProjectOption[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.trim());
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: ProjectOption[] = [];
+  for (const raw of parsed) {
+    const obj = raw as Record<string, unknown> | null;
+    const id = Number(obj?.id ?? 0);
+    if (!id) continue;
+    const name = typeof obj?.name === "string" && obj.name ? obj.name : `project ${id}`;
+    out.push({ id, name });
+  }
+  return out;
+}
+
+/** The AI tidying proposal as the webview needs it: fields plus caveats. */
+export interface OrganizeProposal {
+  note_id: number;
+  title: string;
+  content: string;
+  tags: string;
+  warning?: string;
+}
+
+/**
+ * Parse the `repotory_notes_organize` tool result. The service already
+ * backfills an empty title from the stored note and clips fields to the
+ * store's bounds, so this is a shape check, not a repair pass: an unusable
+ * payload returns undefined and the caller shows the raw error instead of
+ * opening an editor with half a draft.
+ */
+export function parseOrganizeProposal(text: string): OrganizeProposal | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.trim());
+  } catch {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown> | null;
+  if (!obj || typeof obj !== "object") return undefined;
+  const content = typeof obj.content === "string" ? obj.content : "";
+  if (!content.trim()) return undefined;
+  return {
+    note_id: Number(obj.note_id ?? 0),
+    title: typeof obj.title === "string" ? obj.title : "",
+    content,
+    tags: typeof obj.tags === "string" ? obj.tags : "",
+    warning: typeof obj.warning === "string" && obj.warning ? obj.warning : undefined,
+  };
+}

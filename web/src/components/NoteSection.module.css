@@ -82,6 +82,30 @@
   gap: 4px;
 }
 
+/* The "review, then save" strip above an editor that holds an AI proposal.
+   Machine-generated wording is never saved silently — the banner is the
+   human gate of the tidy flow made visible (ADR-0015). */
+.proposalBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
+.proposalBanner em {
+  font-weight: 400;
+  font-style: normal;
+  color: var(--text-secondary);
+}
+
 .titleBadges {
   display: flex;
   align-items: center;

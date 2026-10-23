@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **笔记维护能力三端齐备：编辑 / 主题下新建 / AI 整理（2026-10-23）**：详情页（两个 IDE 插件）与桌面端笔记列表现在都能维护知识。① 后端 `internal/service/note_organize.go` 新增 `OrganizeNote`：按 `ai_chat_*` 配置调 AI 重写笔记——事实与语言保持不变、3+ 小节时生成目录索引、流程类内容插入 mermaid 流程图；输出用 `###TITLE` / `###TAGS` / `###CONTENT` 行标记协议（而非 JSON——正文含 ```mermaid 围栏时 JSON 转义极易被模型破坏），配容错解析（缺标记→整回复当正文并附 warning、截断按 finish_reason 提示、按字节裁剪匹配 store 校验）。`OrganizeNote` 只生成**提案**、不写库（ADR-0015 人工闸门），经 `App.OrganizeNote` binding 暴露，surface 注册表登记 `mcp-backed`（孪生工具 `repotory_notes_organize`）；`MoveNote` 刻意无 MCP 孪生，IDE 侧移动主题改走本地 HTTP RPC 桥。② 桌面端 `NoteSection`：笔记卡片操作行加「AI 整理」，提案直接进编辑器（带 accent 横幅），仅用户保存时落 `UpdateNoteFull`。③ VS Code `searchView.ts` 详情行加 Edit / New note here / AI Tidy，编辑器含主题下拉、实时预览与保存；mermaid 在 webview 中降级为标注「FLOWCHART · MERMAID SOURCE」的源码卡片（不把 5.3MB mermaid 塞进 VSIX）。④ JetBrains 新增 `NoteEditorDialog`（DialogWrapper 编辑器 + AI 提案横幅），工具窗状态行加 Edit / New note / AI Tidy 三按钮，保存先字段后主题、移动失败分别报告不丢草稿；mermaid 在详情与预览中渲染为标注「流程图 · mermaid 源码」的 `<pre>`。测试：服务层 11 项（含提案零写入、缺标记回退、字节裁剪）+ MCP 工具 3 项（库字节不变、未配置 AI 报错）+ 桌面组件 3 项 + webview 无头 Chromium 驱动验证。
+- **插件品牌图标改版：暖纸卡片风（2026-10-23）**：参考编辑部纸面卡片风格重做两个 IDE 插件的商店图标——奶油暖底 `#F5F0E4` + 近墨细框（512 网格上 9 单位、内缩 26）+ 近墨 `#1B1B1B` 的同一 IBM Plex Sans Bold R 字标。字母形与桌面应用图标逐像素同源（brand 只拥有场、色与应用，字标不动），变的是场系统：商店列表里不再是「又一块蓝色方块」，而是一张印出来的卡片。新增 SSOT `build/plugin-icon.svg`，`scripts/generate-icons.mjs` 从它派生 `ide/vscode/media/icon.png`（128×128，CI 同步门覆盖）；JetBrains 的 `pluginIcon.svg` / `pluginIcon_dark.svg`（40×40）为同一标记的手工缩放版，深色变体反转为墨底奶油字。桌面应用图标（`build/icon.svg`）不在本次范围，保持海军蓝不变。
+- **VS Code 知识阅读器：侧栏改 T 字形布局（2026-10-23）**：`repotory.notesSearch` 视图由 TreeView 改为 WebviewView（`searchView.ts`）。顶部为品牌区（内联 R 字标 + 产品名 + 一句话定位 + 当前 `project · repository` 作用域），左列为知识缩略卡（kind 徽标 + 标题 + 命中摘录，搜索框 300ms 防抖，命令面板入口与框内输入走同一条检索路径），右列为知识展开内容——**默认选中第一条结果**，笔记经 `repotory_notes_read` 拉全文并按 markdown 子集渲染（标题/列表/行内代码/围栏代码/链接/加粗），待办展示命中摘录并标注 excerpt；详情页带 **Open in Repotory**（与 JetBrains 插件同路由深链）与 **Copy**。全文色取 VS Code 主题变量，深浅色原生；删除已被取代的 `notesTree.ts` 与 `repotory-notes` 只读预览协议。
+- **JetBrains 工具窗改 T 字形布局（2026-10-23）**：`RepotoryToolWindow.kt` 重排——顶部奶油品牌带（44px 字标 PNG + 产品名 + 宣传语 + local-only chip，固定品牌面不随主题），左列搜索框 + 缩略卡列表（`ThumbRenderer`：kind 徽标按主题配色、标题、摘录，行高固定 64px），右列 `JEditorPane` HTML 详情（标题 + meta 行 + markdown 渲染正文），**默认选中第一条命中**；底部状态行 + Copy / Open in Repotory / Start local service。保留 300ms 防抖、`searchSeq` 竞态守卫、传输失败可见化、EDT 不等网络（详情读取同样走 pooled thread + `detailSeq` 守卫）。新增 `NoteDetailHtml.kt`（主题感知取色 + markdown 子集渲染，未知语法转义后原样展示）。
+- **新增 `GetNote` binding（2026-10-23）**：插件展开笔记全文需要按 ID 读单条，而 RPC 桥此前未暴露该方法。补 `App.GetNote(noteID)`（转调 `service.GetNote`），surface 注册表登记为 `mcp-backed`（孪生工具 `repotory_notes_read` 已存在），零新逻辑、纯表面。JetBrains 详情经它取全文；MCP 侧不变。
+
+### 变更
+
+- **两个插件商店介绍补全（2026-10-23）**：VS Code `package.json` description 改为覆盖「T 字形阅读器 + 会话上下文 + handoff + 全 fork 家族」的完整表述，README 新增「The knowledge reader」节（ASCII 布局图 + 三栏职责 + 快捷键）；JetBrains `plugin.xml` 的 `<description>` 从三句扩为完整商店文案（阅读器布局、FTS5 检索、一键深链、开箱即用的一键启动、thin-client/loopback 隐私声明、平台兼容范围），README 的 What it does / First launch / Scope 同步改版。
+
 ## [2.11.1] - 2026-10-23
 
 ### 新增

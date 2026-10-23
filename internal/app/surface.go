@@ -90,6 +90,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"SearchAll":   {SurfaceMCPBacked, "repotory_notes_search", ""},
 
 	// ---- notes ---------------------------------------------------------------
+	"GetNote":            {SurfaceMCPBacked, "repotory_notes_read", ""},
 	"ListNotes":          {SurfaceMCPBacked, "repotory_notes_list", ""},
 	"ListAllNotes":       {SurfaceMCPBacked, "repotory_notes_list", ""},
 	"ListAllTags":        {SurfaceDesktopOnly, "", "tag filter chips in the knowledge page"},
@@ -98,6 +99,11 @@ var bindingSurfaces = map[string]BindingSurface{
 	"UpdateNote":         {SurfaceMCPBacked, "repotory_notes_update", ""},
 	"UpdateNoteFull":     {SurfaceMCPBacked, "repotory_notes_update", ""},
 	"UpdateNoteMeta":     {SurfaceMCPBacked, "repotory_notes_update", ""},
+	// OrganizeNote writes nothing — it returns an AI proposal the human
+	// reviews in the editor and saves themselves, which is why an agent may
+	// draft with it without bypassing the review gate (ADR-0015). The write
+	// stays behind repotory_notes_update, as it always was.
+	"OrganizeNote":       {SurfaceMCPBacked, "repotory_notes_organize", ""},
 	"DeleteNote":         {SurfaceDesktopOnly, "", "deletion is a human action; no agent path deletes knowledge"},
 	"PinNote":            {SurfaceDesktopOnly, "", "pinning changes the UI sort order only; it alters no knowledge content"},
 	"MoveNote":           {SurfaceDesktopOnly, "", "moving a note between projects re-files knowledge; a human decides where it belongs"},

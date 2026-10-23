@@ -24,11 +24,40 @@
          a required property of a valid plugin), and Marketplace shows it to
          the user, so it says what the plugin actually does. -->
     <description><![CDATA[
-        Search your Repotory knowledge base from inside the IDE and jump
-        straight to a note. The plugin is a thin client: it talks to a Repotory
-        service over its local HTTP API and opens results in the Repotory web
-        app. If no service is running, Settings | Tools | Repotory can start a
-        local repotory-server you already have with one click.
+        Search your Repotory knowledge base from inside the IDE and read the
+        result in full, without leaving the editor.
+
+        Repotory keeps what your coding agents learn — why a decision was
+        made, what gotcha you hit, what to do next — in a local, searchable
+        store. This plugin is the reader for it:
+
+        • A T-shaped knowledge reader: brand header on top, your results as
+          thumbnails on the left (kind, title, matched excerpt), and the
+          selected knowledge expanded on the right — the first result is
+          selected by default, and notes open in full with their markdown
+          rendered. Todos show their excerpt, labelled as such.
+        • Full-text search (FTS5) over every note and todo you ever
+          captured, ranked exactly as the Repotory desktop app ranks it —
+          the plugin reimplements no ranking, no snippet extraction, no
+          gating.
+        • One-click jump: double-click (or "Open in Repotory") deep-links
+          the item into the Repotory web app.
+        • Note maintenance in place: edit a note's title, kind, tags and
+          主题 (topic), add a new note under the same 主题, or let the AI
+          tidy a note into a restructured proposal — sections, an index,
+          and a mermaid flowchart when the content is really a process.
+          The proposal opens in the editor for your review; nothing is
+          saved until you save it.
+        • Works out of the box: if no service is running, the tool window
+          offers "Start local service" and launches a repotory-server you
+          already have (nothing is downloaded or built).
+
+        The plugin is a thin client: it talks to the loopback-only
+        Repotory service over its local HTTP API. Everything stays on your
+        machine — there is nothing to authenticate and nothing that leaves
+        it. One build covers the whole IntelliJ family (IDEA, PyCharm,
+        WebStorm, GoLand and the rest), on IntelliJ 2024.2 or newer,
+        independently of your project's JDK.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

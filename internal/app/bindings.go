@@ -220,6 +220,23 @@ func (a *App) SearchAll(query string) []domain.SearchHit { return a.svc.SearchAl
 // ListNotes returns all notes for a project.
 func (a *App) ListNotes(projectID int64) []domain.Note { return a.svc.ListNotes(projectID) }
 
+// GetNote returns one note by ID, with its full body.
+//
+// Exists for the IDE plugins' knowledge reader: a search hit carries only
+// the matched excerpt, and expanding it in place needs the note itself.
+// The MCP twin (repotory_notes_read) already reads the same service
+// method, so this is a surface, not new logic.
+func (a *App) GetNote(noteID int64) (*domain.Note, error) { return a.svc.GetNote(noteID) }
+
+// OrganizeNote asks the configured AI to restructure one note and returns the
+// PROPOSAL — nothing is written. The human gate of the review design
+// (ADR-0015) holds for machine-generated content: the caller puts the result
+// into the note editor, the person edits, and only their save (UpdateNoteFull)
+// lands it. The MCP twin is repotory_notes_organize.
+func (a *App) OrganizeNote(noteID int64) (*service.NoteOrganizeResult, error) {
+	return a.svc.OrganizeNote(noteID)
+}
+
 // CreateNote creates a new note for a project.
 func (a *App) CreateNote(projectID int64, content string) (*domain.Note, error) {
 	return a.svc.CreateNote(projectID, content)

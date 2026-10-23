@@ -67,6 +67,56 @@ sealed interface SearchOutcome {
 class RepotoryRpcException(message: String) : Exception(message)
 
 /**
+ * One note's full content, as the reader pane needs it.
+ *
+ * A search hit carries only the matched excerpt (SearchHit.snippet); the
+ * detail pane expands a hit into the note itself, which is what the
+ * GetNote binding returns. `kind` and `pinned` ride along because the
+ * editor round-trips them: a draft that lost the kind would silently
+ * re-file a knowledge note as "other" on the next save, and one that lost
+ * `pinned` would unpin it — data loss disguised as a metadata default.
+ */
+data class NoteDetail(
+    val id: Long,
+    val title: String,
+    val body: String,
+    val updatedAt: String,
+    val tags: String,
+    val kind: String = "",
+    val projectId: Long = 0,
+    val pinned: Boolean = false,
+)
+
+/** One project as the editor's 主题 (topic) dropdown needs it. */
+data class ProjectOption(val id: Long, val name: String)
+
+/**
+ * The AI tidying proposal for one note (internal/service/note_organize.go).
+ * A PROPOSAL, never a write: the editor opens with it and the user's save
+ * is what lands it. `warning` carries non-fatal caveats (a truncated reply,
+ * a model that ignored the output protocol) shown next to the draft.
+ */
+data class NoteOrganizeResult(
+    val noteId: Long,
+    val title: String,
+    val content: String,
+    val tags: String,
+    val warning: String = "",
+)
+
+/** The editable fields of a note draft, as the editor dialog holds them. */
+data class NoteDraft(
+    /** 0 = a new note under `projectId`. */
+    val id: Long,
+    val projectId: Long,
+    val title: String,
+    val tags: String,
+    val kind: String,
+    val content: String,
+    val pinned: Boolean = false,
+)
+
+/**
  * Thin HTTP client for the Repotory headless service.
  *
  * Two endpoints only:
@@ -84,6 +134,11 @@ class RepotoryClient {
         const val DEFAULT_SERVER_URL = "http://127.0.0.1:18765"
         private const val CONNECT_TIMEOUT_MS = 1500
         private const val READ_TIMEOUT_MS = 4000
+        // The AI tidy call is the one RPC that legitimately takes minutes
+        // (the service allows the model up to five), so it opts into a long
+        // read timeout. Every other call keeps the short one: the plugin
+        // must never hang the IDE on a service that is not answering.
+        private const val READ_TIMEOUT_AI_MS = 330_000
         private val GSON = Gson()
     }
 
@@ -171,14 +226,32 @@ class RepotoryClient {
      * not tell "the server said no" from "the server said nothing".
      */
     @Throws(RepotoryRpcException::class)
-    fun rpc(serverUrl: String, method: String, args: List<Any?>): Any? {
+    fun rpc(serverUrl: String, method: String, args: List<Any?>): Any? =
+        rpc(serverUrl, method, args, READ_TIMEOUT_MS)
+
+    /**
+     * Calls one binding over the generic JSON-RPC bridge, with an explicit
+     * read timeout for calls that legitimately take minutes (the AI tidy).
+     *
+     * The bridge is the same one the desktop Wails app is bound to, so the
+     * plugin can reach ANY binding without a hand-written REST route per
+     * method — and without the plugin growing its own API surface.
+     *
+     * Throws [RepotoryRpcException] when the call produced no payload: a
+     * non-200 status, an `error` envelope, or a body that is not an object.
+     * Returning null instead would make every failure indistinguishable from a
+     * successful call that legitimately carries no result — the caller could
+     * not tell "the server said no" from "the server said nothing".
+     */
+    @Throws(RepotoryRpcException::class)
+    fun rpc(serverUrl: String, method: String, args: List<Any?>, readTimeoutMs: Int): Any? {
         val payload = JsonObject()
         payload.addProperty("method", method)
         val arr = JsonArray()
         args.forEach { arr.add(GSON.toJsonTree(it)) }
         payload.add("args", arr)
 
-        val conn = open(serverUrl, "/api/rpc", "POST")
+        val conn = open(serverUrl, "/api/rpc", "POST", readTimeoutMs)
         try {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
@@ -222,6 +295,121 @@ class RepotoryClient {
         return "$base${hit.route}"
     }
 
+    /**
+     * Reads one note by ID over the RPC bridge (the GetNote binding).
+     *
+     * Returns null when the note does not exist or the call fails: the
+     * caller falls back to the matched excerpt, because a pane that shows
+     * nothing is worse than one that shows the excerpt and says so.
+     * Todos have no note row — their excerpt IS the whole item the search
+     * contract returns.
+     */
+    fun note(serverUrl: String, id: Long): NoteDetail? {
+        return try {
+            val result = rpc(serverUrl, "GetNote", listOf(id)) as? JsonObject ?: return null
+            NoteDetail(
+                id = result.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: id,
+                title = result.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                body = result.get("content")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                updatedAt = result.get("updated_at")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                tags = result.get("tags")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                kind = result.get("kind")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                projectId = result.get("project_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0,
+                pinned = result.get("pinned")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false,
+            )
+        } catch (e: RepotoryRpcException) {
+            Logger.getInstance(LOG).debug("repotory GetNote($id) failed: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Logger.getInstance(LOG).debug("repotory GetNote($id) failed", e)
+            null
+        }
+    }
+
+    // ------------------------------------------------------------- writes
+    //
+    // The maintenance actions of the reader. All of them are human-pressed
+    // button paths over the same RPC bridge the reads use — the plugin holds
+    // no write logic of its own, exactly as it holds no search logic.
+
+    /** The project list for the editor's 主题 dropdown. */
+    fun projects(serverUrl: String): List<ProjectOption> {
+        return try {
+            val result = rpc(serverUrl, "GetProjects", listOf("", false)) as? JsonArray ?: return emptyList()
+            result.mapNotNull { el ->
+                if (!el.isJsonObject) return@mapNotNull null
+                val obj = el.asJsonObject
+                val id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: return@mapNotNull null
+                val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "project $id"
+                ProjectOption(id, name)
+            }
+        } catch (e: Exception) {
+            Logger.getInstance(LOG).debug("repotory GetProjects failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Runs the AI tidy over one note and returns the PROPOSAL.
+     *
+     * The service writes nothing; the caller opens the editor with the
+     * result and the user's save lands it. Throws [RepotoryRpcException]
+     * with a user-presentable message (including the "configure the endpoint
+     * in Settings → AI" case) so the pane can say why it did not run.
+     */
+    @Throws(RepotoryRpcException::class)
+    fun organizeNote(serverUrl: String, id: Long): NoteOrganizeResult {
+        val result = rpc(serverUrl, "OrganizeNote", listOf(id), READ_TIMEOUT_AI_MS) as? JsonObject
+            ?: throw RepotoryRpcException("整理失败：服务未返回提案")
+        val content = result.get("content")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+        if (content.isBlank()) {
+            throw RepotoryRpcException("整理失败：提案为空")
+        }
+        return NoteOrganizeResult(
+            noteId = result.get("note_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: id,
+            title = result.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            content = content,
+            tags = result.get("tags")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            warning = result.get("warning")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+        )
+    }
+
+    /** Saves one existing note's content and metadata in a single call. */
+    @Throws(RepotoryRpcException::class)
+    fun updateNote(serverUrl: String, draft: NoteDraft) {
+        rpc(
+            serverUrl,
+            "UpdateNoteFull",
+            listOf(draft.id, draft.content, draft.title, draft.tags, draft.kind, draft.pinned),
+        )
+    }
+
+    /** Creates a note under a project and returns it as stored. */
+    @Throws(RepotoryRpcException::class)
+    fun createNote(serverUrl: String, draft: NoteDraft): NoteDetail {
+        val result = rpc(
+            serverUrl,
+            "CreateNoteWithMeta",
+            listOf(draft.projectId, draft.title, draft.content, draft.tags, draft.kind, "jetbrains"),
+        ) as? JsonObject ?: throw RepotoryRpcException("创建失败：服务未返回新笔记")
+        return NoteDetail(
+            id = result.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0,
+            title = result.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            body = result.get("content")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            updatedAt = result.get("updated_at")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            tags = result.get("tags")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            kind = result.get("kind")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            projectId = result.get("project_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: draft.projectId,
+            pinned = result.get("pinned")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false,
+        )
+    }
+
+    /** Re-files a note under a different project (the 主题 change). */
+    @Throws(RepotoryRpcException::class)
+    fun moveNote(serverUrl: String, noteId: Long, projectId: Long) {
+        rpc(serverUrl, "MoveNote", listOf(noteId, projectId))
+    }
+
     private fun parseHit(raw: Any?): RepotoryHit? {
         if (raw !is com.google.gson.JsonElement || !raw.isJsonObject) return null
         val obj = raw.asJsonObject
@@ -243,14 +431,14 @@ class RepotoryClient {
         return RepotoryHit(type, id, projectId, title, snippet, route)
     }
 
-    private fun open(serverUrl: String, path: String, method: String): HttpURLConnection {
+    private fun open(serverUrl: String, path: String, method: String, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpURLConnection {
         // URI.create, not URL(String): the latter is deprecated in Java 20+,
         // and URI is what URL.toURI() would hand back anyway.
         val url = URI.create(serverUrl.trimEnd('/') + path).toURL()
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = CONNECT_TIMEOUT_MS
-        conn.readTimeout = READ_TIMEOUT_MS
+        conn.readTimeout = readTimeoutMs
         // The service is loopback-only; redirects elsewhere would be a bug, not
         // a feature. Following them blindly would let a hostile local process
         // bounce the plugin's request elsewhere.

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -126,6 +128,7 @@ func TestToolsRegistered(t *testing.T) {
 		"repotory_ask",
 		"repotory_notes_create",
 		"repotory_notes_update",
+		"repotory_notes_organize",
 		"repotory_agent_score",
 		"repotory_integrity",
 		"repotory_context",
@@ -416,6 +419,62 @@ func TestNotesUpdateNothingToUpdate(t *testing.T) {
 	res := ts.call("repotory_notes_update", map[string]any{"id": noteID})
 	if got := ts.text(res); !strings.Contains(got, "nothing to update") {
 		t.Errorf("message = %q, want it to say nothing to update", got)
+	}
+}
+
+// The tidying tool returns a PROPOSAL: the note in the database is byte-for-
+// byte what it was, and the payload carries the model's rewrite for a human
+// to review and save through repotory_notes_update.
+func TestNotesOrganizeReturnsProposalAndWritesNothing(t *testing.T) {
+	ts := newTestServer(t)
+	pid := ts.seedProject("demo", "/tmp/demo")
+	created := ts.jsonPayload(ts.call("repotory_notes_create", map[string]any{
+		"project_id": float64(pid), "title": "网关重试", "content": "最多重试三次，幂等键是 invoice id。",
+	}))
+	noteID, _ := created["id"].(float64)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		reply := "###TITLE\n支付网关重试与幂等\n###TAGS\ngateway,retry\n###CONTENT\n# 支付网关重试与幂等\n\n最多重试三次。\n\n```mermaid\nflowchart TD\n  A[提交] --> B[再次提交]\n```\n"
+		b, _ := json.Marshal(reply)
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":%s}}]}`, b)
+	}))
+	t.Cleanup(srv.Close)
+	for k, v := range map[string]string{"ai_chat_base_url": srv.URL + "/v1", "ai_chat_model": "stub"} {
+		if err := ts.svc.UpdateConfig(k, v); err != nil {
+			t.Fatalf("config %s: %v", k, err)
+		}
+	}
+
+	got := ts.jsonPayload(ts.call("repotory_notes_organize", map[string]any{"id": noteID}))
+	if title, _ := got["title"].(string); title != "支付网关重试与幂等" {
+		t.Errorf("proposal title = %q", title)
+	}
+	content, _ := got["content"].(string)
+	if !strings.Contains(content, "```mermaid") {
+		t.Errorf("proposal lost the mermaid block:\n%s", content)
+	}
+
+	// The whole point: the store is untouched until a human saves.
+	after := ts.jsonPayload(ts.call("repotory_notes_read", map[string]any{"id": noteID}))
+	if after["content"] != created["content"] || after["title"] != created["title"] {
+		t.Errorf("organize wrote to the note: before %v, after %v", created, after)
+	}
+}
+
+// Without a configured endpoint the tool must say WHERE to configure it, not
+// surface a raw config error.
+func TestNotesOrganizeUnconfiguredAI(t *testing.T) {
+	ts := newTestServer(t)
+	pid := ts.seedProject("demo", "/tmp/demo")
+	created := ts.jsonPayload(ts.call("repotory_notes_create", map[string]any{
+		"project_id": float64(pid), "title": "t", "content": "body",
+	}))
+	noteID, _ := created["id"].(float64)
+
+	res := ts.call("repotory_notes_organize", map[string]any{"id": noteID})
+	if got := ts.text(res); !strings.Contains(got, "Settings") {
+		t.Errorf("message = %q, want it to point at Settings", got)
 	}
 }
 

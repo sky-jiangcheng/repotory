@@ -1,6 +1,6 @@
 # Repotory for JetBrains
 
-**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This plugin puts it where you work: a **Repotory** tool window that searches your notes and todos, and opens the result in the Repotory web UI.
+**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This plugin puts it where you work: a **Repotory** tool window that searches your notes and todos, expands what you find in full, and opens the result in the Repotory web UI.
 
 One build covers the whole IntelliJ family — it declares `com.intellij.modules.platform`, so IntelliJ IDEA, PyCharm, WebStorm, GoLand and the rest all install the same zip.
 
@@ -8,11 +8,16 @@ One build covers the whole IntelliJ family — it declares `com.intellij.modules
 
 | Surface | What it does |
 |---|---|
-| Tool window **Repotory** | The search box. Typing searches your knowledge base (300 ms after the last keystroke) and the hits list in the window; the status line under it says what happened — `N result(s) for "…"`, `No matches for "…"`, or the reason the search did not run |
-| Result list | One line per hit: title · kind (`note` / `todo`) · the matched snippet. Double-click (or select and press **Open in Repotory**) opens that hit in the browser |
-| **Open in Repotory** button | Opens the hit's deep link — `/project/<id>?noteId=<id>` for a note, `/project/<id>?tab=todos` for a todo — in your system browser |
+| Tool window **Repotory** | The knowledge reader. Type a query (300 ms after the last keystroke) and the hits list as thumbnails; the status line under it says what happened — `N result(s) for "…"`, `No matches for "…"`, or the reason the search did not run |
+| Brand header | The mark, the wordmark and the one-line pitch, with a **local-only** chip — the window states what it is and that nothing leaves your machine |
+| Result thumbnails | One card per hit: kind badge (`NOTE` / `TODO`), title, and the matched excerpt. The first result is selected automatically |
+| Detail pane | The selected knowledge, expanded: the full note body with markdown rendered (headings, lists, code), fetched over the same service layer. Todos show their matched excerpt, labelled as such; a note whose full read fails falls back to the excerpt with the reason attached |
+| **Open in Repotory** / double-click | Opens the hit's deep link — `/project/<id>?noteId=<id>` for a note, `/project/<id>?tab=todos` for a todo — in your system browser. **Copy** puts the full note on the clipboard |
+| **Edit** / **New note** / **AI Tidy** | Note maintenance without leaving the IDE — edit fields and 主题, add a note under the same 主题, or let the AI tidy the note into a reviewable proposal. See *Maintaining notes without leaving the IDE* below |
 | **Tools → Repotory** | Opens the tool window (also on its title bar) |
 | **Settings → Tools → Repotory** | Server address, optional server binary path, a **Test connection** button that tells "API and web UI both reachable" from "API-only, the link would 404", and **Start local service** for a one-click launch |
+
+The layout is the same reader the VS Code extension ships, so the two IDE surfaces feel like one product: identity on top, thumbnails left, knowledge expanded right.
 
 ## Requirements
 
@@ -35,7 +40,7 @@ The one-click start is just a shortcut for:
 ## First launch
 
 1. Open the **Repotory** tool window from the right-hand tool window bar, or **Tools | Repotory**.
-2. Type a query. If no service is running, the status line says so and a **Start local service** button appears next to the results.
+2. Type a query. The first result is selected automatically and its full content opens on the right; double-click any result (or press **Open in Repotory**) to jump to it in the Repotory web app. If no service is running, the status line says so and a **Start local service** button appears next to the results.
 3. Press it. The plugin looks for `repotory-server` (see Requirements), starts it on the configured port with its bundled `web/` directory, waits for `/health`, and retries the query. If no binary exists yet, choose **Set Path…** (file picker) or **Open Download Page**, then press start again.
 4. Prefer to check things by hand? **Settings | Tools | Repotory** has the address, the binary path, **Test connection** and **Start local service**:
    - *Connected: … — API and web UI both reachable.* → everything works.
@@ -43,6 +48,18 @@ The one-click start is just a shortcut for:
    - *No response from …* → nothing is listening; press **Start local service**.
 
 If you click a result while the service is API-only, you do not land on a bare 404: the plugin says so and offers **Open Anyway** / **Copy URL** / **Cancel**.
+
+## Maintaining notes without leaving the IDE
+
+The reader is also the editor. With a note selected, the row under the result list carries three maintenance actions — the same ones the desktop app's note list and the VS Code extension ship:
+
+| Action | What it does |
+|---|---|
+| **Edit** | Opens the note in a dialog: title, kind, tags, 主题 (topic = project, in a dropdown pre-set to the note's own topic) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `UpdateNoteFull` and then the 主题 change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge). A failed save keeps your draft and says why |
+| **New note** | Creates a note under the **same 主题** as the selected one — the dialog opens empty, pre-set to that project. After creating, the note opens in the reader pane |
+| **AI Tidy** | Asks the configured AI to restructure the note: same facts, cleaner sections, a table-of-contents index when the note grew sections, and a mermaid flowchart when the content is really a process. The result is a **proposal** — it opens in the same dialog under an "AI tidied draft — review, then save." banner, so machine-generated wording is never saved silently; your save (or your edits first) is what lands it |
+
+The tidy proposal is generated server-side by the shared service layer (`OrganizeNote`, twin tool `repotory_notes_organize`) and writes nothing by itself — the human save is the gate, exactly as in the desktop app. The AI endpoint is configured once in the desktop app (Settings → AI); that setting lives in the knowledge base, so the headless service this plugin talks to reads the same one. In the dialog's preview a mermaid block shows as labelled source code — the same note renders it as a graphic in the desktop app.
 
 ## Settings
 
@@ -55,7 +72,7 @@ Both values are stored in the IDE's own properties store (`repotory.xml`), not i
 
 ## Scope
 
-Search covers **notes and todos**, through the same `SearchAll` binding the desktop app and the VS Code extension use — FTS5 (bm25, with a `LIKE` fallback) computed server-side. The plugin reimplements no ranking, no snippet extraction and no gating; it renders what the service returns.
+Search covers **notes and todos**, through the same `SearchAll` binding the desktop app and the VS Code extension use — FTS5 (bm25, with a `LIKE` fallback) computed server-side. The plugin reimplements no ranking, no snippet extraction and no gating; it renders what the service returns. Expanding a hit reads the note in full over the `GetNote` binding (the same service method the `repotory_notes_read` MCP tool calls), so the reader pane and an agent's `notes_read` can never disagree about a note's content.
 
 **Wiki pages are not searchable from the plugin yet**, and this is deliberate: the service layer exposes no wiki-page search binding, and the frontend has no addressable route for an approved page either — so a wiki hit would be findable but not reachable. Filed as a separate todo with the corrections recorded in [ADR-0027](https://github.com/sky-jiangcheng/repotory/blob/master/docs/en/adr/0027-jetbrains-plugin.md).
 

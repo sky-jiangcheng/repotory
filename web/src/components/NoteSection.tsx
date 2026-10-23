@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   listNotes, createNoteWithMeta, updateNoteFull, deleteNote, pinNote, moveNote,
+  organizeNote,
   getProjects,
   type Note, type Project,
 } from '../api/client'
@@ -38,6 +39,14 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [filter, setFilter] = useState<KindFilter>('all')
   const [saving, setSaving] = useState(false)
+  // The note id whose AI tidying call is in flight (null = none).
+  const [organizingId, setOrganizingId] = useState<number | null>(null)
+  // Non-fatal caveat from the last AI proposal (truncated reply, protocol
+  // miss). Shown as a banner inside the editor and cleared when editing ends.
+  const [organizeWarning, setOrganizeWarning] = useState('')
+  // The note id the open editor was seeded from by an AI proposal (null = a
+  // manual edit). Drives the "review, then save" banner.
+  const [proposalNoteId, setProposalNoteId] = useState<number | null>(null)
   // The note id currently flashing due to a ?noteId= deep link.
   const [flashId, setFlashId] = useState<number | null>(null)
   const focusedRef = useRef(false)
@@ -128,6 +137,8 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
       pinned: note.pinned,
     })
     setIsNew(false)
+    setProposalNoteId(null)
+    setOrganizeWarning('')
   }
 
   const handleSaveEdit = async () => {
@@ -143,9 +154,41 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
         !!editDraft.pinned
       )
       setEditingId(null)
+      setOrganizeWarning('')
+      setProposalNoteId(null)
       fetchNotes()
     }, t('project.saveFailed') + ': ')
     setSaving(false)
+  }
+
+  /**
+   * AI tidying: the service returns a PROPOSAL and writes nothing. The
+   * proposal lands straight in the editor (same draft state a manual edit
+   * uses), so reviewing it is not a extra step bolted on the side — it IS
+   * the edit flow, and only the user's save persists anything. Kind and
+   * pinned are carried over from the stored note; title/tags/content come
+   * from the model.
+   */
+  const handleOrganize = async (note: Note) => {
+    setOrganizingId(note.id)
+    setError('')
+    try {
+      const res = await organizeNote(note.id)
+      setEditingId(note.id)
+      setEditDraft({
+        content: res.content,
+        title: res.title || note.title,
+        tags: res.tags || note.tags,
+        kind: note.kind || 'other',
+        pinned: note.pinned,
+      })
+      setOrganizeWarning(res.warning ?? '')
+      setProposalNoteId(note.id)
+    } catch (e) {
+      setError(t('project.organizeFailed') + ': ' + describeApiError(t, e))
+    } finally {
+      setOrganizingId(null)
+    }
   }
 
   const handleMoveProject = async (noteId: number, targetProjectId: number) => {
@@ -224,13 +267,17 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
               editDraft={editDraft}
               onEditDraftChange={setEditDraft}
               onSaveEdit={handleSaveEdit}
-              onCancelEdit={() => setEditingId(null)}
+              onCancelEdit={() => { setEditingId(null); setOrganizeWarning('') }}
               saving={saving}
               projects={projects}
               currentProjectId={projectId}
               onMoveProject={handleMoveProject}
               onPin={handlePin}
               onEdit={startEdit}
+              onOrganize={handleOrganize}
+              organizing={organizingId === note.id}
+              isProposal={editingId === note.id && proposalNoteId === note.id}
+              organizeWarning={editingId === note.id ? organizeWarning : ''}
               onOpenHistory={vh.openVersionHistory}
               onDelete={handleDelete}
             />
@@ -255,7 +302,8 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
 /** NoteCard renders one note, switching to the inline editor when editing. */
 function NoteCard({
   note, highlighted, editing, editDraft, onEditDraftChange, onSaveEdit, onCancelEdit, saving,
-  projects, currentProjectId, onMoveProject, onPin, onEdit, onOpenHistory, onDelete,
+  projects, currentProjectId, onMoveProject, onPin, onEdit, onOrganize, organizing, isProposal,
+  organizeWarning, onOpenHistory, onDelete,
 }: {
   note: Note
   highlighted: boolean
@@ -270,6 +318,12 @@ function NoteCard({
   onMoveProject: (noteId: number, projectId: number) => void
   onPin: (note: Note) => void
   onEdit: (note: Note) => void
+  onOrganize: (note: Note) => void
+  organizing: boolean
+  /** True while the open editor holds an unconfirmed AI proposal. */
+  isProposal: boolean
+  /** Non-empty when the open proposal came with a caveat (truncation etc.). */
+  organizeWarning: string
   onOpenHistory: (noteId: number) => void
   onDelete: (noteId: number) => void
 }) {
@@ -284,6 +338,12 @@ function NoteCard({
   if (editing) {
     return (
       <div className={`${s.card} ${highlighted ? s.cardFlash : ''}`} data-note-id={note.id}>
+        {isProposal && (
+          <div className={s.proposalBanner}>
+            <span>{t('project.organizeProposal')}</span>
+            {organizeWarning && <em>{organizeWarning}</em>}
+          </div>
+        )}
         <NoteEditor
           value={editDraft}
           onChange={onEditDraftChange}
@@ -327,6 +387,14 @@ function NoteCard({
         </span>
         <div className={s.actions}>
           <button className="btn btn-sm" onClick={() => onEdit(note)}>{t('project.edit')}</button>
+          <button
+            className="btn btn-sm"
+            onClick={() => onOrganize(note)}
+            disabled={organizing}
+            title={t('project.organizeHint')}
+          >
+            {organizing ? t('project.organizing') : t('project.organize')}
+          </button>
           <button
             className="btn btn-sm"
             onClick={() => onOpenHistory(note.id)}

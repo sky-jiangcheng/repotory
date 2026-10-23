@@ -172,6 +172,21 @@ export interface NoteVersion {
   created_at: string
 }
 
+/**
+ * The AI's tidying proposal for one note (internal/service/note_organize.go).
+ * A PROPOSAL, never a write: the caller puts it into the note editor and the
+ * user's own save lands it. `warning` carries non-fatal caveats (a truncated
+ * reply, a model that ignored the output protocol) that must be shown next to
+ * the draft rather than swallowed.
+ */
+export interface NoteOrganizeResult {
+  note_id: number
+  title: string
+  content: string
+  tags: string
+  warning?: string
+}
+
 export interface Tech {
   name: string
   category: string

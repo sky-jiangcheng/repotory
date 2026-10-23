@@ -20,6 +20,7 @@ import type {
   MergeResult,
   Note,
   NoteCount,
+  NoteOrganizeResult,
   NoteVersion,
   NoteWithProject,
   OrganizeGroup,
@@ -474,6 +475,20 @@ export function updateNoteMeta(
     args: [noteId, title, tags, kind, pinned],
     path: `/notes/${noteId}/meta`,
     init: jsonInit('PUT', { title, tags, kind, pinned }),
+  })
+}
+
+/**
+ * Ask the AI to restructure one note. Returns a PROPOSAL — nothing is saved;
+ * the caller opens the note editor with it and the user's save lands it.
+ * A slow model call is expected here (the service allows minutes), so callers
+ * show progress rather than a spinner that dies.
+ */
+export function organizeNote(noteId: number): Promise<NoteOrganizeResult> {
+  return call<NoteOrganizeResult>({
+    method: 'OrganizeNote',
+    args: [noteId],
+    path: `/notes/${noteId}/organize`,
   })
 }
 
