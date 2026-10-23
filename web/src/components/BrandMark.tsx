@@ -9,8 +9,10 @@
 // UI on the same mark as the icon in the dock.
 //
 // The design is the brand card: warm-paper field, one hairline ink frame,
-// near-black R. The frame is what makes it read as a printed object rather
-// than a drawn square — keep it if you touch this file.
+// near-black R, rounded corners (r116 field / r90 frame on the 512 grid,
+// matching the macOS app-icon weight so the Dock mask never chops the
+// frame). The frame is what makes it read as a printed object rather
+// than a drawn tile — keep it if you touch this file.
 
 interface Props {
   /** Rendered width/height in px. The mark is square. */
@@ -33,10 +35,13 @@ export default function BrandMark({ size = 22, className, title }: Props) {
       focusable="false"
     >
       {title && <title>{title}</title>}
-      <rect width="512" height="512" fill="#F5F0E4" />
-      {/* Hairline frame (9 units on the 512 grid, inset 26) — the printed
-          edge. Same construction as build/icon.svg. */}
-      <rect x="26" y="26" width="460" height="460" fill="none" stroke="#1B1B1B" strokeWidth="9" />
+      <rect width="512" height="512" rx="116" fill="#F5F0E4" />
+      {/* Hairline frame (9 units on the 512 grid, inset 26, corners rounded
+          r90 concentric to the field's r116) — the printed edge. Same
+          construction as build/icon.svg: the rounding is baked in so the
+          macOS Dock mask lands on the drawn corners instead of chopping
+          them, and the card reads as one rounded square everywhere. */}
+      <rect x="26" y="26" width="460" height="460" rx="90" fill="none" stroke="#1B1B1B" strokeWidth="9" />
       {/* Same geometry as build/icon.svg — a filled R at a 320-unit cap
           height, shifted 6 right / 2 up because an R is heavier on the stem
           side and bounding-box centring reads left-heavy. The letterform is

@@ -8,6 +8,8 @@
 
 ### 修复
 
+- **应用图标外框改圆角正方形：macOS Dock 系统遮罩不再切掉发丝框四角（2026-10-23）**：用户反馈「应用图标都一样正正方方，到了 macOS 上，在 Dock 栏看起来过于突兀，四个角被遮住了」。根因：`build/icon.svg` 的卡片是直角满铺——macOS 对 Dock 图标统一套系统 squircle 遮罩，r116 级别的掩模把内缩仅 26 单位的发丝框直角整角切掉（以 r114 圆形掩模模拟实测：旧标丢失 1056 个墨色像素，全部是框的四个角；新标 0 像素被切），而未套遮罩的 Windows / Linux 上它是一块方角瓷砖，与周边圆角图标并列显得突兀。修法：把圆角烘进母图本身——字段 r116（512 网格的 22.7%，即 macOS 应用图标的视觉重量，与 v4 探索稿同值），发丝框同心收至 r90（116 减 26 内缩），R 字标不动；系统遮罩于是落在画出来的圆角上而不是切下去，各平台呈现同一张圆角方卡。全链按 SSOT 流程再生：`scripts/generate-icons.mjs` 重出 Wails appicon、Windows `.ico`、图标阶梯、docs / web 双 favicon 链、VS Code 商店与活动栏图标、JetBrains 工具窗图标，`--check` 同步门通过；三处手养孪生同批跟改——app UI `BrandMark` 组件、JetBrains Marketplace 40×40 图标对（含深色反转变体）、Swing 工具窗头图 `repotory-mark.png`（按新母图重渲 96×96）。`web` 侧 184 项测试 + build + lint 全绿。
+
 - **文档站 favicon 显式声明 + 内容 hash 破缓存（2026-10-23）**：用户反馈「文档站浏览器上显示的图标没统一」——实测线上 `favicon.ico`/`favicon.svg` 与本地新卡逐字节一致（hash 对比），站点文件本身早已统一，旧标来自浏览器对兜底路径 `/favicon.ico` 的顽固缓存（同 URL 不重拉，可挂数天）。根因是文档页从未显式声明 favicon，只靠浏览器兜底路径，既吃缓存又丢质量。`build-docs.mjs` 现为每页注入 `<link rel="icon" type="image/svg+xml">`（SVG 优先，标签页渲染更清晰）+ `<link rel="alternate icon">`（ICO 兜底老浏览器），两者带 favicon 内容 hash 查询参数（`?v=6ad3330a`）——图标再变 URL 即变，浏览器缓存无法再serve 旧标；路径按页面深度相对解析，与站内其他链接同机制。
 
 ## [2.12.2] - 2026-10-23
