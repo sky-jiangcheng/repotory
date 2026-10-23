@@ -246,6 +246,13 @@ jobs:
       - name: Typecheck and build (tsc && vite build)
         run: npm run build
 
+      # eslint over src/**. The local release gate has always been
+      # `npm test && npm run build && npm run lint` (AGENTS.md), but CI stopped
+      # at build — so a lint regression could sit on master between releases
+      # and then surface as a release-gate failure at tagging time.
+      - name: Lint (eslint)
+        run: npm run lint
+
   # --------------------------------------------------------- VS Code ext ----
   # release.yml compiles the extension, but only on tags — so a TypeScript
   # breakage in ide/vscode could sit on master unnoticed until the next release.
