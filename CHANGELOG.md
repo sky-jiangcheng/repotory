@@ -6,20 +6,20 @@
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-10-23
+
 ### 新增
 
 - **VS Code 扩展零命令行可用度改造（2026-10-22）**：此前 `repotory-mcp` 必须在 `PATH` 上，`Repotory: Register MCP Server` 还必须开终端跑 `node repotory-init`，对不熟悉命令行的用户等于不可用。现在：① 二进制按 `repotory.mcpPath` → `REPOTORY_MCP_BIN` → 扩展 globalStorage → `PATH` → Homebrew / Scoop / `~/.local/bin` 常见目录依次解析，`Repotory: Set repotory-mcp Path` 提供文件选择器；② 注册改为在扩展宿主内以 `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 静默执行内置安装器（仅 ENOENT / EACCES 时回退 `node`），终端不再是主路径，失败时给出「查看日志 / 手动运行」兜底；③ 新增 `Repotory: Setup & Diagnostics`，用一条 QuickPick 列出「二进制 / 本地服务 / 工作区解析 / MCP 客户端配置」四项状态，每项可点击就地修复；首次激活改为直接进入该面板。新增 `repotory.mcpPath` 设置（空 = 自动探测）。
 - **JetBrains 插件一键启动本地服务（ADR-0027 决策 4 可用度修订，2026-10-22）**：新增 `RepotoryServer.kt`（application service），按设置项 → `REPOTORY_SERVER_BIN` → `PATH` → 常见安装目录解析 `repotory-server`，先 `ping` 复用既有实例、只对 loopback 地址启动、只停止自己拉起的子进程（IDE 退出时经 `Disposer` 清理）。二进制同目录存在 `web/index.html` 时自动追加 `--web-dist`，发布包布局因此开箱可用。入口：工具窗检索在传输层失败时状态行旁出现 **Start local service** 按钮（4xx/5xx 不出现，那不是重启能修的），设置页新增 `Server binary` 路径 + `Locate…` + `Start local service`，启动成功后自动重跑当前查询。插件不下载、不构建任何东西，缺二进制时给「Set Path… / Open Download Page / Cancel」。
 - **发布资产新增 `repotory-server-<platform>`（2026-10-22）**：`release.yml` 新增 `Build headless server bundle`，构建 `repotory-server` 与 `npm run build:server` 产物 `web/`（base `/`，与桌面 `web/dist` 的 `./` 不可互换），按平台打成 `repotory-server-<target>.tar.gz` / `.zip`；`packaging/README.md` 资产表同步。没有这项，插件的一键启动对最终用户不可兑现。
-- **首页知识助手兜底检索的竞态：停止后旧结果仍会写入、并偷走下一个问题的 asking 槽位**：流式路径靠 `cancelStreamRef` 取消，兜底分支（未配置 AI 时）没有对应机制——`await searchAll` 之后直接 setState，`finally` 无条件 `setAsking(false)`。后果：点停止后旧 promise 落地会把过期卡片写进对话；更糟的是先停止再发新问题时，旧 promise 的 `finally` 会把**新一轮问题**的 spinner 与计时器杀掉。修复把取消挂进同一个 `cancelStreamRef`（Stop 对两条路径一致生效），`cancelled` 时所有状态写入（含 `finally` 的 asking 释放与 ref 清理）全部跳过。新增 `HomeKnowledgeAssistant.race.test.tsx` 两项组件级测试钉住：停止后旧结果不得出现且 asking 槽位不被偷走；停止后旧 promise 的报错同样静默。
-- **全局搜索页把检索失败伪装成「没有匹配的结果」（`Search.tsx`）**：`.catch` 里只做 `setHits([]); setSearched(true)`，本地服务没起来时用户看到的是空语料的假象——对 local-first 产品这是最不能让用户产生的误读；且检索期间（150ms 防抖 + 请求本身）`searched` 仍为 false，页面一直显示推荐面，输入像没生效。修复：`searching` / `failed` 两个显式状态，loading 行在防抖开始即出现（`role="status"`），失败显示 `--danger` 错误行（项目名命中仍照常展示——那是客户端数据，不依赖检索请求），`noResults` 判定加 `!failed` 守卫，aria-live 镜像区分失败/空结果/计数。`searching` / `searchFailed` 两个 key 同批进中英 locale。新增 2 项测试钉住「失败不得显示空结果话术」与「loading 指示在落定后消失」。
-- **ADR-0022 晋升 Accepted（2026-10-23 用户评审）**：agent 记忆自动发现与定时同步（M8）。依据：P1–P5 五阶段经 2026-10-22 逐阶段核验全部落码且实施侧无遗留项（八源接线、`Probe` 接契 + `safeProbe`、定时同步 + per-source `lastRun`/`lastError`、来源类型跨层单一真值源 `SourceTypeFor` + `SourceTypeBadge`、golden-file 七源 28 样本、hermes 源隔离环境全链路真机冒烟），晋升时 `go test ./...` 全量再次全绿。状态行（保留核验记录）与两处索引行中英同批回写。
-- **ADR-0025 轮转观察按 2026-10-23 实测刷新：`backups/` 共 4 份（10-18/19/20/22），10-21 出现缺勤**——当天应用未首开，无快照。「当天首开」节律的前提「当日确实打开过应用」据此补记进条件 2（中英同批）；晋升仍待第 15 份快照触发轮转观察。
 - **CI 前端门补 `npm run lint`（2026-10-23）**：ci.yml 的 web-test job 只跑 vitest + tsc/build，而本地发布门一直是 `npm test && npm run build && npm run lint`——lint 回归因此可以静静躺在 master 上，直到下次打 tag 才在发布门炸出来。已在 build 之后追加 eslint 步骤，发布门与 CI 门对齐。
 - **JetBrains 插件上架 Marketplace（2026-10-22）**：`ide/jetbrains/build.gradle.kts` 增加 `publishing { token = env("JETBRAINS_MARKETPLACE_TOKEN") }`，`gradle publishPlugin` 即可上传；`changeNotes` 指向 `CHANGELOG.md`（不另写一份发布叙事）；新增 `META-INF/pluginIcon.svg` / `pluginIcon_dark.svg`（40×40）。`release.yml` 新增 `publish-jetbrains-marketplace` job，随 tag 发布同一版本号，token 缺失时 warning 跳过、zip 仍挂在 GitHub Release；签名三个环境变量齐全时才启用，缺省发布未签名包（Marketplace 接受，仅少 verified-vendor 徽章）。版本号仍由 `scripts/bump-version.sh` 从 `wails.json` 同步，不向 `publishPlugin` 传版本参数。
 
 ### 变更
 
+- **ADR-0022 晋升 Accepted（2026-10-23 用户评审）**：agent 记忆自动发现与定时同步（M8）。依据：P1–P5 五阶段经 2026-10-22 逐阶段核验全部落码且实施侧无遗留项（八源接线、`Probe` 接契 + `safeProbe`、定时同步 + per-source `lastRun`/`lastError`、来源类型跨层单一真值源 `SourceTypeFor` + `SourceTypeBadge`、golden-file 七源 28 样本、hermes 源隔离环境全链路真机冒烟），晋升时 `go test ./...` 全量再次全绿。状态行（保留核验记录）与两处索引行中英同批回写。
+- **ADR-0025 轮转观察按 2026-10-23 实测刷新：`backups/` 共 4 份（10-18/19/20/22），10-21 出现缺勤**——当天应用未首开，无快照。「当天首开」节律的前提「当日确实打开过应用」据此补记进条件 2（中英同批）；晋升仍待第 15 份快照触发轮转观察。
 - **ADR-0027 决策 4 由「server 仅连接」修订为「连接优先，允许插件一键启动本地实例」（2026-10-22）**：原文把「先在终端把服务跑起来」这一步留给用户，正是本轮反馈里「不能纯手动操作」的根因。修订保留四条边界（只认用户已有二进制 / 只对 loopback 启动 / `/health` 有人应答即复用 / 只停自己拉起的子进程），中英正文与两处 ADR 索引行同批回写，并在正文末尾追加「可用度修订」节记录 `untilBuild` 缺陷、Java 8 说明与发布侧配套。ADR-0009 遗留的生命周期托管问题在 JetBrains 侧据此落定；VS Code 扩展不扩围到启动 headless 服务。
 - **JetBrains README 重写安装与首次使用路径（2026-10-22）**：去掉「自行 `go build` + `npm run build:server` + `--web-dist`」作为前置要求，改为「下载 release bundle → 工具窗按 Start local service」；保留手动命令作为可选路径。新增 Java 8 说明：插件运行在 IDE 自带 JBR（2024.2+ 为 Java 21），**与项目 JDK 无关，JDK 8 项目可正常使用**，唯一需要 Java 21 的是从源码构建插件。
 - **ADR-0027 拍板 2 由「私有分发先行」修订为「Marketplace 公开上架 + GitHub Release zip 双轨」（2026-10-22）**：中英正文（拍板 2、后果遗留项、新增「Marketplace 上架」节）与两处 ADR 索引行同批回写；`ide/jetbrains/README.md` 的 Install 改为 Marketplace 优先、磁盘安装为离线路径，并补「Publishing to the JetBrains Marketplace」的开发说明（token、可选签名 secrets、首次上传与 ID 不可变）。
@@ -31,6 +31,8 @@
 - **ADR-0024 按落码事实修订——「首页融合仪表盘、`/dashboard` 重定向」在代码里从未成立**：ADR-0024（Accepted 2026-10-16）决策 1 写的是 `/` 单栏融合仪表盘面板、`/dashboard` 改为重定向、主导航去掉「仪表盘」项，`docs/adr/index.md` 与 `TODO.md` 现状速查照抄了这套说法；而 v2.4.0 落码提交（`97f6496`）当日 `App.tsx` 就是「仪表盘独立顶级路由 + 导航两项并存」，用户手册 `docs/features/dashboard.md`（中英）与 CHANGELOG `[2.4.0]` 也一直是相反形态——三份文档互相矛盾，决策链上的 ADR 描述了一个不存在的架构。现以落码为准修订：ADR-0024 加「修订记录」逐条对账（决策 2、3 原样落码；决策 1 未照原文；重复渲染仍被消除，只是方向相反；原「负面」条所称的旧链接迁移未发生）、说明取舍动因与 ADR-0017 原则的兑现方式变化，中英两份与两份 `adr/index.md` 同批改写，`TODO.md` 现状速查同批。顺带补上 `docs/en/adr/0017-*.md` 缺失的修订注记（v2.4.0 那次只写了中文，属双语漂移）。`docs-mirror` 与 `build-docs` 全绿。
 - **首页知识助手无 AI 兜底把待办命中伪装成知识笔记卡片（跳错 tab + 贴错标签）**：`HomeKnowledgeAssistant.tsx` 的本地兜底分支对 `SearchAll` 命中一律建 `type: 'note'` 的卡片，而 `SearchHit.type` 是 `'note' | 'todo'` 两值。后果有两条且互相加固：标签上待办被显示成「知识笔记」；跳转上卡片落到 `/project/:id?tab=notes&noteId=<todo的id>`，而 `ProjectDetail` 只认 `noteId`（无待办的逐行深链），于是待办 #7 会打开笔记页并高亮恰好同号的那条笔记——用户看到的是一条与查询无关的知识。修复把两个职责抽成导出的纯函数并各自定契约：`cardFromSearchHit` 保留命中真实类型（ref 用 `N`/`T` 前缀区分），`knowledgeHref` 按类型给落点（待办落 `?tab=todos` 这个「同 Knowledge 页一致的整表落点」，笔记才带 `noteId`，wiki 页仍走 `/project/:id` 或 `/review`），卡片 badge 改三分支（page→页 kind / todo→`search:groupTodos` / note→知识笔记）。`EvidenceItem['type']` 随之显式加 `'todo'` 并注明它**永不由服务端产生**（`GatherEvidence` 只发 page|note），把「本地兜底」与「服务端取证」两条路的类型边界写进类型本身。新增 `HomeKnowledgeAssistant.test.ts` 6 项纯逻辑测试钉住：待办必须跳 `?tab=todos` 且 URL 内**不得出现** `noteId`；`project_id` 为 0 时笔记/待办回落到当前项目。
 - **取证层项目名查询整段吞错（`wiki_evidence.go`）**：`if projs, err := db.GetAllProjects(s.db); err == nil { … }` 把查找失败和「没有名字可填」压成同一件事，用户看到的直接后果是卡片的项目归属静默消失、且日志里零痕迹——这一行存在期间它的失败从未被看见过。改为失败时 `log.Printf` 记录并照常返回取证（名字是装饰，取证是答案的地基，一条 metrics/展示侧的失败不许变成「AI 问答不可用」）。同时**纠正本轮评估里我给出的一个错误判断**：原建议「按 `project_kind` 过滤取名」不采纳——`filterRealProjects` 属解析/列举面（agent 侧项目列表、context 解析），而取证卡片的 `ProjectName` 是展示归属；ADR-0023 明确让 `未分类` 与导入占位桶在桌面面带徽标可见，在取证处过滤会让挂在这些桶下的知识正好在最需要追溯（孤儿导入）时变成匿名卡片。该边界由新测试 `TestEvidenceProjectNamesCoverSyntheticBuckets` 钉住（占位桶拿 `ghost-repo`、`未分类` 拿 `domain.DefaultProjectName`），`TestGatherEvidenceSurvivesProjectLookupFailure` 钉住数据库关闭时降级而非崩溃。
+- **首页知识助手兜底检索的竞态：停止后旧结果仍会写入、并偷走下一个问题的 asking 槽位**：流式路径靠 `cancelStreamRef` 取消，兜底分支（未配置 AI 时）没有对应机制——`await searchAll` 之后直接 setState，`finally` 无条件 `setAsking(false)`。后果：点停止后旧 promise 落地会把过期卡片写进对话；更糟的是先停止再发新问题时，旧 promise 的 `finally` 会把**新一轮问题**的 spinner 与计时器杀掉。修复把取消挂进同一个 `cancelStreamRef`（Stop 对两条路径一致生效），`cancelled` 时所有状态写入（含 `finally` 的 asking 释放与 ref 清理）全部跳过。新增 `HomeKnowledgeAssistant.race.test.tsx` 两项组件级测试钉住：停止后旧结果不得出现且 asking 槽位不被偷走；停止后旧 promise 的报错同样静默。
+- **全局搜索页把检索失败伪装成「没有匹配的结果」（`Search.tsx`）**：`.catch` 里只做 `setHits([]); setSearched(true)`，本地服务没起来时用户看到的是空语料的假象——对 local-first 产品这是最不能让用户产生的误读；且检索期间（150ms 防抖 + 请求本身）`searched` 仍为 false，页面一直显示推荐面，输入像没生效。修复：`searching` / `failed` 两个显式状态，loading 行在防抖开始即出现（`role="status"`），失败显示 `--danger` 错误行（项目名命中仍照常展示——那是客户端数据，不依赖检索请求），`noResults` 判定加 `!failed` 守卫，aria-live 镜像区分失败/空结果/计数。`searching` / `searchFailed` 两个 key 同批进中英 locale。新增 2 项测试钉住「失败不得显示空结果话术」与「loading 指示在落定后消失」。
 
 ## [2.11.0] - 2026-10-22
 
@@ -357,7 +359,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.1...HEAD
+[2.11.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.8.0...v2.9.0
