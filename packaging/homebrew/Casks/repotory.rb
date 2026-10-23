@@ -14,12 +14,12 @@ cask "repotory" do
 
   on_arm do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-darwin-arm64.dmg"
-    sha256 "261af841fac0e698c1c4f16823492134e659cf70e125a0f379715ece6da833cf"
+    sha256 "65e203be9a732d4dcf1a3d0f932750e37b8ae28dcb28360e6a3021fbbb896ec8"
   end
 
   on_intel do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-darwin-amd64.dmg"
-    sha256 "9ae726024dcf155fe127871172b3229d4c017e42d25a0903c0ecd2d8231ef30e"
+    sha256 "a0cb10d2a8e5fab12f8c5f06f3ed182e1edd6dc22a2a02715e605c94ee7f4144"
   end
 
   app "Repotory.app"
