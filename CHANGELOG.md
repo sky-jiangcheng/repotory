@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-10-24
+
+### 修复
+
+- **笔记版本 diff 的上下文行全挤成一行（2026-10-24）**：本地应用模拟操作巡检（`outputs/e2e-2026-10-24/`）发现，笔记版本历史点「Diff」，整个 diff 渲染成**一整行**连续文本——有增删行时反而"看着正常"（增删行各自成行），上下文行为主时完全不可读，恰恰在 diff 没什么 dramatic 可看时读不了。根因在渲染层：`DiffViewer.tsx` 用 `split('\n')` 拆行后每行渲染一个 `<code>`，但 **JSX 相邻 `<code>` 之间没有文本节点**（换行符被编译器吞），`<pre>` 的 `white-space: pre` 只保留文本节点内部的换行，管不到元素之间；而 `<code>` 默认 inline → 相邻行盒首尾相连。原 CSS 只给 `.diffLineAdd` / `.diffLineDel` 加了 `display: block`，所以**只有 +/- 行能分行**。后端 `internal/diff/diff.go` 的 `diff.Lines` 输出正确的逐行 unified diff（已用真实 RPC 响应核对），无责。修复把 `display: block` 上提到共享的 `.diffPre code` 规则，增删变体只留着色。该组件被 `VersionHistoryPanel` 与 Review 页 wiki 页面历史**共用**，一处修复两处受益。新增 `DiffViewer.test.tsx` 3 用例作守卫：每行独立 `<code>`、增删行带各自 class（CSS 靠 class 上色）、通过 `node:fs` 读样式表断言 `.diffPre code` 含 `display: block`（vitest 不求值 CSS module，DOM 断言看不见这条规则，沿用 `styles/semanticInk.test.ts` 的既有手法）。
+- **品牌标识四角被圆角切掉 + 一页三处品牌标识（2026-10-24）**：用户截图反馈顶栏左上角的品牌标识「四个角都被遮盖」，且「知识库智能对话」前面不该有品牌标识、整体品牌标识过多。**① 四角被切**：`App.module.css` 的 `.navBrandMark` 给标记加了 `border-radius: 6px` + `box-shadow`，注释还写着 *"rounded square with its own dark gradient"*——这是深蓝渐变瓷砖时代的遗留。母图 `build/icon.svg` 自己的注释写死了相反的规则：*"No gradient, no shadow, no rounded corners — the square edge and the hairline are the style."* 关键在于**圆角不是样式而是裁切**：母图发丝框 `x=26 y=26 w=460 h=460`（512 网格），navbar 显示尺寸 26px → 框距边仅 `26/512×26 ≈ 1.3px`，6px 圆角的切除区完全盖住那一圈 → 四角被裁掉，标识看起来像一张破贴纸。修复删掉 `border-radius` 与 `box-shadow`（含 ≤640px 媒体查询里的 `border-radius: 7px`），让标记回到母图原样方边，由卡片自己的发丝框描边。**② 一页三处**：全站 `BrandMark` 只有 3 处——navbar（应用身份本身，保留）、助手标题前的标识块、AI 消息头像。助手头部整块 `headerIcon` 删除（连带无用的 `.headerLeft` / `.headerIcon` CSS 规则一并清理）；消息头像由 `<BrandMark size={16}/>` 改为文本 `"AI"`，与用户侧 `"Me"` 对称（16px 下母图发丝框本就是亚像素级别）。结果**每个页面恰好 1 个品牌标识**。守卫：`BrandMark.test.tsx` 扩到 7 用例，新增两条——通过 `node:fs` 读 `App.module.css` 断言 `.navBrandMark` 规则体不含 `border-radius` / `box-shadow`，以及读助手源码断言不含 `BrandMark`。
+
+### 归档
+
+- 本地应用全功能点模拟巡检产物入库：`outputs/e2e-2026-10-24/`（52 张截图 + 巡检报告.md）与 `outputs/ui-fix-2026-10-24/`（品牌标识修复前后对比 + 修复报告）。`.gitignore` 补 `.playwright/` 与 `.playwright-cli/`（Playwright CLI 的浏览器快照、console 日志与本地 config 是纯本地复现物）。
+
 ## [2.13.0] - 2026-10-24
 
 ### 新增
@@ -410,7 +421,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.1...HEAD
+[2.13.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...v2.12.2
