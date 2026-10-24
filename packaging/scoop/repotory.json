@@ -1,9 +1,9 @@
 {
-  "version": "2.13.0",
+  "version": "2.13.1",
   "description": "Local-first code project context base",
   "homepage": "https://github.com/sky-jiangcheng/repotory",
   "license": "MIT",
-  "url": "https://github.com/sky-jiangcheng/repotory/releases/download/v2.13.0/repotory-windows-amd64.zip",
+  "url": "https://github.com/sky-jiangcheng/repotory/releases/download/v2.13.1/repotory-windows-amd64.zip",
   "hash": "sha256:b4a77f35b4693565459124768e889b012cbc4897f86277a010d7d5574a5e94f3",
   "bin": "repotory.exe",
   "checkver": {
