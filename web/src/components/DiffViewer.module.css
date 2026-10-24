@@ -24,18 +24,25 @@
   white-space: pre;
 }
 
+/* One <code> per diff line, and every line must occupy its own row.
+   The JSX emits sibling <code> elements with NO text node between them, so
+   the <pre>'s `white-space: pre` never sees a newline to preserve — the
+   whitespace only survives INSIDE each line's own text. With inline <code>
+   boxes every context line therefore collapsed onto one visual row, and the
+   diff read as a single run-on sentence. `display: block` on the shared
+   <code> rule gives each line its own row (the +/- variants below only
+   recolour; they inherit the block display from here). */
 .diffPre code {
   font-family: inherit;
+  display: block;
 }
 
 .diffLineAdd {
-  display: block;
   background: var(--success-soft);
   color: var(--success);
 }
 
 .diffLineDel {
-  display: block;
   background: var(--danger-soft);
   color: var(--danger);
 }
