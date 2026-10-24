@@ -2,7 +2,7 @@
 // through the shared transport. Names are the stable public surface imported
 // across the app.
 
-import { call } from './transport'
+import { call, isDesktopRuntime } from './transport'
 import type {
   AppConfig,
   CompileJob,
@@ -35,6 +35,7 @@ import type {
   Summary,
   Todo,
   TodoCount,
+  UpdateInfo,
   WikiCommunityReport,
   WikiPageVersion,
   WikiPendingPage,
@@ -724,4 +725,50 @@ export function listWikiPageVersions(pageId: number): Promise<WikiPageVersion[]>
 // DiffViewer renders both.
 export function diffWikiPageVersion(pageId: number, versionId: number): Promise<string> {
   return call<string>({ method: 'DiffWikiPageVersion', args: [pageId, versionId] }).then(d => d ?? '')
+}
+
+// --- Update check -----------------------------------------------------------------
+// Desktop-only bindings (no MCP twin — see internal/app/surface.go): an update
+// check is the app maintaining itself, and a headless/MCP user updates through
+// their own deployment channel. The check is advisory: it never downloads or
+// installs anything, it only tells the settings card what the newest release
+// is.
+
+/**
+ * Ask GitHub Releases whether a newer stable version exists. Rejects when the
+ * network call fails — "up to date" and "could not check" are different
+ * answers, and collapsing them would teach users the button is broken.
+ */
+export function checkUpdate(): Promise<UpdateInfo> {
+  return call<UpdateInfo>({ method: 'CheckUpdate', args: [] })
+}
+
+/**
+ * Open a URL in the system browser. A Wails webview navigating to an external
+ * page would trap the user inside the app window, so the desktop build hands
+ * the URL to the OS browser instead.
+ *
+ * In a plain browser tab (the headless server's own UI) there is no OS
+ * browser to hand off to — the tab IS the browser, and window.open is the
+ * native way out of it. The binding would fail there (no Wails context), so
+ * the two runtimes take different paths.
+ */
+export function openBrowserURL(url: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return Promise.resolve()
+  }
+  return call<void>({ method: 'OpenBrowserURL', args: [url] })
+}
+
+/**
+ * The running build's version, read from the Health payload (which already
+ * carries it). The update card shows "current version" before the user asks
+ * for a check — a card that can only tell you your version AFTER a network
+ * round trip to GitHub would be blank on a machine that cannot reach it.
+ */
+export function getAppVersion(): Promise<string> {
+  return call<{ version?: string }>({ method: 'Health', args: [] })
+    .then(h => h?.version ?? '')
+    .catch(() => '')
 }

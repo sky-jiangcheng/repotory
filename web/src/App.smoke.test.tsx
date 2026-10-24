@@ -46,7 +46,10 @@ function installWailsBindings() {
     GetHeatmapData: () => Promise.resolve([]),
     GetStatusBar: () => Promise.resolve(null),
     GetScanStatus: () => Promise.resolve({ running: false, backfilling: false, message: '', progress: 0, total: 0 }),
-    GetConfig: () => Promise.resolve({}),
+    // The startup update check reads the config first. Opting out here keeps
+    // the smoke test off the network — and keeps its verdict from flipping
+    // the nav badge mid-assertion, which is a state update outside act().
+    GetConfig: () => Promise.resolve({ config: { update_check_enabled: '0' }, scan_roots: [] }),
   }
   const app = new Proxy(bindings, {
     get(target, prop: string) {

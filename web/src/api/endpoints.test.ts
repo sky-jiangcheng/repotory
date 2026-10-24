@@ -2,14 +2,21 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const callMock = vi.fn()
-vi.mock('./transport', () => ({ call: (...args: unknown[]) => callMock(...args) }))
+const isDesktopRuntimeMock = vi.fn(() => false)
+vi.mock('./transport', () => ({
+  call: (...args: unknown[]) => callMock(...args),
+  isDesktopRuntime: () => isDesktopRuntimeMock(),
+}))
 
 import {
   askAIWithEvidence,
   captureClaudeHandoff,
+  checkUpdate,
   fileAnswerAsPage,
+  getAppVersion,
   getProjectDetail,
   getProjects,
+  openBrowserURL,
   searchAll,
   searchNotes,
   toggleStar,
@@ -19,6 +26,8 @@ import type { Evidence } from './types'
 beforeEach(() => {
   callMock.mockReset()
   callMock.mockResolvedValue([])
+  isDesktopRuntimeMock.mockReset()
+  isDesktopRuntimeMock.mockReturnValue(false)
 })
 
 describe('endpoint routing contract', () => {
@@ -117,5 +126,45 @@ describe('evidence endpoints (ADR-0014 M6-W2)', () => {
       args: [12, 'why retries', 'Because [P1].', evidenceFixture, ['P1']],
     })
     expect(id).toBe(31)
+  })
+})
+
+describe('update endpoints', () => {
+  it('openBrowserURL hands the URL to the OS browser in the desktop runtime', async () => {
+    isDesktopRuntimeMock.mockReturnValue(true)
+    await openBrowserURL('https://example.invalid/repotory-darwin-arm64.dmg')
+    expect(callMock).toHaveBeenCalledWith({
+      method: 'OpenBrowserURL',
+      args: ['https://example.invalid/repotory-darwin-arm64.dmg'],
+    })
+  })
+
+  it('openBrowserURL opens a new tab in a plain browser instead of calling a binding that cannot work there', async () => {
+    // The headless server's own UI runs in a browser tab: the Wails binding has
+    // no runtime context there, so the tab itself must do the opening.
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+    await openBrowserURL('https://example.invalid/release')
+    expect(openSpy).toHaveBeenCalledWith('https://example.invalid/release', '_blank', 'noopener,noreferrer')
+    expect(callMock).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
+  it('checkUpdate routes to the CheckUpdate binding', async () => {
+    const info = { current: '2.12.3', latest: '2.13.0', has_update: true }
+    callMock.mockResolvedValueOnce(info)
+    const got = await checkUpdate()
+    expect(callMock).toHaveBeenCalledWith({ method: 'CheckUpdate', args: [] })
+    expect(got).toBe(info)
+  })
+
+  it('getAppVersion reads the version out of Health and degrades to empty', async () => {
+    callMock.mockResolvedValueOnce({ status: 'ok', version: '2.12.3' })
+    expect(await getAppVersion()).toBe('2.12.3')
+
+    callMock.mockResolvedValueOnce({ status: 'error' })
+    expect(await getAppVersion()).toBe('')
+
+    callMock.mockRejectedValueOnce(new Error('backend down'))
+    expect(await getAppVersion()).toBe('')
   })
 })

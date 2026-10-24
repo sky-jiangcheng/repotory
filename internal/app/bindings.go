@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"repotory/internal/bounds"
@@ -658,4 +659,31 @@ func (a *App) ListAIModels(baseURL, apiKey string) (*service.AIModelListResult, 
 // using the form's current values.
 func (a *App) TestAIChat(baseURL, model, apiKey string) (*service.AITestResult, error) {
 	return service.TestAIChat(baseURL, model, apiKey)
+}
+
+// CheckUpdate asks GitHub Releases whether a newer stable version exists.
+// Advisory only: it never downloads or installs anything — the result
+// drives a card in Settings → Updates whose button opens the release page
+// in the system browser. An agent twin is deliberately absent (see the
+// binding surface registry): an update check is desktop-app
+// self-maintenance, and headless/MCP users update through their own
+// deployment channel.
+func (a *App) CheckUpdate() (*service.UpdateInfo, error) {
+	return a.svc.CheckUpdate()
+}
+
+// OpenBrowserURL opens a URL in the system browser. Exists for the update
+// card's download button: a Wails webview navigating to an external page
+// would trap the user inside the app window, and window.open from the
+// webview has no route to the OS browser in Wails v2.
+func (a *App) OpenBrowserURL(rawURL string) error {
+	u, err := url.ParseRequestURI(rawURL)
+	if err != nil || u.Scheme != "https" {
+		return fmt.Errorf("refusing to open non-https URL: %q", rawURL)
+	}
+	if a.ctx == nil {
+		return fmt.Errorf("browser open unavailable outside the desktop runtime")
+	}
+	wailsruntime.BrowserOpenURL(a.ctx, rawURL)
+	return nil
 }

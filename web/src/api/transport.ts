@@ -23,6 +23,18 @@ const isWails = (): boolean => {
   return !!w.go?.app?.App
 }
 
+/**
+ * True when the frontend runs inside the Wails desktop webview (as opposed
+ * to a plain browser tab talking to the headless server over /api/rpc).
+ *
+ * A few capabilities exist only in the desktop shell — opening a URL in the
+ * OS browser, for one. The frontend needs to know which runtime it is in to
+ * pick the right path instead of failing with a Wails-only error.
+ */
+export function isDesktopRuntime(): boolean {
+  return isWails()
+}
+
 function wail<T>(method: string, ...args: unknown[]): Promise<T> {
   const w = window as unknown as WailsGlobal
   const app = w.go?.app?.App

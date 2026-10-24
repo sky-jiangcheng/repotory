@@ -129,6 +129,20 @@
   font-weight: 600;
 }
 
+/* A newer release exists: a small dot next to the Settings link.
+   The nav link is `display: inline` by default (block-level flex children
+   would break the baseline), so the dot is positioned against the link's
+   inline box rather than floated. */
+.updateDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
 .navPaletteBtn {
   display: inline-flex;
   align-items: center;

@@ -123,6 +123,10 @@ var bindingSurfaces = map[string]BindingSurface{
 	"UpdateConfig":    {SurfaceDesktopOnly, "", "changing privacy gates must never be something an agent can do to itself"},
 	"UpdateScanRoots": {SurfaceDesktopOnly, "", "granting new filesystem scope is a human decision"},
 
+	// ---- update check ----------------------------------------------------------
+	"CheckUpdate":    {SurfaceDesktopOnly, "", "desktop-app self-maintenance; headless and MCP users update through their own deployment channel"},
+	"OpenBrowserURL": {SurfaceDesktopOnly, "", "opens the system browser for the update card's download button; an agent has no browser to open and no install to perform"},
+
 	// ---- exports -------------------------------------------------------------
 	"GenerateLLMsTxt":      {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
 	"ExportNoteAsMarkdown": {SurfaceDesktopOnly, "", "writes to a path chosen in a native save dialog; an agent should not pick where user files land"},

@@ -548,3 +548,36 @@ export interface WikiPageVersion {
   source: string
   created_at: string
 }
+
+// --- Update check -------------------------------------------------------------
+// Mirrors internal/service.UpdateInfo: the verdict of one GitHub Releases
+// check. Advisory only — the app never replaces its own binary; the download
+// button opens the release page (or the platform's asset) in the browser.
+
+// One downloadable file attached to a release.
+export interface UpdateAsset {
+  name: string
+  url: string
+  size: number
+}
+
+export interface UpdateInfo {
+  // current is the running build's version.
+  current: string
+  // latest is the newest published tag, without the "v" prefix.
+  latest: string
+  // has_update is true when latest is a higher semver than current.
+  has_update: boolean
+  // release_url is the human-facing release page.
+  release_url: string
+  // published_at is the release timestamp (RFC 3339).
+  published_at: string
+  // notes is the release body, truncated by the backend.
+  notes: string
+  // assets are the release's app bundles (MCP server / plugin archives excluded).
+  assets: UpdateAsset[]
+  // download_url / download_name point at the bundle built for this platform.
+  // Empty when the release ships none for it — the UI falls back to the page.
+  download_url: string
+  download_name: string
+}

@@ -10,6 +10,7 @@
     "language": "切换语言",
     "review": "审核",
     "theme": "主题",
+    "updateAvailable": "有新版本 v{{version}} 可用",
     "themes": {
       "light": "月之亮面",
       "dark": "月之暗面",
@@ -182,7 +183,8 @@
       "appearance": "外观",
       "plugins": "插件",
       "actions": "操作",
-      "ai": "AI"
+      "ai": "AI",
+      "updates": "更新"
     },
     "scanRoots": "扫描根目录",
     "addRoot": "添加新目录：",
@@ -325,7 +327,8 @@
       "appearance": "选择浅色、深色或跟随系统",
       "plugins": "管理知识导入源、全局记忆归属项目与会话捕捉",
       "ai": "配置对话端点、语义检索（embedding 与向量存储）、会话捕捉，以及 wiki 编译与模型检查的开关",
-      "actions": "手动触发全量扫描或导入历史记忆"
+      "actions": "手动触发全量扫描或导入历史记忆",
+      "updates": "检查新版本、查看更新说明并下载安装包"
     },
     "ai": {
       "title": "AI 对话端点",
@@ -369,6 +372,31 @@
       "rebuildDone": "索引重建完成：{{count}} 条笔记",
       "rebuildFailed": "重建失败：{{msg}}",
       "missingFields": "启用前需要填写 Embedding Base URL 和模型"
+    },
+    "updates": {
+      "title": "版本更新",
+      "desc": "检查 GitHub Releases 是否有新版本。Repotory 不会自行下载或替换程序——下载按钮会在系统浏览器中打开对应的安装包，由你决定何时安装。",
+      "check": "检查更新",
+      "checking": "检查中…",
+      "currentVersion": "当前版本 v{{version}}",
+      "latestVersion": "最新 v{{version}}",
+      "upToDate": "已是最新版本。",
+      "checkFailed": "检查更新失败：{{msg}}",
+      "newVersion": "发现新版本 v{{version}}",
+      "publishedAt": "发布于 {{date}}",
+      "notesTitle": "更新说明",
+      "download": "下载新版本",
+      "viewRelease": "查看发布页",
+      "openFailed": "无法打开浏览器：{{msg}}",
+      "prefsTitle": "更新偏好",
+      "autoCheckLabel": "启动时自动检查更新",
+      "autoCheckOn": "已开启启动时自动检查更新",
+      "autoCheckOff": "已关闭启动时自动检查更新",
+      "autoCheckOnHint": "应用启动后在后台检查一次，发现新版本会在导航栏提示。",
+      "autoCheckOffHint": "仅在此处手动点击「检查更新」时才会访问 GitHub。",
+      "proxyLabel": "更新代理（可选）",
+      "proxyHint": "api.github.com 在部分网络下不可达，可填写本地代理地址（如 http://127.0.0.1:7890）。留空则直连。",
+      "proxySaved": "更新代理配置已保存"
     }
   },
   "project": {

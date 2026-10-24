@@ -144,8 +144,17 @@ A successful create emits the plugin event `note.created`.
 | Method | Description |
 |------|------|
 | `GetConfig()` | `{config: map, scan_roots: []}` |
-| `UpdateConfig(key, value)` | allowed keys: `daily_code_standard` / `scan_depth` / `git_author` / `auto_import` (numeric keys are validated as numbers) |
+| `UpdateConfig(key, value)` | allowed keys: `daily_code_standard` / `scan_depth` / `git_author` / `auto_import` (numeric keys are validated as numbers); update-check keys `update_check_enabled` (0/1) / `update_proxy` (free-text proxy address) |
 | `UpdateScanRoots(roots[])` | atomically replace the scan root list |
+
+## Version updates
+
+Desktop-only: headless and MCP users update through their own deployment channel.
+
+| Method | Description |
+|------|------|
+| `CheckUpdate()` | queries the GitHub Releases `latest` and returns `{current, latest, has_update, release_url, published_at, notes, assets[], download_url, download_name}`. `download_url` points at the app bundle matching the running platform (MCP server / IDE plugin archives are excluded) and is empty when the release ships no bundle for this platform, in which case the UI falls back to the release page |
+| `OpenBrowserURL(url)` | opens a URL in the system browser (https only), used by the update card's download button; it never downloads or replaces the binary |
 
 ## AI export and plugins
 

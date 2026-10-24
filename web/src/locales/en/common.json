@@ -10,6 +10,7 @@
     "language": "Switch language",
     "review": "Review",
     "theme": "Theme",
+    "updateAvailable": "Version v{{version}} is available",
     "themes": {
       "light": "Bright side of the moon",
       "dark": "Dark side of the moon",
@@ -183,7 +184,8 @@
       "appearance": "Appearance",
       "plugins": "Plugins",
       "actions": "Actions",
-      "ai": "AI"
+      "ai": "AI",
+      "updates": "Updates"
     },
     "scanRoots": "Scan Root Directories",
     "addRoot": "Add directory:",
@@ -326,7 +328,8 @@
       "appearance": "Choose light, dark, or follow the system",
       "plugins": "Manage knowledge sources, global-memory targets and session capture",
       "ai": "Configure the chat endpoint, semantic search (embedding & vector store), session capture, and the wiki compile and model-check gates",
-      "actions": "Trigger a full rescan or import past memories on demand"
+      "actions": "Trigger a full rescan or import past memories on demand",
+      "updates": "Check for a new version, read the release notes and download the installer"
     },
     "ai": {
       "title": "AI Chat Endpoint",
@@ -370,6 +373,31 @@
       "rebuildDone": "Index rebuilt: {{count}} notes",
       "rebuildFailed": "Rebuild failed: {{msg}}",
       "missingFields": "Embedding base URL and model are required before enabling"
+    },
+    "updates": {
+      "title": "Version updates",
+      "desc": "Check GitHub Releases for a newer version. Repotory never downloads or replaces itself — the download button opens the matching installer in your system browser, and you decide when to install it.",
+      "check": "Check for updates",
+      "checking": "Checking…",
+      "currentVersion": "Current version v{{version}}",
+      "latestVersion": "Latest v{{version}}",
+      "upToDate": "You are on the latest version.",
+      "checkFailed": "Update check failed: {{msg}}",
+      "newVersion": "New version v{{version}}",
+      "publishedAt": "Published {{date}}",
+      "notesTitle": "Release notes",
+      "download": "Download new version",
+      "viewRelease": "View release page",
+      "openFailed": "Could not open the browser: {{msg}}",
+      "prefsTitle": "Update preferences",
+      "autoCheckLabel": "Check for updates on startup",
+      "autoCheckOn": "Startup update check enabled",
+      "autoCheckOff": "Startup update check disabled",
+      "autoCheckOnHint": "Checks once in the background after launch; a new version is announced in the navigation bar.",
+      "autoCheckOffHint": "GitHub is contacted only when you click “Check for updates” here.",
+      "proxyLabel": "Update proxy (optional)",
+      "proxyHint": "api.github.com is unreachable on some networks. Set a local proxy (e.g. http://127.0.0.1:7890); leave empty to connect directly.",
+      "proxySaved": "Update proxy saved"
     }
   },
   "project": {

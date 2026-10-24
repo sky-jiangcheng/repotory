@@ -5,7 +5,7 @@ order: 5
 
 # Settings
 
-The Settings page has six tabs: Scan Directories, Code Target, Author, Appearance, Plugins, and Actions.
+The Settings page has eight tabs: Scan Directories, Code Target, Author, Appearance, Plugins, AI, Actions, and Updates.
 
 ## Scan Directories
 
@@ -46,3 +46,12 @@ For plugin development, see the [Plugin Handbook](../plugins/overview.md).
 
 - **Rescan all projects now**: triggers a full scan (equivalent to the dashboard button)
 - **Import Claude memory**: triggers one import manually; once it finishes, jump to the knowledge base to review
+
+## Updates
+
+- **Check for updates**: asks GitHub Releases for the newest stable version and compares it against the running build, then reports "you are on the latest version" or shows a new-version card (publication date plus release notes). **Advisory only** — Repotory never downloads or replaces itself; it hands you the direct link to the bundle for your platform and you decide when to install it.
+- **Download new version**: opens the bundle matching your machine (macOS `.dmg` / Windows `.zip` / Linux `.tar.gz`) in the system browser. When the release ships no bundle for this platform (e.g. linux/arm64, which CI does not build), the release page is the target instead. The MCP server and IDE plugin archives in the same release are **never** offered as "the new version of the app".
+- **Check for updates on startup** (`update_check_enabled`, on by default): one background check after launch; a newer release lights a small dot next to "Settings" in the navigation bar. Turning it off means GitHub is contacted only when you click "Check for updates" here. A failed check never pops an error at startup — the machine that cannot reach GitHub should not see a red banner on every launch.
+- **Update proxy** (`update_proxy`): `api.github.com` is unreachable on some networks, so a local proxy can be set here (e.g. `http://127.0.0.1:7890`); leave it empty to connect directly.
+
+> This tab only makes sense on the desktop: headless and MCP users update through their own deployment channel.

@@ -8,6 +8,7 @@ import { applyTheme, getStoredTheme, listenSystemTheme, storeTheme, type ThemeMo
 import ErrorBoundary from './components/ErrorBoundary'
 import { setLanguage, getCurrentLanguage } from './i18n'
 import { getConnectionKind, subscribeConnection, startHealthPoll } from './api/transport'
+import { getUpdateState, subscribeUpdateState, startUpdateCheck } from './api/updateStatus'
 import Icon from './components/Icon'
 import type { IconName } from './components/Icon'
 import QuickCaptureFab from './components/QuickCaptureFab'
@@ -59,6 +60,9 @@ function NavBar() {
   const langRef = useRef<HTMLDivElement>(null)
   const themeRef = useRef<HTMLDivElement>(null)
   const currentLang = getCurrentLanguage()
+  // A newer release exists -> a dot on the Settings link. The dot is a
+  // pointer, not a nag: the Settings → Updates tab carries the detail.
+  const [updateState, setUpdateState] = useState(getUpdateState())
 
   // Close the language dropdown on outside clicks.
   useEffect(() => {
@@ -79,6 +83,9 @@ function NavBar() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [themeOpen])
+
+  // Track the app-wide update verdict (see api/updateStatus.ts).
+  useEffect(() => subscribeUpdateState(setUpdateState), [])
 
   const getThemeIcon = (mode: ThemeMode) => {
     if (mode === 'light') return 'sun'
@@ -115,6 +122,13 @@ function NavBar() {
             </Link>
             <Link to="/settings" className={navClass(pathname === '/settings')}>
               {t('nav.settings')}
+              {updateState.phase === 'available' && (
+                <span
+                  className={s.updateDot}
+                  title={t('nav.updateAvailable', { version: updateState.info?.latest ?? '' })}
+                  aria-label={t('nav.updateAvailable', { version: updateState.info?.latest ?? '' })}
+                />
+              )}
             </Link>
           </div>
         </div>
@@ -224,6 +238,12 @@ function App() {
   // React to connection state changes.
   useEffect(() => {
     return subscribeConnection(setConnKind)
+  }, [])
+
+  // One background update check per launch (desktop only, and only when the
+  // user left it enabled). Failure is silent — see api/updateStatus.ts.
+  useEffect(() => {
+    startUpdateCheck()
   }, [])
 
   // Focus main without touching location (the active router owns navigation).

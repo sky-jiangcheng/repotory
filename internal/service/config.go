@@ -99,6 +99,13 @@ var allowedConfigKeys = map[string]bool{
 	"sync_source_cursor":              true,
 	"sync_source_codebuddy":           true,
 	"sync_source_codebuddy-memory":    true,
+	// Update check (Settings → Updates). update_check_enabled is numeric 0/1
+	// (default ON — an absent row reads as enabled, see UpdateCheckEnabled);
+	// update_proxy is an optional http(s) proxy URL for the GitHub Releases
+	// API call, because api.github.com is unreachable behind the GFW most
+	// users sit behind and a Finder-launched GUI app inherits no HTTP_PROXY.
+	"update_check_enabled": true,
+	"update_proxy":         true,
 }
 
 // stringConfigKeys are exempt from the numeric-value check: they carry free-text
@@ -118,6 +125,7 @@ var stringConfigKeys = map[string]bool{
 	"ai_chat_base_url":        true,
 	"ai_chat_model":           true,
 	"ai_chat_api_key":         true,
+	"update_proxy":            true,
 }
 
 // secretConfigKeys are never returned in plaintext by GetConfig — a set value

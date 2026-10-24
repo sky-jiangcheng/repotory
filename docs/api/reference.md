@@ -144,8 +144,17 @@ cd .. && go build -o repotory-server ./cmd/server
 | 方法 | 说明 |
 |------|------|
 | `GetConfig()` | `{config: map, scan_roots: []}` |
-| `UpdateConfig(key, value)` | 允许键：`daily_code_standard` / `scan_depth` / `git_author` / `auto_import`（数值键校验数字） |
+| `UpdateConfig(key, value)` | 允许键：`daily_code_standard` / `scan_depth` / `git_author` / `auto_import`（数值键校验数字）；更新检查相关键 `update_check_enabled`（0/1）/ `update_proxy`（自由文本代理地址） |
 | `UpdateScanRoots(roots[])` | 原子替换扫描根列表 |
+
+## 版本更新
+
+仅桌面端可用（desktop-only）：headless 与 MCP 用户通过各自的部署渠道更新。
+
+| 方法 | 说明 |
+|------|------|
+| `CheckUpdate()` | 查 GitHub Releases 的 `latest`，返回 `{current, latest, has_update, release_url, published_at, notes, assets[], download_url, download_name}`。`download_url` 指向与当前平台匹配的 app bundle（MCP server / IDE 插件产物已排除），该 release 无本平台产物时为空，前端回落发布页 |
+| `OpenBrowserURL(url)` | 用系统浏览器打开 URL（仅允许 https），供更新卡片的下载按钮使用；不下载、不替换二进制 |
 
 ## AI 导出与插件
 

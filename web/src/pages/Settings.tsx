@@ -10,14 +10,15 @@ import AuthorsTab from './settings/AuthorsTab'
 import AppearanceTab from './settings/AppearanceTab'
 import PluginsTab from './settings/PluginsTab'
 import ActionsTab from './settings/ActionsTab'
+import UpdatesTab from './settings/UpdatesTab'
 import ErrorBanner from '../components/ErrorBanner'
 import s from './Settings.module.css'
 
 // 预留钩子类：`settings` —— 目前全站没有对应样式定义（P35 复核确认），
 // 保留在 markup 里作为将来挂样式的锚点，删留都不影响行为。
 
-type TabKey = 'scan' | 'standards' | 'authors' | 'appearance' | 'plugins' | 'ai' | 'actions'
-const TAB_KEYS: TabKey[] = ['scan', 'standards', 'authors', 'appearance', 'plugins', 'ai', 'actions']
+type TabKey = 'scan' | 'standards' | 'authors' | 'appearance' | 'plugins' | 'ai' | 'actions' | 'updates'
+const TAB_KEYS: TabKey[] = ['scan', 'standards', 'authors', 'appearance', 'plugins', 'ai', 'actions', 'updates']
 
 const isTabKey = (v: string | null): v is TabKey => !!v && (TAB_KEYS as string[]).includes(v)
 
@@ -162,6 +163,9 @@ function Settings() {
         )}
 
         {tab === 'actions' && data && <ActionsTab initialConfig={data.config} showMessage={showMessage} />}
+        {tab === 'updates' && data && (
+          <UpdatesTab initialConfig={data.config} showMessage={showMessage} />
+        )}
       </div>
     </div>
   )
