@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-10-24
+
+### 新增
+
+- **版本更新检查与下载（设置页新 tab「更新」，2026-10-24）**：用户反馈「版本更新了，但缺少检查版本更新状态的功能」。设置页新增第 8 个 tab：检查 GitHub Releases 是否有新版本、读更新说明（发布日期 + 可折叠 release notes）、下载对应平台的安装包；导航栏「设置」旁在有新版本时亮一个小圆点。**纯建议式**——只检测、只在系统浏览器打开下载链接，绝不自动下载、自动安装或替换二进制（会静默替换自身可执行文件的 app，信任面远大于一个「打开下载链接」的按钮，该判断写在 `internal/service/update.go` 顶部）。后端 `internal/service/update.go` 查 Releases `latest` 并做 semver 比对，失败返回错误而非谎报「已是最新」；产物筛选用**精确形状正则** `appAssetPattern` 只放行 app bundle——同一 release 还带 `repotory-mcp-*` / `repotory-server-*` / VSIX / JetBrains zip，宽松子串匹配会把 MCP server 归档当成「应用新版本」推给用户；按 `runtime.GOOS+GOARCH` 选本平台产物，该 release 无本平台产物时（如 CI 不构建的 linux/arm64）回落发布页。支持 `update_proxy`（GFW 下 `api.github.com` 常不可达，且 GUI 启动不继承 `HTTP_PROXY`，故代理是设置项而非仅靠环境变量）。前端 `api/updateStatus.ts` 为模块级单例 store，导航栏圆点与设置页卡片读**同一份结论**（一次检查一个答案，避免两边互相打脸），失败时保留上次成功 verdict；启动检查双闸门（用户开关 + 桌面 runtime）且失败静默——那台访问不到 GitHub 的机器不该每次开 app 都看红字。当前版本走本地 `Health` 读而不依赖网络（恰恰是需要填代理的那台机器）；release notes 用 `marked` + `DOMPurify` 直连，刻意不走 `utils/markdown.ts`，避免 KaTeX/highlight.js 进该 lazy chunk。`openBrowserURL` 按 runtime 分流：桌面走 Wails 绑定（webview 内跳外链会把用户困在 app 窗口里），浏览器态走 `window.open`（headless server 的 UI 也是浏览器 tab，那条路 Wails 绑定无 ctx 必失败）。绑定 `CheckUpdate` / `OpenBrowserURL` 登记为 desktop-only（更新是桌面 app 自维护，headless 与 MCP 用户走各自部署渠道），`OpenBrowserURL` 仅允许 https。新增配置键 `update_check_enabled`（默认开）与 `update_proxy`。测试：服务层 11 项 + 前端 20 项（store 状态机 7 / 设置页组件 6 / 端点契约 7）。
+
+### 修复
+
+- **设置页文档的 tab 清单与实际不符（2026-10-24）**：`docs/features/settings.md`（中英各一版）写「设置页分六个标签页」，而代码里实际有八个——AI tab 与本次新增的「更新」tab 都没被算进去。清单本身就漏了 AI（并非本次引入），既然这次要动这一行便一并校准，避免读者照着文档找不齐入口。
+
 ## [2.12.3] - 2026-10-23
 
 ### 新增
@@ -400,7 +410,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.0...v2.12.1
