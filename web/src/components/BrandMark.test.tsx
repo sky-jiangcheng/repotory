@@ -11,6 +11,15 @@
 // paper card (warm field + hairline ink frame). The UI is generated from
 // the same SSOT as the shipped icons, so a half-applied move — card in the
 // dock, navy tile in the navbar — would look like two products.
+//
+// Third regression (2026-10-24 UI sweep): the navbar put a 6px border-radius
+// on the mark. The brand master's own comment says the card has "no rounded
+// corners — the square edge and the hairline are the style", and at 26px the
+// frame sits ~1.3px from the edge, so the radius crop ate the frame's four
+// corners: the mark read as a torn sticker. The radius was left over from
+// the navy-tile era, when the tile had a gradient of its own. A CSS module
+// rule is invisible to a DOM assertion, so the stylesheet is read through
+// node:fs and the radius rule asserted to be gone.
 
 // 本文件的 DOM 访问是**显式登记**而非疏漏（ADR-0026 条件 4）：被测对象是装饰性
 // SVG——`aria-hidden` 正是设计意图，所以没有任何 role/name 可查。断言的是
@@ -21,6 +30,31 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import BrandMark from './BrandMark'
+
+const fsName = 'node:' + 'fs'
+const pathName = 'node:' + 'path'
+const procName = 'node:' + 'process'
+
+interface NodeFs {
+  readFileSync(p: string, enc: string): string
+}
+interface NodePath {
+  resolve(...p: string[]): string
+  join(...p: string[]): string
+}
+interface NodeProcess {
+  cwd(): string
+}
+
+async function readAppCss(): Promise<string> {
+  const fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs
+  const path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath
+  const proc = (await import(/* @vite-ignore */ procName)) as unknown as NodeProcess
+  return fs.readFileSync(
+    path.resolve(proc.cwd(), 'src/App.module.css'),
+    'utf8',
+  )
+}
 
 describe('BrandMark', () => {
   it('renders an inline SVG rather than a text glyph', () => {
@@ -83,5 +117,33 @@ describe('BrandMark', () => {
     const named = screen.getByRole('img', { name: 'Repotory' })
     expect(named).toBeTruthy()
     expect(named.getAttribute('aria-hidden')).toBeNull()
+  })
+
+  it('is not cropped in the navbar — the card keeps its square edge', async () => {
+    // The load-bearing CSS rule. A border-radius on the mark is a crop, not a
+    // style: the brand master is a square card whose hairline frame sits
+    // ~1.3px from the edge at the navbar's 26px, so any visible radius
+    // swallows the frame's four corners and the mark reads as torn.
+    const css = await readAppCss()
+    const rule = /\.navBrandMark\s*\{([^}]*)\}/.exec(css)
+    expect(rule, '.navBrandMark rule not found in App.module.css').not.toBeNull()
+    expect(rule![1]).not.toMatch(/border-radius/)
+    // The navy-tile era also added a drop shadow; the paper card has none.
+    expect(rule![1]).not.toMatch(/box-shadow/)
+  })
+
+  it('the mark is the app identity, not a per-section ornament', async () => {
+    // The navbar is the ONE place the brand mark belongs. The assistant
+    // header used to render it too, so a single home page carried the logo
+    // three times (navbar, section header, AI message avatar). The assistant
+    // header and the message avatar now use text instead.
+    const fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs
+    const path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath
+    const proc = (await import(/* @vite-ignore */ procName)) as unknown as NodeProcess
+    const src = fs.readFileSync(
+      path.resolve(proc.cwd(), 'src/pages/home/HomeKnowledgeAssistant.tsx'),
+      'utf8',
+    )
+    expect(src).not.toMatch(/BrandMark/)
   })
 })

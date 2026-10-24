@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Icon from '../../components/Icon'
-import BrandMark from '../../components/BrandMark'
 import {
   askAIWithEvidenceStream,
   searchAll,
@@ -430,22 +429,17 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
     <div className={s.container}>
       {/* Assistant Header */}
       <div className={s.header}>
-        <div className={s.headerLeft}>
-          <div className={s.headerIcon}>
-            <BrandMark size={20} />
+        <div className={s.titleArea}>
+          <div className={s.title}>
+            <span>{t('home.assistantTitle', { defaultValue: '知识库智能对话' })}</span>
+            <span className={s.badgeLive}>
+              <span className={s.liveDot} />
+              Live
+            </span>
           </div>
-          <div className={s.titleArea}>
-            <div className={s.title}>
-              <span>{t('home.assistantTitle', { defaultValue: '知识库智能对话' })}</span>
-              <span className={s.badgeLive}>
-                <span className={s.liveDot} />
-                Live
-              </span>
-            </div>
-            <p className={s.subtitle}>
-              {t('home.assistantSub', { defaultValue: '与本地知识库、项目架构及会话记录实时互动' })}
-            </p>
-          </div>
+          <p className={s.subtitle}>
+            {t('home.assistantSub', { defaultValue: '与本地知识库、项目架构及会话记录实时互动' })}
+          </p>
         </div>
 
         <div className={s.headerRight}>
@@ -517,7 +511,12 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
               <div
                 className={`${s.msgAvatar} ${msg.role === 'user' ? s.avatarUser : s.avatarAi}`}
               >
-                {msg.role === 'user' ? 'Me' : <BrandMark size={16} />}
+                {/* "AI" rather than the brand mark: the mark belongs to the app
+                    (navbar), not to every speaker in the transcript. Repeating
+                    it here made one page carry the logo three times, and at
+                    16px the card's hairline frame is sub-pixel anyway. Text
+                    also mirrors the user's own "Me" badge. */}
+                {msg.role === 'user' ? 'Me' : 'AI'}
               </div>
 
               <div className={s.msgBody}>

@@ -88,14 +88,14 @@
 
 .navBrandMark {
   display: block;
-  /* The tile is a rounded square with its own dark gradient. Without a radius
-     here it would be a hard square inside a soft UI, and at 26px the corner
-     pixels read as noise next to the 10px-radius controls beside it. */
-  border-radius: 6px;
+  /* The brand master (build/icon.svg) is a SQUARE paper card: cream field,
+     hairline ink frame, no rounded corners and no shadow — "the square edge
+     and the hairline are the style". A radius here is not a style choice, it
+     is a crop: at 26px the frame sits ~1.3px from the edge, so any radius
+     wide enough to see swallows the frame's four corners and the mark reads
+     as a torn sticker. Keep this element square and let the card's own
+     hairline draw the edge. */
   flex-shrink: 0;
-  /* A gold mark on a dark tile next to dark text: the mark carries the only
-     saturated colour in the bar, so it must not be recoloured by the theme. */
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .navLinks {
@@ -196,7 +196,6 @@
        identifying the app in the bar. */
     width: 28px;
     height: 28px;
-    border-radius: 7px;
   }
 
   .navLinks a {

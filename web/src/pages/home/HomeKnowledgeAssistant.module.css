@@ -45,24 +45,6 @@
   }
 }
 
-.headerLeft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.headerIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-md);
-  background: var(--accent-soft);
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
 .titleArea {
   display: flex;
   flex-direction: column;
