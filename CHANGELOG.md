@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-10-25
+
+### 新增
+
+- **笔记主题层：项目 → 主题 → 笔记（2026-10-25，ADR-0028）**：笔记此前只有两级归属（项目 → 笔记），项目下唯一的分组是 `tags`（逗号拼接的字符串——无实体、无改名、无计数）与 `kind`（两值类型标志）。一个项目攒下跨多个 subject 的笔记后就无法说清「这些是关于网关的、那些是关于迁移的」。schema v27 新增 `note_topics` 表与 `project_notes.topic_id`（nullable，ON DELETE SET NULL——删一个归档标签不该毁掉知识）。主题是**独立实体**（自己的行、自己的 id、自己的生命周期），因此改名是一次 UPDATE 而不是对每条笔记的重写，「这个主题下有多少条笔记」也才答得上来；主题**从属于且仅从属于一个项目**——同名主题出现在两个项目里就是两个主题，因为主题的意义来自项目的上下文。后端 5 个绑定（`ListTopics` / `CreateTopic` / `UpdateTopic` / `DeleteTopic` / `SetNoteTopic`）一律 desktop-only 且无 MCP 对应面：归档与改标签是人的动作，与 `MoveNote` 同性质。三条搬运路径全部补齐「主题怎么办」——`MoveNote` 换项目自动清 `topic_id`；`MergeProjectUp` 与 `ReassignLandingNotes` 走 `MigrateTopicsInto` 做同名主题合并（幸存者 + 重指向，源主题行删除）。前端：项目页筛选条（全部 / 未归类 / 各主题）、编辑器主题下拉（**改完立即写库**，不需再点保存）、笔记卡片主题徽章；知识库页按 `topic_name` **跨项目聚合**——一张 chip 覆盖多个项目，点它筛出跨项目的全部笔记，是主题视角而非项目视角。`topic_name` 服务端派生不落库（同 ADR-0022 的 `source_type` 先例）。插件侧那个实际选项目的下拉从「Topic (主题)」改称「Project (项目)」——主题层落地后「主题」已有确定含义，同一产品不能用同一个词指两样东西（VS Code 侧当时已改对，JetBrains 侧两处漏改在二次复核中补上）。浏览器端到端巡检发现并修复三个真实缺陷（编辑器下拉回弹、重命名后徽章不同步、草稿指向已删主题致半成品笔记），并逐条复验了三条搬运路径在真实运行时守住不变量（全库「笔记指向别的项目的主题」违规 0 行）。
+- **应用内更新下载：弹窗进度 + 左下角卡片，永不自替换（2026-10-25，ADR-0029）**：此前「检查更新」点完直接跳 GitHub release 页，100 MB 安装包要用户在浏览器标签页里等进度，而用户此时最想干的事是继续用应用。现改为应用内下载：纯建议式检查 + 精确形状的产物筛选 + SHA256 校验，下载态有**弹窗**（主视图，带速度与 ETA）与**左下角卡片**（最小化形态，可继续干活）两种形态，读同一份快照因而不可能出现两个进度不一致。**绝不自动替换正在运行的二进制**——下载完把文件交给系统安装器，由人点确认（会静默替换自身可执行文件的 app，信任面远大于一个「打开下载链接」的按钮，理由写在 `internal/service/update.go` 顶部）。产物筛选用精确形状正则 `appAssetPattern`：同一个 release 里还带着 `repotory-mcp-*` / `repotory-server-*` / VSIX / JetBrains zip，它们都含 "repotory" 与平台 token，宽松子串匹配会把 MCP 服务器归档当成「应用新版本」推给用户；无本平台产物（如 CI 不构建的 linux/arm64）回落 release 页。单一事实源：模块级 store 持有检查结论，导航栏徽标与设置页卡片共享同一次检查（各跑一次会打两次 API，且可能给出互相矛盾的结论——徽标说「已是最新」而旁边卡片说「2.14.0 可用」比任何一边单独存在都糟），失败时保留上次成功的结论，一次网络抖动不该把已知信息抹掉。轮询而非 Wails 事件（headless server 的浏览器 UI 没有 Wails 运行时事件监听者，两种运行时下轮询行为一致）；`OpenBrowserURL` 只允许 https。启动检查双闸门（用户开关 + 桌面 runtime）且失败静默——那台访问不到 GitHub 的机器不该每次开 app 都看到一条横贯全屏的错误横幅。
+- **AI 调用审计与内容审查：加装式安全插件（2026-10-25，ADR-0030）**：Repotory 是 AI 编码 agent 的本地记忆层，其 LLM 出口天然收敛——全仓仅三个 HTTP 原语（`ai.go`）覆盖全部八条业务路径与三种运行形态，因此「这台机器发出了什么」可在一个地方回答。schema v28 新增 `ai_call_log` 表，**append-only**（BEFORE UPDATE / BEFORE DELETE 触发器 RAISE ABORT：事后能改的审计记录不是证据），**无外键**（SQLite 会对 FK CASCADE 触发行触发器，级联 FK 会让「删被审计的东西」直接失败）。记录只存提示词的 **SHA-256 哈希与字符数，不存全文**——把提示词写进知识库所在的同一个 SQLite 会污染它，还会把 API 密钥拉进用户笔记所在的那个文件里，与「一个本地文件、什么都不外发」的承诺冲突。形态刻意做成**加装插件而非产品升级**：记忆层是私有资产（越私密越有价值），网关是公共设施（越中心化越有价值），一个产品不能同时靠「只有我知道」和「所有人都走这里」两种相反逻辑成立；四条硬约束守住本机私有——默认全关（关闭时行为与之前逐字节一致）、留痕默认只存哈希、不引入账号、不新增对外出口。审查在请求发出前按用户自己写的正则逐行匹配（大小写不敏感，坏规则跳过并在日志中提示），**Repotory 不内置任何词表**——关键词匹配是很弱的控制，容易被改写绕过，也会误伤正常内容，它只能是自证清白与早期预警，不是防泄露。流式回复审查有固有代价：已交付的 chunk 无法撤回，故判定记「已标记」而非「已拦截」。新增 2 个 MCP 工具（`repotory_ai_audit` / `repotory_ai_review_rules`，工具总数 14 → 16）与 2 个桌面绑定；设置页在 AI tab 内挂载审计区块（**不是第四个 tab**）。后端只返回结构性事实 token（`retention: append_only`），面向用户的句子一律走前端 i18n。
+- **WorkBuddy skill 包随 release 分发（2026-10-25）**：`SKILL.md` 一直是「平台无关的能力卡」，但没有 skill 机制的宿主拿不到它——用户得自己读仓库、手动配 MCP client 才能用上 Repotory。新增 `skill/repotory/` 可打包 skill 目录（SKILL.md + 数据模型参考 + MCP 工具参考 + 只读查询脚本），查询脚本提供 **MCP → HTTP RPC → 只读 SQLite 三级回落**，没有任何 MCP client 接入时仍能读到知识库。CI 新增 `skill-package` 门：skill 包随 release 走，有三种腐坏方式在 Go / web 构建里都看不出来——frontmatter 畸形导致 skill 根本不被发现（唯一症状是 agent 从不提 Repotory）、查询脚本引用已改名的 schema 列（"kind" → "category" 就发生过一次），在没人看着的机器上直接死、包布局偏离「顶层目录与 skill 同名」被 loader 拒收；校验脚本对临时库跑每个子命令，绝不碰用户真库。release 新增打包 job（平台无关，只打一次而非进矩阵），release 资产下载 pattern 相应扩为 `{bundle-*,vsix-extension,jetbrains-plugin,skill-package}`。
+
+### 变更
+
+- **插件侧项目措辞对齐**：VS Code 与 JetBrains 插件里那个实际选**项目**的下拉，标签从「Topic (主题)」改称「Project (项目)」——主题层落地后「主题」在产品里已有确定含义，两个词不再混用。
+
+### 归档
+
+- 三条主线的浏览器端到端巡检产物入库：`outputs/e2e-2026-10-25/`（主题层 + 应用内更新下载，11 张截图 + 巡检报告.md）、`outputs/e2e-2026-10-25-topic/`（主题层二次复核，含跨项目同名主题聚合成一张 chip 这一核心能力的截图）、`outputs/e2e-2026-10-25-audit/`（AI 审计区块样式修复前后对比，中英双语）。`.gitignore` 补 `outputs/skill-repotory/` 与 `outputs/*-preview-*.png`（本地构建产物与一次性预览图，非巡检归档）。
+
 ## [2.13.1] - 2026-10-24
 
 ### 修复
@@ -421,7 +438,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.1...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.1...v2.14.0
 [2.13.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.2...v2.12.3

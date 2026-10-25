@@ -42,4 +42,4 @@ order: 27
 
 - 每个重大不可逆决策一篇：背景 → 决策 → 后果
 - 被 superseded 的 ADR 保留原文与横幅，不删除
-- 新 ADR 从 `0030` 递增编号，文件名 `NNNN-kebab-title.md`
+- 新 ADR 从 `0031` 递增编号，文件名 `NNNN-kebab-title.md`

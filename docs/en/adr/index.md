@@ -42,4 +42,4 @@ order: 27
 
 - One ADR per major irreversible decision: Background → Decision → Consequences
 - Superseded ADRs keep their original text and banner; they are never deleted
-- New ADRs increment from `0030`, file name `NNNN-kebab-title.md`
+- New ADRs increment from `0031`, file name `NNNN-kebab-title.md`
