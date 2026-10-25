@@ -238,10 +238,21 @@ func TestCollectAppAssetsKeepsOnlyAppBundles(t *testing.T) {
 }
 
 func TestPlatformAssetMatchesRunningPlatform(t *testing.T) {
+	// The running platform's bundle must be the one that carries the size and
+	// digest — the in-app download verifies the received bytes against them,
+	// so a zero size or an empty digest on the chosen asset would make the
+	// verification vacuous.
+	//
+	// The assets are built from runtime.GOOS / runtime.GOARCH rather than
+	// hard-coded: a fixed "darwin-arm64" bundle only exists on a Mac, so the
+	// test would look for a bundle the fixture never had on Linux CI and
+	// report a size/digest mismatch for a reason that has nothing to do with
+	// the code under test.
+	mine := "repotory-" + runtime.GOOS + "-" + runtime.GOARCH + ".dmg"
 	assets := []UpdateAsset{
-		{Name: "repotory-darwin-amd64.dmg", URL: "https://example.invalid/amd64.dmg"},
-		{Name: "repotory-darwin-arm64.dmg", URL: "https://example.invalid/arm64.dmg", Size: 42, Digest: "sha256:bb"},
-		{Name: "repotory-linux-amd64.tar.gz", URL: "https://example.invalid/linux.tgz"},
+		{Name: "repotory-otheros-amd64.dmg", URL: "https://example.invalid/other.dmg"},
+		{Name: mine, URL: "https://example.invalid/mine.dmg", Size: 42, Digest: "sha256:bb"},
+		{Name: "repotory-thirdos-amd64.dmg", URL: "https://example.invalid/third.dmg"},
 	}
 	want := "repotory-" + runtime.GOOS + "-" + runtime.GOARCH + "."
 	got := platformAsset(assets)
