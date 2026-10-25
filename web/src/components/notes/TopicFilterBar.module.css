@@ -1,0 +1,101 @@
+/* TopicFilterBar 独占样式。
+   边界判据：这些类全站只被 TopicFilterBar.tsx 引用；跨组件的 .btn / .filter-btn
+   仍留全局，因此这里用 :global() 引用它们。
+
+   主题筛选条与类型筛选条（NoteFilterBar）形状刻意不同：类型是有限四个的
+   互斥分类，主题是用户自己起的、可增删的一串，所以主题带序号与操作按钮，
+   看上去像一组可管理的标签，而不是一排等价的筛选项。 */
+
+.topicBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.chips :global(.filter-btn) {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chips :global(.filter-btn):global(.active) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.topicChipWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 操作按钮只在鼠标悬停/键盘聚焦时显形：主题名本身是筛选项，把编辑与删除
+   永远挂在旁边会让这条筛选条变成一排图标。 */
+.topicActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.topicChipWrap:hover .topicActions,
+.topicChipWrap:focus-within .topicActions {
+  opacity: 1;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.iconBtn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.editBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editInput {
+  width: 130px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.addBtn {
+  font-size: 11px;
+  padding: 2px 10px;
+  color: var(--text-muted);
+}

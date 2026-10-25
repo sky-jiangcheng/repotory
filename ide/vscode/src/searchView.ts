@@ -15,8 +15,8 @@
 // service layer (ADR-0009).
 //
 // The detail pane doubles as the note maintenance surface (2026-10-23):
-// edit a note (title / tags / kind / 主题), create a new note under the
-// same 主题, and ask the AI to tidy the note — the tidy result is a
+// edit a note (title / tags / kind / project), create a new note under the
+// same project, and ask the AI to tidy the note — the tidy result is a
 // PROPOSAL that opens the same editor, so reviewing machine-generated
 // wording IS the edit flow and only the user's save persists it.
 import * as vscode from "vscode";
@@ -467,8 +467,8 @@ function renderEditor(draft, projects, proposal, warning) {
       (warning ? '<em>' + esc(warning) + '</em>' : '') + '</div>'
     : '';
   const err = '<div class="err" id="editor-err" style="display:none"></div>';
-  const topic = projects.length
-    ? '<label class="preview-label">Topic (主题)</label><select id="e-project">' + projectOptions(projects, draft.project_id) + '</select>'
+  const projectField = projects.length
+    ? '<label class="preview-label">Project (项目)</label><select id="e-project">' + projectOptions(projects, draft.project_id) + '</select>'
     : '<input type="text" value="' + esc('project ' + draft.project_id) + '" disabled>';
   detailEl.innerHTML = '<div class="editor">' + banner + err +
     '<label class="preview-label">Title</label>' +
@@ -477,7 +477,7 @@ function renderEditor(draft, projects, proposal, warning) {
     '<div style="flex:1"><label class="preview-label">Kind</label><select id="e-kind">' + kindOptions(draft.kind) + '</select></div>' +
     '<div style="flex:2"><label class="preview-label">Tags</label><input type="text" id="e-tags" value="' + esc(draft.tags) + '" placeholder="comma, separated"></div>' +
     '</div>' +
-    topic +
+    projectField +
     '<label class="preview-label">Content (Markdown)</label>' +
     '<textarea id="e-content" spellcheck="false">' + esc(draft.content) + '</textarea>' +
     '<div class="preview"><div class="preview-label">Preview</div><div id="e-preview-body">' +

@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { renderMarkdownAsync } from '../../utils/markdown'
 import { suggestWikiLinks } from '../../api/endpoints'
-import type { WikiLinkSuggestion } from '../../api/types'
+import type { WikiLinkSuggestion, NoteTopic } from '../../api/types'
 import BlockEditor from '../BlockEditor'
 import s from './NoteEditor.module.css'
 
@@ -13,6 +13,8 @@ export interface NoteDraft {
   kind: string
   content: string
   pinned?: boolean
+  /** The topic this note is filed under inside its project (schema v27). */
+  topicId?: number
 }
 
 interface Props {
@@ -26,6 +28,17 @@ interface Props {
   projects?: { id: number; name: string }[]
   currentProjectId?: number
   onMoveProject?: (projectId: number) => void
+  /** The project's topics — rendered as a filing selector. */
+  topics?: NoteTopic[]
+  /** The topic the note is filed under right now (0 = none). */
+  topicId?: number
+  /**
+   * Fired when the filing selector changes. For an existing note the change
+   * is persisted immediately (filing a note is an organizing act, exactly
+   * like moving it to another project); for a new note the owner keeps it in
+   * the draft and applies it on save.
+   */
+  onTopicChange?: (topicId: number) => void
 }
 
 const KINDS = [
@@ -43,6 +56,7 @@ const KINDS = [
 export default function NoteEditor({
   value, onChange, onSave, onCancel, saving,
   showPinned = false, projects, currentProjectId, onMoveProject,
+  topics, topicId, onTopicChange,
 }: Props) {
   const { t } = useTranslation()
   const [showPreview, setShowPreview] = useState(true)
@@ -126,6 +140,22 @@ export default function NoteEditor({
                 {p.id === currentProjectId ? `${p.name}（${t('project.current')}）` : p.name}
               </option>
             ))}
+          </select>
+        )}
+        {/* The topic selector sits in the meta row next to the project one:
+            both answer the same question — where does this note live. It is
+            shown whenever the project has topics; with none, an empty select
+            would be a dead control. */}
+        {topics && topics.length > 0 && onTopicChange && (
+          <select
+            value={topicId ?? 0}
+            onChange={e => onTopicChange(Number(e.target.value))}
+            className={`form-input ${s.noteKindSelect}`}
+            title={t('project.topicLabel')}
+            aria-label={t('project.topicLabel')}
+          >
+            <option value={0}>{t('project.topicNone')}</option>
+            {topics.map(tp => <option key={tp.id} value={tp.id}>{tp.name}</option>)}
           </select>
         )}
       </div>

@@ -30,11 +30,15 @@ func main() {
 	}
 	defer d.Close()
 	svc := service.New(d, platform.GetGitUserName(), nil)
+	// This process IS the MCP surface (ADR-0030): every model call it makes
+	// is an agent call, and the audit row says so.
+	svc.SetAuditSurface(service.AISurfaceMCP)
 
 	mcpServer := server.NewMCPServer("repotory-mcp", version.Version)
 	registerTools(mcpServer, svc)
 	registerContextTools(mcpServer, svc)
 	registerScanTool(mcpServer, svc)
+	registerAuditTools(mcpServer, svc)
 
 	// Seed the default scan roots so a headless (MCP-only) install can discover
 	// repositories via repotory_scan without ever opening the desktop app.

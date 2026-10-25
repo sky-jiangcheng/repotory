@@ -125,6 +125,15 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to ensure project kind and default project: %w", err)
 	}
 
+	// The AI call audit log (v28, ADR-0030) is created by its own migration and
+	// re-asserted here so an existing database gains it on upgrade and a stray
+	// manual DROP cannot silently disable auditing. All statements are IF NOT
+	// EXISTS, so this is safe on every open.
+	if err := EnsureAICallLog(db); err != nil {
+		db.Close() //nolint:errcheck
+		return nil, fmt.Errorf("failed to ensure ai call log: %w", err)
+	}
+
 	// Triggers cannot backfill: pages that existed before this index was created
 	// would stay unsearchable forever. Rebuild is cheap (pages are a derived,
 	// bounded artifact) and idempotent, and doing it here is what stops the v7
@@ -201,6 +210,23 @@ func createTables(db *sql.DB) error {
 		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 	);
 
+	-- The topic layer between a project and its notes (schema v27). A topic is
+	-- a real entity scoped to its project, so renaming it is one UPDATE and
+	-- "how many notes are in this topic" is answerable. Declared before
+	-- project_notes because the latter references it.
+	CREATE TABLE IF NOT EXISTS note_topics (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		project_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT DEFAULT '',
+		sort_order INTEGER DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+	);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_note_topics_project_name ON note_topics(project_id, name);
+
 	CREATE TABLE IF NOT EXISTS project_notes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		project_id INTEGER NOT NULL,
@@ -213,7 +239,9 @@ func createTables(db *sql.DB) error {
 		sort_order INTEGER DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+		topic_id INTEGER,
+		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+		FOREIGN KEY (topic_id) REFERENCES note_topics(id) ON DELETE SET NULL
 	);
 
 	CREATE TABLE IF NOT EXISTS repo_meta (

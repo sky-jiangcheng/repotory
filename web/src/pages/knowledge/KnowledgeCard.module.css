@@ -119,3 +119,22 @@
   color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* The subject the note is filed under. It sits between the title and the
+   snippet, so the card reads title -> subject -> body: the nesting the
+   knowledge base actually has. */
+.topicRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.topic {
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+}

@@ -135,6 +135,22 @@ cd .. && go build -o repotory-server ./cmd/server
 
 A successful create emits the plugin event `note.created`.
 
+## Topics (project → topic → note)
+
+A topic is the layer between a project and its notes: a project holds topics, a note is filed under one of them. A topic is an **independent entity** (its own row, its own id, its own lifecycle), which is what makes renaming it a single UPDATE instead of a rewrite across every note, and what makes "how many notes are in this topic" answerable at all. A topic belongs to **exactly one project** — the same subject name in two projects is two topics, because a topic's meaning comes from its project's context.
+
+| Method | Description |
+|------|------|
+| `ListTopics(projectID)` | the project's topics with their note counts. Read-only, no MCP twin |
+| `CreateTopic(projectID, name, description)` | create a topic in a project; the name is normalized (trimmed, internal whitespace collapsed) and a duplicate within the same project is rejected |
+| `UpdateTopic(topicID, name, description)` | rename a topic / change its description; a rename onto an existing name is rejected |
+| `DeleteTopic(topicID)` | delete a topic. The notes filed under it are **kept** (`topic_id` falls back to "no topic") — deleting a filing label must never destroy knowledge |
+| `SetNoteTopic(noteID, topicID)` | file a note under a topic; `topicID=0` clears the filing. A topic from another project is rejected (the db layer re-checks the project match on write) |
+
+**NoteTopic**: `{ id, project_id, name, description, sort_order, note_count, created_at, updated_at }`.
+
+Writing a topic is a **human organizing act** (like `MoveNote`), so all five bindings are desktop-only with no MCP twin.
+
 ## Todos
 
 `ListTodos(projectID)` / `CreateTodo(projectID, title)` / `ToggleTodo(id)` / `DeleteTodo(id)` / `ReorderTodos(ids[])` (reordered in a single transaction).

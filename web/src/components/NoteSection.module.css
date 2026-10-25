@@ -135,3 +135,17 @@
    components/SourceTypeBadge.module.css（按类型分色，不再按来源名单色）。 */
 
 .badgeNoteSm { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 500; }
+
+/* The topic badge — the subject a note is filed under. It sits next to the
+   kind badge but reads as a subject, not a category: a filled neutral chip
+   rather than the accent colour the kind badge uses, so the two never look
+   like the same kind of label. */
+.badgeTopicSm {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+}

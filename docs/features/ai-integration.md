@@ -278,3 +278,38 @@ Repotory 在**扫描时一次性**把 git 原始数据解析并物化进本地 S
 ## 面向 AI 代理的技能卡
 
 仓库根目录的 [SKILL.md](https://github.com/sky-jiangcheng/repotory/blob/master/SKILL.md) 是给代理阅读的能力卡片（命令、工具表、路径），可直接投喂。
+
+### WorkBuddy 技能包
+
+根目录的 `SKILL.md` 是**平台无关**的能力卡片（Claude Code / Cursor 等按需读取）；WorkBuddy 则用**带 frontmatter 的技能包**机制，代理自动发现并按描述触发。
+
+安装到 WorkBuddy（用户级，全局可用）：
+
+```bash
+# 技能包已随 release 提供，解压到用户级 skills 目录即可
+unzip repotory.skill -d ~/.workbuddy/skills/
+```
+
+装好后 WorkBuddy 里还需要在连接器管理页点一次「信任」，MCP 工具才会出现在工具列表里：
+
+```json
+// ~/.workbuddy/mcp.json
+{
+  "mcpServers": {
+    "repotory": { "command": "/usr/local/bin/repotory-mcp", "args": [] }
+  }
+}
+```
+
+技能包的内容：
+
+| 文件 | 作用 |
+|------|------|
+| `SKILL.md` | 三级降级接入（MCP → HTTP RPC → SQLite 只读）、会话记忆协议、14 个工具的路由决策、agent 不可用的能力清单 |
+| `references/mcp-tools.md` | 每个工具的精确参数签名、HTTP RPC 方法映射 |
+| `references/data-model.md` | schema 与不变量（主题归属、迁移规则、handoff 保护、trigram 边界） |
+| `scripts/repotory-query.py` | MCP 不可用时的只读兜底查询（检索 / 列主题 / 列项目 / 库概况） |
+
+**为什么要有兜底通道**：MCP 未被信任、或环境里没有 `repotory-mcp` 时，代理仍要能查知识库。只读兜底走 `sqlite3` 直接打 `project_notes_fts`，只发 `SELECT` —— 但它绕不过 FTS 索引漂移的补偿逻辑，所以优先走 MCP。
+
+**agent 侧的硬边界不变**：技能包里明确写了哪些绑定是 desktop-only（建/改/删主题、给笔记归类、项目合并、wiki 编译与审批）—— 这些是**归档与评审行为，归人**。技能包不会让代理越过这条线。

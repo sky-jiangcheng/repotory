@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   listNotes, createNoteWithMeta, updateNoteFull, deleteNote, pinNote, moveNote,
-  organizeNote,
+  organizeNote, setNoteTopic,
   getProjects,
-  type Note, type Project,
+  type Note, type NoteTopic, type Project,
 } from '../api/client'
 import { renderMarkdown } from '../utils/markdown'
 import { useApiData } from '../hooks/useApiData'
@@ -13,9 +13,11 @@ import { useNoteMutations } from '../hooks/useNoteMutations'
 import { useNoteDraft } from '../hooks/useNoteDraft'
 import { useNoteVersionHistory } from '../hooks/useNoteVersionHistory'
 import { useFilteredNotes } from '../hooks/useFilteredNotes'
+import { useTopics } from '../hooks/useTopics'
 import type { KindFilter } from '../types/kind'
 import NoteEditor, { type NoteDraft } from './notes/NoteEditor'
 import NoteFilterBar from './notes/NoteFilterBar'
+import TopicFilterBar from './notes/TopicFilterBar'
 import SourceTypeBadge from './SourceTypeBadge'
 import VersionHistoryPanel from './notes/VersionHistoryPanel'
 import ErrorBanner from './ErrorBanner'
@@ -55,6 +57,11 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
   const { data: projectsData } = useApiData(() => getProjects(undefined, false), [], { cacheKey: 'projects:all' })
   const projects = projectsData ?? []
 
+  // The topic layer (schema v27): a project holds topics, a note is filed
+  // under one of them. The hook owns the list so the filter bar, the editor
+  // and the note list always read the same topics.
+  const topicState = useTopics(projectId)
+
   const { run, retryLast } = useNoteMutations(setError)
   const vh = useNoteVersionHistory(run)
 
@@ -85,7 +92,17 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
     }
   }, [autoNew])
 
-  const filteredNotes = useFilteredNotes(notes, filter)
+  const filteredByKind = useFilteredNotes(notes, filter)
+
+  // The topic filter narrows the kind-filtered list. -1 means "no topic"
+  // (the notes that were never filed), 0 means "all topics".
+  const filteredNotes = useMemo(() => {
+    if (topicState.activeTopicId === 0) return filteredByKind
+    if (topicState.activeTopicId === -1) return filteredByKind.filter(n => !n.topic_id)
+    return filteredByKind.filter(n => n.topic_id === topicState.activeTopicId)
+  }, [filteredByKind, topicState.activeTopicId])
+
+  const unfiledCount = useMemo(() => notes.filter(n => !n.topic_id).length, [notes])
 
   // Deep-link focus: once the list has loaded, scroll the targeted note into view
   // and flash it briefly so a Knowledge-page click lands the user on the exact
@@ -115,14 +132,34 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
     if (!draft.content.trim()) return
     setSaving(true)
     await run(async () => {
-      await createNoteWithMeta(projectId, draft.content.trim(), {
+      // The draft lives in localStorage, so its topic can outlive the topic
+      // itself: the topic may have been deleted since the draft was written.
+      // Filing under a topic that no longer exists would fail AFTER the note
+      // was created, leaving a note that the retry button would then create a
+      // second copy of. A stale filing is dropped instead.
+      const topicId = draft.topicId && topicState.topics.some(tp => tp.id === draft.topicId)
+        ? draft.topicId
+        : undefined
+      const created = await createNoteWithMeta(projectId, draft.content.trim(), {
         title: draft.title.trim(),
         tags: draft.tags.trim(),
         kind: draft.kind,
       })
+      // The note has to exist before it can be filed under a topic — the
+      // filing is a second write against the new note's id. A failure here
+      // must not fail the whole save: the note exists and the user would
+      // otherwise be shown an error for a note that is actually there.
+      if (topicId) {
+        try {
+          await setNoteTopic(created.id, topicId)
+        } catch (e) {
+          setError(t('project.topicSetFailed') + ': ' + describeApiError(t, e))
+        }
+      }
       clearDraft()
       setIsNew(false)
       fetchNotes()
+      topicState.refresh()
     }, t('project.saveFailed') + ': ')
     setSaving(false)
   }
@@ -135,6 +172,7 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
       tags: note.tags,
       kind: note.kind || 'other',
       pinned: note.pinned,
+      topicId: note.topic_id,
     })
     setIsNew(false)
     setProposalNoteId(null)
@@ -181,6 +219,7 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
         tags: res.tags || note.tags,
         kind: note.kind || 'other',
         pinned: note.pinned,
+        topicId: note.topic_id,
       })
       setOrganizeWarning(res.warning ?? '')
       setProposalNoteId(note.id)
@@ -191,12 +230,38 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
     }
   }
 
+  /**
+   * Filing an existing note under a topic takes effect immediately, the same
+   * way moving it to another project does: both are organizing acts rather
+   * than edits to the note's text, and making the user press "save" a second
+   * time to file a note is a step with no meaning behind it.
+   *
+   * The edit draft is synced in the same step because the editor's filing
+   * selector is a controlled select bound to it. Without the sync the
+   * selector snaps back to the previous value on the next render, so the
+   * write lands on the server but the UI claims it never happened.
+   */
+  const handleSetNoteTopic = async (noteId: number, topicId: number) => {
+    await run(async () => {
+      await setNoteTopic(noteId, topicId)
+      setNotes(prev => prev.map(n => n.id === noteId
+        ? { ...n, topic_id: topicId, topic_name: topicState.topics.find(tp => tp.id === topicId)?.name ?? '' }
+        : n))
+      if (editingId === noteId) setEditDraft(d => ({ ...d, topicId }))
+      topicState.refresh()
+    }, t('project.topicSetFailed') + ': ')
+  }
+
   const handleMoveProject = async (noteId: number, targetProjectId: number) => {
     if (targetProjectId === projectId) return
     await run(async () => {
       await moveNote(noteId, targetProjectId)
+      // The note left its project, so its topic went with it: a topic belongs
+      // to exactly one project. The local copy must show that too, or the
+      // card would still claim a filing the server already dropped.
       setNotes(prev => prev.filter(n => n.id !== noteId))
       if (editingId === noteId) setEditingId(null)
+      topicState.refresh()
     }, t('project.saveFailed') + ': ')
   }
 
@@ -205,6 +270,29 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
       await deleteNote(noteId)
       setNotes(prev => prev.filter(n => n.id !== noteId))
     }, t('project.saveFailed') + ': ')
+  }
+
+  /**
+   * Renaming a topic has to rename it on the note cards too. The cards carry
+   * a denormalized `topic_name` from the server, so a rename that only
+   * touched the topic list would leave the chips showing the old name next
+   * to a filter bar that shows the new one.
+   */
+  const handleRenameTopic = async (topicId: number, name: string) => {
+    const ok = await topicState.rename(topicId, name)
+    if (ok) setNotes(prev => prev.map(n => n.topic_id === topicId ? { ...n, topic_name: name } : n))
+    return ok
+  }
+
+  /**
+   * Deleting a topic keeps the notes but drops their filing, so the cards
+   * must lose the badge too — the note is unfiled now, not filed under a
+   * topic that no longer exists.
+   */
+  const handleDeleteTopic = async (topicId: number) => {
+    const ok = await topicState.remove(topicId)
+    if (ok) setNotes(prev => prev.map(n => n.topic_id === topicId ? { ...n, topic_id: 0, topic_name: '' } : n))
+    return ok
   }
 
   const handlePin = async (note: Note) => {
@@ -244,6 +332,20 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
 
       <NoteFilterBar filter={filter} setFilter={setFilter} notesCount={notes.length} t={t} />
 
+      {/* The topic layer sits between the project and the notes: the strip
+          filters by subject and manages the subjects themselves. It always
+          shows — it carries the "new topic" button, and a project with no
+          topics yet is exactly the case that needs one. */}
+      <TopicFilterBar
+        topics={topicState.topics}
+        activeTopicId={topicState.activeTopicId}
+        onSelect={topicState.setActiveTopicId}
+        unfiledCount={unfiledCount}
+        onCreate={topicState.create}
+        onRename={handleRenameTopic}
+        onDelete={handleDeleteTopic}
+      />
+
       {isNew && (
         <NoteEditor
           value={draft}
@@ -251,6 +353,9 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
           onSave={handleCreate}
           onCancel={() => { setIsNew(false); clearDraft() }}
           saving={saving}
+          topics={topicState.topics}
+          topicId={draft.topicId ?? 0}
+          onTopicChange={id => setDraft(d => ({ ...d, topicId: id }))}
         />
       )}
 
@@ -280,6 +385,8 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
               organizeWarning={editingId === note.id ? organizeWarning : ''}
               onOpenHistory={vh.openVersionHistory}
               onDelete={handleDelete}
+              topics={topicState.topics}
+              onSetTopic={handleSetNoteTopic}
             />
           ))}
         </div>
@@ -303,7 +410,7 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
 function NoteCard({
   note, highlighted, editing, editDraft, onEditDraftChange, onSaveEdit, onCancelEdit, saving,
   projects, currentProjectId, onMoveProject, onPin, onEdit, onOrganize, organizing, isProposal,
-  organizeWarning, onOpenHistory, onDelete,
+  organizeWarning, onOpenHistory, onDelete, topics, onSetTopic,
 }: {
   note: Note
   highlighted: boolean
@@ -326,6 +433,10 @@ function NoteCard({
   organizeWarning: string
   onOpenHistory: (noteId: number) => void
   onDelete: (noteId: number) => void
+  /** The project's topics, offered in the editor's filing selector. */
+  topics: NoteTopic[]
+  /** Files the note under a topic (or clears it with 0). */
+  onSetTopic: (noteId: number, topicId: number) => void
 }) {
   const { t } = useTranslation()
   const { armed, click } = useConfirmClick(() => { void onDelete(note.id) })
@@ -354,6 +465,9 @@ function NoteCard({
           projects={projects}
           currentProjectId={currentProjectId}
           onMoveProject={(pid) => onMoveProject(note.id, pid)}
+          topics={topics}
+          topicId={editDraft.topicId ?? note.topic_id}
+          onTopicChange={(tid) => onSetTopic(note.id, tid)}
         />
       </div>
     )
@@ -365,6 +479,10 @@ function NoteCard({
         <span className={s.titleText}>{note.title || note.content.split('\n')[0] || t('project.noteWord')}</span>
         <div className={s.titleBadges}>
           {note.kind === 'knowledge' && <span className={s.badgeNoteSm}>{t('project.kinds.knowledge')}</span>}
+          {/* The topic badge names the subject the note is filed under — the
+              layer between the project and the note. It is a label, not a
+              link: the filter strip above is where subjects are switched. */}
+          {note.topic_name && <span className={s.badgeTopicSm}>{note.topic_name}</span>}
           {note.source && note.source !== 'manual' && <SourceTypeBadge type={note.source_type} source={note.source} />}
           <button
             className={`pin-btn ${note.pinned ? 'pinned' : ''}`}

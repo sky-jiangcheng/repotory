@@ -13,7 +13,7 @@ One build covers the whole IntelliJ family — it declares `com.intellij.modules
 | Result thumbnails | One card per hit: kind badge (`NOTE` / `TODO`), title, and the matched excerpt. The first result is selected automatically |
 | Detail pane | The selected knowledge, expanded: the full note body with markdown rendered (headings, lists, code), fetched over the same service layer. Todos show their matched excerpt, labelled as such; a note whose full read fails falls back to the excerpt with the reason attached |
 | **Open in Repotory** / double-click | Opens the hit's deep link — `/project/<id>?noteId=<id>` for a note, `/project/<id>?tab=todos` for a todo — in your system browser. **Copy** puts the full note on the clipboard |
-| **Edit** / **New note** / **AI Tidy** | Note maintenance without leaving the IDE — edit fields and 主题, add a note under the same 主题, or let the AI tidy the note into a reviewable proposal. See *Maintaining notes without leaving the IDE* below |
+| **Edit** / **New note** / **AI Tidy** | Note maintenance without leaving the IDE — edit fields and project, add a note under the same project, or let the AI tidy the note into a reviewable proposal. See *Maintaining notes without leaving the IDE* below |
 | **Tools → Repotory** | Opens the tool window (also on its title bar) |
 | **Settings → Tools → Repotory** | Server address, optional server binary path, a **Test connection** button that tells "API and web UI both reachable" from "API-only, the link would 404", and **Start local service** for a one-click launch |
 
@@ -55,8 +55,8 @@ The reader is also the editor. With a note selected, the row under the result li
 
 | Action | What it does |
 |---|---|
-| **Edit** | Opens the note in a dialog: title, kind, tags, 主题 (topic = project, in a dropdown pre-set to the note's own topic) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `UpdateNoteFull` and then the 主题 change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge). A failed save keeps your draft and says why |
-| **New note** | Creates a note under the **same 主题** as the selected one — the dialog opens empty, pre-set to that project. After creating, the note opens in the reader pane |
+| **Edit** | Opens the note in a dialog: title, kind, tags, 项目 (project, in a dropdown pre-set to the note's own project) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `UpdateNoteFull` and then the project change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge). A failed save keeps your draft and says why |
+| **New note** | Creates a note under the **same project** as the selected one — the dialog opens empty, pre-set to that project. After creating, the note opens in the reader pane |
 | **AI Tidy** | Asks the configured AI to restructure the note: same facts, cleaner sections, a table-of-contents index when the note grew sections, and a mermaid flowchart when the content is really a process. The result is a **proposal** — it opens in the same dialog under an "AI tidied draft — review, then save." banner, so machine-generated wording is never saved silently; your save (or your edits first) is what lands it |
 
 The tidy proposal is generated server-side by the shared service layer (`OrganizeNote`, twin tool `repotory_notes_organize`) and writes nothing by itself — the human save is the gate, exactly as in the desktop app. The AI endpoint is configured once in the desktop app (Settings → AI); that setting lives in the knowledge base, so the headless service this plugin talks to reads the same one. In the dialog's preview a mermaid block shows as labelled source code — the same note renders it as a graphic in the desktop app.

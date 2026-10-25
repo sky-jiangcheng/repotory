@@ -400,6 +400,72 @@ func upgradeSchema(db *sql.DB) error {
 			"ALTER TABLE wiki_pages ADD COLUMN access_count INTEGER DEFAULT 0",
 			"ALTER TABLE wiki_pages ADD COLUMN last_accessed_at TEXT",
 		}},
+		// v27: the topic layer between a project and its notes.
+		//
+		// Until now a note belonged to exactly one project, and the only
+		// groupings inside that project were flat and lossy: `tags` is a
+		// comma-joined string (no entity, no rename, no count) and `kind` is
+		// a two-value type flag. A project that accumulates notes about
+		// several subjects has no way to say so — every note lands in one
+		// undifferentiated list, and "the notes about the gateway" cannot be
+		// separated from "the notes about the migration".
+		//
+		// So the hierarchy becomes project -> topic -> note. A topic is a
+		// real entity (its own table, its own id, its own lifecycle), which
+		// is what makes renaming a topic a single UPDATE instead of a
+		// rewrite across every note, and what makes "how many notes are in
+		// this topic" answerable at all.
+		//
+		// `note_topics` is scoped to a project (project_id NOT NULL, ON
+		// DELETE CASCADE): the same subject name in two projects is two
+		// topics, because a topic's meaning comes from its project's
+		// context. `project_notes.topic_id` is nullable with ON DELETE SET
+		// NULL — a note with no topic is a legitimate state (every note
+		// written before v27 has none, and the user may never file one),
+		// and deleting a topic must not delete the notes in it.
+		//
+		// Purely additive: one new table, one nullable column. No note is
+		// rewritten and no note loses its project.
+		{id: 27, sql: []string{
+			`CREATE TABLE IF NOT EXISTS note_topics (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				project_id INTEGER NOT NULL,
+				name TEXT NOT NULL,
+				description TEXT DEFAULT '',
+				sort_order INTEGER DEFAULT 0,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_note_topics_project_name ON note_topics(project_id, name)`,
+			"ALTER TABLE project_notes ADD COLUMN topic_id INTEGER REFERENCES note_topics(id) ON DELETE SET NULL",
+		}},
+		// v28: the AI call audit log (ADR-0030).
+		//
+		// Repotory is the local-first memory layer for AI coding agents, and its
+		// LLM exit converges into exactly three HTTP primitives in
+		// internal/service/ai.go — every outbound model call in the codebase
+		// passes through them, and all eight business paths funnel into them.
+		// That makes "what did this machine send out" answerable from one place.
+		//
+		// The table records the EVIDENCE of a call (when, endpoint, model,
+		// surface, sizes, review verdicts) and deliberately does NOT record the
+		// prompt or the reply: writing prompt text into the knowledge base
+		// would pollute it and pull API keys into the same SQLite file the
+		// notes live in, which runs against the "one local file, nothing leaves
+		// the machine" promise this product is built on. The default record
+		// carries a SHA-256 of the prompt instead — it answers "was this the
+		// same prompt as last time" without answering "what was in it".
+		//
+		// Append-only via BEFORE UPDATE / BEFORE DELETE triggers, and NO
+		// foreign key — the same two structural decisions ADR-0021 argued for
+		// page_versions, for the same two reasons: an audit row that can be
+		// edited after the fact is not evidence, and SQLite fires row triggers
+		// for FK CASCADE actions, so a cascading FK would make deleting the
+		// audited thing fail outright.
+		//
+		// Purely additive: one new table, no existing table touched.
+		{id: 28, fn: EnsureAICallLog},
 	}
 
 	for _, m := range migrations {

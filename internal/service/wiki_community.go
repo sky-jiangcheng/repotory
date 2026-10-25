@@ -461,7 +461,7 @@ func (s *Service) askCommunitySummary(cfg aiChatConfig, members []string,
 	report.OutboundBytes += ctx.Len()
 	report.Calls++
 
-	reply, err := TestAIChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, []chatMessage{
+	reply, err := s.chatWithAudit(cfg, []chatMessage{
 		{Role: "system", Content: "你只输出综述正文，不要求改动任何内容。"},
 		{Role: "user", Content: ctx.String()},
 	}, DefaultBatchChatTimeout)

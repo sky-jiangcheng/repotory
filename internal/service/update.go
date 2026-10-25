@@ -72,6 +72,13 @@ type UpdateInfo struct {
 	// the release page.
 	DownloadURL  string `json:"download_url"`
 	DownloadName string `json:"download_name"`
+	// DownloadSHA256 is the digest GitHub's release API publishes for the
+	// bundle above ("sha256:<hex>"). The in-app download verifies the
+	// received bytes against it. Empty when the release published no digest
+	// for that asset.
+	DownloadSHA256 string `json:"download_sha256"`
+	// DownloadSize is the bundle's size in bytes, 0 when unknown.
+	DownloadSize int64 `json:"download_size"`
 }
 
 // UpdateAsset is one downloadable file attached to a GitHub release.
@@ -82,6 +89,9 @@ type UpdateAsset struct {
 	URL string `json:"url"`
 	// Size is the file size in bytes.
 	Size int64 `json:"size"`
+	// Digest is the digest the release API publishes for this asset, in
+	// "sha256:<hex>" form. Empty when the release carries none.
+	Digest string `json:"digest"`
 }
 
 // newUpdateHTTPClient builds the client for one check. A configured proxy
@@ -99,6 +109,22 @@ var newUpdateHTTPClient = func(proxy string) (*http.Client, error) {
 		transport.Proxy = http.ProxyURL(u)
 	}
 	return &http.Client{Timeout: updateCheckTimeout, Transport: transport}, nil
+}
+
+// validateUpdateProxy checks the configured proxy without building a client.
+// The download path needs the same check as the check path (a typo in the
+// proxy field must fail the same way in both), but it must not build a
+// client it will not use.
+func validateUpdateProxy(proxy string) error {
+	proxy = strings.TrimSpace(proxy)
+	if proxy == "" {
+		return nil
+	}
+	u, err := url.Parse(proxy)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("更新代理配置无效：%s（形如 http://127.0.0.1:7890）", proxy)
+	}
+	return nil
 }
 
 // CheckUpdate queries GitHub Releases and reports whether a newer stable
@@ -137,9 +163,10 @@ func (s *Service) CheckUpdate() (*UpdateInfo, error) {
 		PublishedAt string `json:"published_at"`
 		Prerelease  bool   `json:"prerelease"`
 		Assets      []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-			Size int64  `json:"size"`
+			Name   string `json:"name"`
+			URL    string `json:"browser_download_url"`
+			Size   int64  `json:"size"`
+			Digest string `json:"digest"`
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
@@ -154,16 +181,19 @@ func (s *Service) CheckUpdate() (*UpdateInfo, error) {
 		return nil, err
 	}
 	assets := collectAppAssets(release.Assets)
+	platformAsset := platformAsset(assets)
 	return &UpdateInfo{
-		Current:      version.Version,
-		Latest:       strings.TrimPrefix(strings.TrimSpace(release.TagName), "v"),
-		HasUpdate:    newer,
-		ReleaseURL:   release.HTMLURL,
-		PublishedAt:  release.PublishedAt,
-		Notes:        truncateRunes(release.Body, updateNotesMaxLen),
-		Assets:       assets,
-		DownloadURL:  platformAssetURL(assets),
-		DownloadName: platformAssetName(assets),
+		Current:        version.Version,
+		Latest:         strings.TrimPrefix(strings.TrimSpace(release.TagName), "v"),
+		HasUpdate:      newer,
+		ReleaseURL:     release.HTMLURL,
+		PublishedAt:    release.PublishedAt,
+		Notes:          truncateRunes(release.Body, updateNotesMaxLen),
+		Assets:         assets,
+		DownloadURL:    platformAsset.URL,
+		DownloadName:   platformAsset.Name,
+		DownloadSHA256: platformAsset.Digest,
+		DownloadSize:   platformAsset.Size,
 	}, nil
 }
 
@@ -181,42 +211,32 @@ var appAssetPattern = regexp.MustCompile(`^repotory-(darwin|windows|linux)-(amd6
 // collectAppAssets keeps only the desktop app bundles out of the release's
 // asset list.
 func collectAppAssets(raw []struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
-	Size int64  `json:"size"`
+	Name   string `json:"name"`
+	URL    string `json:"browser_download_url"`
+	Size   int64  `json:"size"`
+	Digest string `json:"digest"`
 }) []UpdateAsset {
 	out := make([]UpdateAsset, 0, len(raw))
 	for _, a := range raw {
 		if !appAssetPattern.MatchString(a.Name) {
 			continue
 		}
-		out = append(out, UpdateAsset{Name: a.Name, URL: a.URL, Size: a.Size})
+		out = append(out, UpdateAsset{Name: a.Name, URL: a.URL, Size: a.Size, Digest: a.Digest})
 	}
 	return out
 }
 
-// platformAssetURL returns the direct download URL of the bundle built for
-// the running platform, or "" when the release ships none (e.g. linux/arm64,
-// which CI does not build). The UI then falls back to the release page.
-func platformAssetURL(assets []UpdateAsset) string {
+// platformAsset returns the bundle built for the running platform, or the
+// zero value when the release ships none (e.g. linux/arm64, which CI does
+// not build). The UI then falls back to the release page.
+func platformAsset(assets []UpdateAsset) UpdateAsset {
 	want := "repotory-" + runtime.GOOS + "-" + runtime.GOARCH + "."
 	for _, a := range assets {
 		if strings.HasPrefix(a.Name, want) {
-			return a.URL
+			return a
 		}
 	}
-	return ""
-}
-
-// platformAssetName is platformAssetURL's file-name counterpart.
-func platformAssetName(assets []UpdateAsset) string {
-	want := "repotory-" + runtime.GOOS + "-" + runtime.GOARCH + "."
-	for _, a := range assets {
-		if strings.HasPrefix(a.Name, want) {
-			return a.Name
-		}
-	}
-	return ""
+	return UpdateAsset{}
 }
 
 // UpdateCheckEnabled reports whether the startup background check may run.

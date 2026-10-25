@@ -47,6 +47,14 @@ export default function KnowledgeCard({ note, exporting, onPin, onExport, onSele
       </div>
       <Link to={`/project/${note.project_id}?tab=notes&noteId=${note.id}`} className={s.body}>
         <div className={s.title}>{note.title || stripMarkdown(note.content, 40)}</div>
+        {/* The subject the note is filed under (schema v27). On this page the
+            project is shown next to it, so the pair reads as
+            "project / subject" — the same nesting the note list has. */}
+        {note.topic_name && (
+          <div className={s.topicRow}>
+            <span className={s.topic}>{note.topic_name}</span>
+          </div>
+        )}
         <div className={`${s.snippet} markdown-body`} dangerouslySetInnerHTML={{ __html: renderMarkdown(stripMarkdown(note.content, 120)) }} />
         <div className={s.foot}>
           <span className={s.projectName}>{note.project_name}</span>

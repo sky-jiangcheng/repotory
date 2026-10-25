@@ -6,35 +6,47 @@ import (
 	"testing"
 
 	"repotory/internal/core/plugin"
+	"repotory/internal/db"
 )
 
 // setupDB creates an in-memory database for tests.
+//
+// It uses the PRODUCTION schema (db.InitDB) rather than a hand-rolled
+// project_notes table. The hand-rolled copy drifted from the real one: when
+// schema v27 added project_notes.topic_id, the copy kept the old column set
+// and every import through it failed with "no such column: topic_id" — a
+// test-only schema that silently stops matching the schema it is testing.
+// The real InitDB is cheap enough for these tests (the landing suite in the
+// same package already used it).
 func setupDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	database, err := db.InitDB(":memory:")
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("InitDB: %v", err)
 	}
-	// Reuse the app's table creation by pointing InitDB at a temp file is
-	// heavyweight; create the minimal notes table for import tests.
-	_, err = db.Exec(`
-	CREATE TABLE project_notes (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		project_id INTEGER NOT NULL,
-		title TEXT DEFAULT '',
-		content TEXT NOT NULL,
-		tags TEXT DEFAULT '',
-		kind TEXT DEFAULT 'other',
-		pinned INTEGER DEFAULT 0,
-		source TEXT DEFAULT 'manual',
-		sort_order INTEGER DEFAULT 0,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);`)
+	t.Cleanup(func() { _ = database.Close() })
+	return database
+}
+
+// newProject creates a real project row and returns its id.
+//
+// The production schema enforces the project_notes -> projects foreign key,
+// so a test that writes notes must own the project they hang off. The old
+// hand-rolled table had no FK, which is exactly why it could drift from the
+// real schema without failing loudly.
+func newProject(t *testing.T, database *sql.DB, name string) int64 {
+	t.Helper()
+	res, err := database.Exec(
+		"INSERT INTO projects (name, root_path, project_kind) VALUES (?, ?, 'scanned')",
+		name, "/tmp/"+name)
 	if err != nil {
-		t.Fatalf("create table: %v", err)
+		t.Fatalf("create project: %v", err)
 	}
-	return db
+	id, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("project id: %v", err)
+	}
+	return id
 }
 
 // staticImporter returns a fixed document set, standing in for a real
@@ -103,17 +115,17 @@ func (p panicProbeImporter) Probe() plugin.ProbeResult { panic("probe exploded")
 
 func TestTriggerImportWritesNotes(t *testing.T) {
 	db := setupDB(t)
-	// Insert a project row so the FK-free import can reference it.
+	pid := newProject(t, db, "claude-src")
 	_, err := db.Exec("INSERT INTO project_notes (project_id, title, content, source) VALUES (?, ?, ?, ?)",
-		42, "seed", "seed-content", "seed")
+		pid, "seed", "seed-content", "seed")
 	if err != nil {
 		t.Fatalf("seed note: %v", err)
 	}
 
 	rt := New(db)
 	rt.RegisterSource("claude", staticImporter{source: "claude", docs: []plugin.ImportDoc{
-		{ProjectID: 42, Title: "first", Content: "body-1", Tags: "a,b", Kind: "knowledge"},
-		{ProjectID: 42, Title: "second", Content: "body-2", Kind: "log"},
+		{ProjectID: pid, Title: "first", Content: "body-1", Tags: "a,b", Kind: "knowledge"},
+		{ProjectID: pid, Title: "second", Content: "body-2", Kind: "log"},
 	}})
 
 	n, err := rt.TriggerImport("claude")
@@ -138,15 +150,16 @@ func TestTriggerImportWritesNotes(t *testing.T) {
 
 func TestTriggerImportIdempotent(t *testing.T) {
 	db := setupDB(t)
+	pid := newProject(t, db, "idem")
 	_, err := db.Exec("INSERT INTO project_notes (project_id, title, content, source) VALUES (?, ?, ?, ?)",
-		7, "seed", "s", "seed")
+		pid, "seed", "s", "seed")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	rt := New(db)
 	rt.RegisterSource("claude", staticImporter{source: "claude", docs: []plugin.ImportDoc{
-		{ProjectID: 7, Title: "note", Content: "v2"},
+		{ProjectID: pid, Title: "note", Content: "v2"},
 	}})
 
 	if _, err := rt.TriggerImport("claude"); err != nil {
@@ -175,8 +188,9 @@ func TestTriggerImportUnknownSource(t *testing.T) {
 
 func TestImportPanicRecovered(t *testing.T) {
 	db := setupDB(t)
+	pid := newProject(t, db, "boom")
 	_, err := db.Exec("INSERT INTO project_notes (project_id, title, content, source) VALUES (?, ?, ?, ?)",
-		5, "seed", "s", "seed")
+		pid, "seed", "s", "seed")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}

@@ -466,7 +466,7 @@ async function openHit(hit: Thumb | undefined): Promise<void> {
 // ---------------------------------------------------------------- note maintenance
 //
 // The detail pane is also the note editor: edit a note, create one under the
-// same 主题 (project), or let the AI tidy a note. Field writes go through the
+// same project, or let the AI tidy a note. Field writes go through the
 // MCP tools (the extension's knowledge transport); the one operation the MCP
 // surface deliberately does not carry — moving a note between projects
 // (MoveNote is desktop-only by design: re-filing knowledge is a human act) —
@@ -474,7 +474,7 @@ async function openHit(hit: Thumb | undefined): Promise<void> {
 // resolution. Both paths end in the same service layer, so there is still
 // exactly one implementation (ADR-0009).
 
-/** The project list for the editor's 主题 dropdown. */
+/** The project list for the editor's project dropdown. */
 async function fetchProjectOptions(): Promise<ProjectOption[]> {
   try {
     return parseProjects(await callTool("repotory_projects_list", {}));
@@ -507,7 +507,7 @@ async function openEditorForNote(view: RepotorySearchViewProvider, id: number): 
   );
 }
 
-/** Open the editor on a new note under the given 主题 (project). */
+/** Open the editor on a new note under the given project. */
 async function openEditorForNew(view: RepotorySearchViewProvider, projectId: number): Promise<void> {
   const projects = await fetchProjectOptions();
   view.postEditor(
@@ -553,9 +553,9 @@ async function organizeNoteInView(view: RepotorySearchViewProvider, id: number):
 }
 
 /**
- * Persist an editor draft: update in place, or create under the chosen 主题.
+ * Persist an editor draft: update in place, or create under the chosen project.
  *
- * Fields are written first, the 主题 move second: a failed move (the HTTP
+ * Fields are written first, the project move second: a failed move (the HTTP
  * service is down — MCP works without it) must not lose the edit the user
  * just made. After a successful save the freshly written note replaces the
  * editor, so what is on screen is what is in the store.

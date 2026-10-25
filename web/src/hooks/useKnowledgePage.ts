@@ -26,6 +26,12 @@ export function useKnowledgePage() {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  // The topic filter (schema v27). Topics belong to a project, but this page
+  // lists notes across projects, so the filter is by topic NAME: two projects
+  // may each have a topic called "网关", and on this page they read as the
+  // same subject. Filtering by id would hide one of them for no visible
+  // reason.
+  const [activeTopic, setActiveTopic] = useState<string | null>(null)
   const [pinnedOnly, setPinnedOnly] = useState(false)
   const [importing, setImporting] = useState(false)
   const [message, setMessage] = useState('')
@@ -107,9 +113,23 @@ export function useKnowledgePage() {
     if (kindFilter === 'knowledge') list = list.filter(n => n.kind === 'knowledge')
     else if (kindFilter === 'other') list = list.filter(n => n.kind !== 'knowledge')
     if (activeTag) list = list.filter(n => parseTags(n.tags).includes(activeTag))
+    if (activeTopic) list = list.filter(n => n.topic_name === activeTopic)
     if (pinnedOnly) list = list.filter(n => n.pinned)
     return list
-  }, [notes, kindFilter, activeTag, pinnedOnly])
+  }, [notes, kindFilter, activeTag, activeTopic, pinnedOnly])
+
+  // The topics actually present in the loaded notes, with their counts. The
+  // list is derived from the notes rather than fetched per project: this
+  // page spans projects, and one query per project would be a request storm
+  // for a chip row.
+  const topicCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    notes.forEach(n => {
+      if (!n.topic_name) return
+      counts.set(n.topic_name, (counts.get(n.topic_name) ?? 0) + 1)
+    })
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  }, [notes])
 
   // Quick Note / Create Note / the project jump list must all work on a cold
   // start (zero notes), so this is derived from the scanned project list.
@@ -132,11 +152,11 @@ export function useKnowledgePage() {
   return {
     // State
     notes, tags, loading, error, query, hits, kindFilter, activeTag,
-    pinnedOnly, importing, message, newNotePicker, askMode, exportingId,
+    activeTopic, pinnedOnly, importing, message, newNotePicker, askMode, exportingId,
     // Derived
-    filtered, projectNames, pinnedCount, recentNotes,
+    filtered, projectNames, pinnedCount, recentNotes, topicCounts,
     // Actions
-    setQuery, setKindFilter, setActiveTag, setPinnedOnly, setNewNotePicker,
+    setQuery, setKindFilter, setActiveTag, setActiveTopic, setPinnedOnly, setNewNotePicker,
     handleSearchInput, handlePin, handleExport, handleImport, fetchAll, flashMessage,
   }
 }

@@ -29,10 +29,32 @@ func (s *Service) ListNotes(projectID int64) []domain.Note {
 	if notes == nil {
 		notes = []domain.Note{}
 	}
+	s.fillTopicNames(notes)
 	for i := range notes {
 		notes[i].SourceType = string(pluginruntime.SourceTypeFor(notes[i].Source))
 	}
 	return notes
+}
+
+// fillTopicNames labels each note with its topic's display name.
+//
+// The name is looked up once for the whole table rather than per note: a note
+// showing a numeric topic id is unreadable, and the list is rendered as a
+// flat array of cards.
+func (s *Service) fillTopicNames(notes []domain.Note) {
+	if len(notes) == 0 {
+		return
+	}
+	names, err := db.TopicNames(s.db)
+	if err != nil {
+		log.Printf("topic names error: %v", err)
+		return
+	}
+	for i := range notes {
+		if notes[i].TopicID != 0 {
+			notes[i].TopicName = names[notes[i].TopicID]
+		}
+	}
 }
 
 // CreateNote creates a new note for a project.
@@ -144,6 +166,19 @@ func (s *Service) listAllNotes(limit int) []domain.NoteWithProject {
 	}
 	if notes == nil {
 		notes = []domain.NoteWithProject{}
+	}
+	// The global list spans projects, so the topic name is looked up across
+	// the whole table — a note filed under another project's topic still has
+	// to show which subject it belongs to.
+	names, err := db.TopicNames(s.db)
+	if err != nil {
+		log.Printf("topic names error: %v", err)
+	} else {
+		for i := range notes {
+			if notes[i].TopicID != 0 {
+				notes[i].TopicName = names[notes[i].TopicID]
+			}
+		}
 	}
 	for i := range notes {
 		notes[i].SourceType = string(pluginruntime.SourceTypeFor(notes[i].Source))

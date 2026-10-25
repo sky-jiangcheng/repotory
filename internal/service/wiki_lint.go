@@ -492,7 +492,7 @@ func (s *Service) runWikiLintLLM(pages []db.WikiPage) ([]WikiFinding, string) {
 	// Page content is untrusted data and the model reply is untrusted data too: an
 	// instruction buried in a page cannot become an action here, because this path
 	// can only produce findings.
-	reply, err := TestAIChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, []chatMessage{
+	reply, err := s.chatWithAudit(cfg, []chatMessage{
 		{Role: "system", Content: "你只输出 JSON，只做只读分析，不要求改动任何内容。"},
 		{Role: "user", Content: ctx.String()},
 	}, DefaultBatchChatTimeout)

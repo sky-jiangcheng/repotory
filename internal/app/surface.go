@@ -107,6 +107,11 @@ var bindingSurfaces = map[string]BindingSurface{
 	"DeleteNote":         {SurfaceDesktopOnly, "", "deletion is a human action; no agent path deletes knowledge"},
 	"PinNote":            {SurfaceDesktopOnly, "", "pinning changes the UI sort order only; it alters no knowledge content"},
 	"MoveNote":           {SurfaceDesktopOnly, "", "moving a note between projects re-files knowledge; a human decides where it belongs"},
+	"ListTopics":         {SurfaceDesktopOnly, "", "the topic layer's read side; an agent gets the note itself, and the topic is a filing label a human curates"},
+	"CreateTopic":        {SurfaceDesktopOnly, "", "creating a filing label is an organising act, like MoveNote which also has no MCP twin"},
+	"UpdateTopic":        {SurfaceDesktopOnly, "", "renaming a filing label re-files knowledge; a human decides what a subject is called"},
+	"DeleteTopic":        {SurfaceDesktopOnly, "", "deleting a filing label changes how knowledge is organised; a human decides"},
+	"SetNoteTopic":       {SurfaceDesktopOnly, "", "filing a note under a topic is the same organising act as MoveNote"},
 	"ListNoteVersions":   {SurfaceDesktopOnly, "", "version-history panel; agents read the live note"},
 	"RestoreNoteVersion": {SurfaceDesktopOnly, "", "restoring overwrites current content — human only"},
 	"DiffNoteVersions":   {SurfaceDesktopOnly, "", "version diff for the note history panel; agents read the live note via notes_read"},
@@ -124,8 +129,12 @@ var bindingSurfaces = map[string]BindingSurface{
 	"UpdateScanRoots": {SurfaceDesktopOnly, "", "granting new filesystem scope is a human decision"},
 
 	// ---- update check ----------------------------------------------------------
-	"CheckUpdate":    {SurfaceDesktopOnly, "", "desktop-app self-maintenance; headless and MCP users update through their own deployment channel"},
-	"OpenBrowserURL": {SurfaceDesktopOnly, "", "opens the system browser for the update card's download button; an agent has no browser to open and no install to perform"},
+	"CheckUpdate":          {SurfaceDesktopOnly, "", "desktop-app self-maintenance; headless and MCP users update through their own deployment channel"},
+	"OpenBrowserURL":       {SurfaceDesktopOnly, "", "opens the system browser for the update card's download button; an agent has no browser to open and no install to perform"},
+	"StartUpdateDownload":  {SurfaceDesktopOnly, "", "fetches a release bundle to a local file and verifies its digest; an agent has no installer to hand it to, and downloading on a user's behalf is a desktop-maintenance act"},
+	"UpdateDownloadState":  {SurfaceDesktopOnly, "", "progress of the desktop app's own update download; it is UI state for a download the agent cannot start"},
+	"CancelUpdateDownload": {SurfaceDesktopOnly, "", "abandons the desktop app's own update download; nothing else to cancel"},
+	"OpenDownloadedUpdate": {SurfaceDesktopOnly, "", "hands the downloaded bundle to the OS installer; an agent must not launch installers on the user's machine"},
 
 	// ---- exports -------------------------------------------------------------
 	"GenerateLLMsTxt":      {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
@@ -155,6 +164,8 @@ var bindingSurfaces = map[string]BindingSurface{
 	"ListAIModels":          {SurfaceDesktopOnly, "", "model picker in the settings tab; it enumerates a configured endpoint and is not a knowledge capability"},
 	"TestAIChat":            {SurfaceDesktopOnly, "", "settings 'test connection' button"},
 	"RebuildPageEmbeddings": {SurfaceDesktopOnly, "", "admin re-embed of approved pages (ADR-0018 lane 2); same endpoint-spend rationale as RebuildEmbeddings"},
+	"GetAIAuditStatus":      {SurfaceMCPBacked, "repotory_ai_audit", ""},
+	"ListAICallAudit":       {SurfaceMCPBacked, "repotory_ai_audit", ""},
 
 	// ---- wiki compile & review (the human gate) ------------------------------
 	"CompileNote":           {SurfaceDesktopOnly, "", "an agent able to write pending knowledge would bypass the human gate the whole design rests on (ADR-0015)"},

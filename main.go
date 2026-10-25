@@ -46,6 +46,9 @@ func main() {
 	// roots are seeded through the service (shared with the MCP server) so the
 	// first-run behaviour is identical on both entry points.
 	svc := service.New(database, gitUser, nil)
+	// This process IS the desktop surface (ADR-0030): every model call it
+	// makes was started by a human in the app, and the audit row says so.
+	svc.SetAuditSurface(service.AISurfaceDesktop)
 	svc.EnsureDefaultScanRoots()
 	a := app.New(svc)
 

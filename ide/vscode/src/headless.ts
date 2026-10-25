@@ -126,7 +126,7 @@ export function excerpt(text: unknown, max = 90): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** One project as the webview's 主题 (topic) dropdown needs it. */
+/** One project as the webview's project dropdown needs it. */
 export interface ProjectOption {
   id: number;
   name: string;

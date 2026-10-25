@@ -38,6 +38,9 @@ function loadDraft(projectId: number): NoteDraft {
           tags: parsed.tags,
           kind: parsed.kind,
           pinned: typeof parsed.pinned === 'boolean' ? parsed.pinned : undefined,
+          // The chosen topic travels with the draft: a half-written note whose
+          // filing is remembered is one less thing to re-pick after a reload.
+          topicId: typeof parsed.topicId === 'number' ? parsed.topicId : undefined,
         }
       }
     }

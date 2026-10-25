@@ -276,3 +276,38 @@ Repotory parses and materializes the raw git data into local SQLite **once at sc
 ## Skill card for AI agents
 
 [SKILL.md](https://github.com/sky-jiangcheng/repotory/blob/master/SKILL.md) at the repository root is a capability card written for agents to read (commands, tool table, paths) — feed it to them directly.
+
+### The WorkBuddy skill package
+
+The root `SKILL.md` is a **platform-agnostic** capability card (Claude Code / Cursor and friends read it on demand). WorkBuddy instead uses **frontmatter-bearing skill packages** that agents discover automatically and trigger by description.
+
+Installing into WorkBuddy (user level, available everywhere):
+
+```bash
+# The package ships with the release; unzip it into the user-level skills directory
+unzip repotory.skill -d ~/.workbuddy/skills/
+```
+
+After that, WorkBuddy still needs one **Trust** click in the connector management page before the MCP tools appear in the tool list:
+
+```json
+// ~/.workbuddy/mcp.json
+{
+  "mcpServers": {
+    "repotory": { "command": "/usr/local/bin/repotory-mcp", "args": [] }
+  }
+}
+```
+
+Package contents:
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Three-tier fallback access (MCP → HTTP RPC → read-only SQLite), the session memory protocol, routing decisions for all 14 tools, and the list of capabilities agents must not use |
+| `references/mcp-tools.md` | Exact parameter signatures per tool, plus the HTTP RPC method mapping |
+| `references/data-model.md` | Schema and invariants (topic ownership, migration rules, handoff protection, trigram boundaries) |
+| `scripts/repotory-query.py` | Read-only fallback queries when MCP is unavailable (search / list topics / list projects / library stats) |
+
+**Why a fallback channel at all**: when MCP is not trusted, or the environment has no `repotory-mcp`, the agent still needs to reach the knowledge base. The read-only fallback goes straight at `project_notes_fts` through `sqlite3` and only issues `SELECT` — but it cannot compensate for FTS index drift, which is why MCP comes first.
+
+**The agent-side boundary is unchanged**: the package spells out which bindings are desktop-only (create / rename / delete a topic, file a note under a topic, merge projects, compile and approve wiki pages) — those are **organizing and review acts, and they belong to a human**. The skill package does not let agents cross that line.

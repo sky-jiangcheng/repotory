@@ -87,7 +87,7 @@ data class NoteDetail(
     val pinned: Boolean = false,
 )
 
-/** One project as the editor's 主题 (topic) dropdown needs it. */
+/** One project as the editor's project dropdown needs it. */
 data class ProjectOption(val id: Long, val name: String)
 
 /**
@@ -332,7 +332,7 @@ class RepotoryClient {
     // button paths over the same RPC bridge the reads use — the plugin holds
     // no write logic of its own, exactly as it holds no search logic.
 
-    /** The project list for the editor's 主题 dropdown. */
+    /** The project list for the editor's project dropdown. */
     fun projects(serverUrl: String): List<ProjectOption> {
         return try {
             val result = rpc(serverUrl, "GetProjects", listOf("", false)) as? JsonArray ?: return emptyList()
@@ -404,7 +404,7 @@ class RepotoryClient {
         )
     }
 
-    /** Re-files a note under a different project (the 主题 change). */
+    /** Re-files a note under a different project (the project change). */
     @Throws(RepotoryRpcException::class)
     fun moveNote(serverUrl: String, noteId: Long, projectId: Long) {
         rpc(serverUrl, "MoveNote", listOf(noteId, projectId))

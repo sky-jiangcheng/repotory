@@ -47,6 +47,7 @@ func newTestServer(t *testing.T) *testServer {
 	registerTools(s, svc)
 	registerContextTools(s, svc)
 	registerScanTool(s, svc)
+	registerAuditTools(s, svc)
 	return &testServer{t: t, s: s, svc: svc, db: database}
 }
 
@@ -134,6 +135,8 @@ func TestToolsRegistered(t *testing.T) {
 		"repotory_context",
 		"repotory_handoff",
 		"repotory_scan",
+		"repotory_ai_audit",
+		"repotory_ai_review_rules",
 	}
 	for _, name := range want {
 		st := ts.s.GetTool(name)

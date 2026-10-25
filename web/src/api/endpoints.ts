@@ -4,6 +4,8 @@
 
 import { call, isDesktopRuntime } from './transport'
 import type {
+  AICallLogEntry,
+  AIAuditStatus,
   AppConfig,
   CompileJob,
   DailyStat,
@@ -21,6 +23,7 @@ import type {
   Note,
   NoteCount,
   NoteOrganizeResult,
+  NoteTopic,
   NoteVersion,
   NoteWithProject,
   OrganizeGroup,
@@ -35,6 +38,7 @@ import type {
   Summary,
   Todo,
   TodoCount,
+  DownloadState,
   UpdateInfo,
   WikiCommunityReport,
   WikiPageVersion,
@@ -213,6 +217,29 @@ export function updateConfig(key: string, value: string): Promise<{ success: boo
     args: [key, value],
     path: '/config',
     init: jsonInit('PUT', { key, value }),
+  })
+}
+
+// --- AI audit (ADR-0030) ---------------------------------------------------------
+
+/**
+ * Current state of the AI call audit plugin: whether auditing and the
+ * input/output reviews are on, how many rules are configured, and the
+ * counters from the recent-call window.
+ */
+export function getAIAuditStatus(): Promise<AIAuditStatus> {
+  return call<AIAuditStatus>({ method: 'GetAIAuditStatus', path: '/ai/audit/status' })
+}
+
+/**
+ * The most recent audited model calls, newest first. Prompts and replies are
+ * NOT returned — the trail stores a hash and a size, never the text.
+ */
+export function listAICallAudit(limit: number): Promise<AICallLogEntry[]> {
+  return call<AICallLogEntry[]>({
+    method: 'ListAICallAudit',
+    args: [limit],
+    path: '/ai/audit/calls',
   })
 }
 
@@ -515,6 +542,59 @@ export function moveNote(noteId: number, projectId: number): Promise<void> {
   })
 }
 
+// --- Topics (schema v27: project -> topic -> note) --------------------------------
+// A topic is a real entity inside one project: renaming it is one UPDATE, and
+// "how many notes are in this subject" is answerable at all. The endpoints
+// travel over /api/rpc only — the desktop UI is the only surface that files
+// notes by subject, so there is no MCP twin.
+
+/** A project's topics with their note counts. */
+export function listTopics(projectId: number): Promise<NoteTopic[]> {
+  return call<NoteTopic[]>({
+    method: 'ListTopics',
+    args: [projectId],
+    path: `/topics?project_id=${projectId}`,
+  }).then(d => d ?? [])
+}
+
+/** Create a topic in a project. */
+export function createTopic(projectId: number, name: string, description = ''): Promise<NoteTopic> {
+  return call<NoteTopic>({
+    method: 'CreateTopic',
+    args: [projectId, name, description],
+    path: '/topics',
+    init: jsonInit('POST', { project_id: projectId, name, description }),
+  })
+}
+
+/** Rename a topic and/or change its description. */
+export function updateTopic(topicId: number, name: string, description = ''): Promise<void> {
+  return call<void>({
+    method: 'UpdateTopic',
+    args: [topicId, name, description],
+    path: `/topics/${topicId}`,
+    init: jsonInit('PUT', { name, description }),
+  })
+}
+
+/**
+ * Delete a topic. The notes filed under it are KEPT and fall back to "no
+ * topic" — deleting a filing label must never destroy knowledge.
+ */
+export function deleteTopic(topicId: number): Promise<void> {
+  return call<void>({ method: 'DeleteTopic', args: [topicId], path: `/topics/${topicId}`, init: { method: 'DELETE' } })
+}
+
+/** File a note under a topic; topicId 0 clears the note's topic. */
+export function setNoteTopic(noteId: number, topicId: number): Promise<void> {
+  return call<void>({
+    method: 'SetNoteTopic',
+    args: [noteId, topicId],
+    path: `/notes/${noteId}/topic`,
+    init: jsonInit('POST', { topic_id: topicId }),
+  })
+}
+
 // --- Note version history -----------------------------------------------------------
 
 export function listNoteVersions(noteId: number): Promise<NoteVersion[]> {
@@ -730,9 +810,13 @@ export function diffWikiPageVersion(pageId: number, versionId: number): Promise<
 // --- Update check -----------------------------------------------------------------
 // Desktop-only bindings (no MCP twin — see internal/app/surface.go): an update
 // check is the app maintaining itself, and a headless/MCP user updates through
-// their own deployment channel. The check is advisory: it never downloads or
-// installs anything, it only tells the settings card what the newest release
-// is.
+// their own deployment channel.
+//
+// The check is advisory: it never installs anything, it only tells the
+// settings card what the newest release is. The DOWNLOAD that follows it
+// fetches the bundle into a local file and verifies its digest — the app
+// still never replaces its own binary; it hands the verified file to the OS
+// installer and lets the user finish.
 
 /**
  * Ask GitHub Releases whether a newer stable version exists. Rejects when the
@@ -741,6 +825,36 @@ export function diffWikiPageVersion(pageId: number, versionId: number): Promise<
  */
 export function checkUpdate(): Promise<UpdateInfo> {
   return call<UpdateInfo>({ method: 'CheckUpdate', args: [] })
+}
+
+/**
+ * Start downloading the release bundle for this platform.
+ *
+ * url / fileName / sha256 come straight from the UpdateInfo the check
+ * returned; the backend rejects anything that is not https. The download
+ * runs in the background — poll updateDownloadState for progress.
+ */
+export function startUpdateDownload(url: string, fileName: string, sha256: string): Promise<void> {
+  return call<void>({ method: 'StartUpdateDownload', args: [url, fileName, sha256] })
+}
+
+/** The progress of the current (or last) update download. */
+export function updateDownloadState(): Promise<DownloadState> {
+  return call<DownloadState>({ method: 'UpdateDownloadState', args: [] })
+}
+
+/** Abort an in-flight update download. */
+export function cancelUpdateDownload(): Promise<void> {
+  return call<void>({ method: 'CancelUpdateDownload', args: [] })
+}
+
+/**
+ * Hand the downloaded bundle to the OS so the user can install it: macOS
+ * mounts the .dmg, Windows reveals the folder holding the .zip, Linux
+ * reveals the folder holding the tarball.
+ */
+export function openDownloadedUpdate(path: string): Promise<void> {
+  return call<void>({ method: 'OpenDownloadedUpdate', args: [path] })
 }
 
 /**

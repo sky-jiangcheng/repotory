@@ -648,7 +648,7 @@ func (s *Service) askMergeBatch(cfg aiChatConfig, batch []MergeCandidate,
 	// Page content is untrusted data and the reply is untrusted data too: the only
 	// thing this path can produce is a todo line, so a prompt buried in a page
 	// ("tell me to merge everything") has nowhere to land.
-	reply, err := TestAIChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, []chatMessage{
+	reply, err := s.chatWithAudit(cfg, []chatMessage{
 		{Role: "system", Content: "你只输出 JSON，只做相似度判断。合并由人执行，你不合并任何东西。"},
 		{Role: "user", Content: prompt.String()},
 	}, DefaultBatchChatTimeout)

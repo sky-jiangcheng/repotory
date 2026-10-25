@@ -116,15 +116,35 @@ type Note struct {
 	// the versioned source string, so the server fills it on the way out and
 	// the client never has to carry a second copy of the mapping.
 	SourceType string `json:"source_type,omitempty"`
-	SortOrder  int    `json:"sort_order"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	// TopicID is the topic this note is filed under, inside its project
+	// (schema v27: project -> topic -> note). Zero means the note has no
+	// topic — a legitimate state, since every note written before v27 has
+	// none and the user may never file one.
+	TopicID   int64  `json:"topic_id"`
+	TopicName string `json:"topic_name,omitempty"`
+	SortOrder int    `json:"sort_order"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // NoteWithProject is a note joined with its parent project.
 type NoteWithProject struct {
 	Note
 	ProjectName string `json:"project_name"`
+}
+
+// NoteTopic is a topic of one project — the layer between a project and the
+// notes filed under it (schema v27).
+type NoteTopic struct {
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"project_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SortOrder   int    `json:"sort_order"`
+	// NoteCount is how many notes are filed under this topic.
+	NoteCount int    `json:"note_count"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // NoteVersion represents a historical snapshot of a note.

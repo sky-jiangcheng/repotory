@@ -125,6 +125,51 @@ export interface AppConfig {
   scan_roots: string[]
 }
 
+/**
+ * State of the AI call audit plugin (ADR-0030).
+ *
+ * The counters are read from the recent-call window, not from the whole
+ * table: the table has no retention policy (an audit trail that can be
+ * quietly pruned is not one), so a lifetime count is not available by
+ * design.
+ */
+export interface AIAuditStatus {
+  audit_enabled: boolean
+  review_input: boolean
+  review_output: boolean
+  rule_count: number
+  call_count: number
+  blocked_count: number
+  flagged_count: number
+  surface: string
+  table_exists: boolean
+  /**
+   * The retention POLICY as a machine-readable token ("append_only"), not a
+   * sentence. The UI renders it in the reader's own language.
+   */
+  retention: string
+}
+
+/**
+ * One audited model call.
+ *
+ * There is deliberately no prompt or response field: the audit trail stores
+ * a SHA-256 hash and a character count, never the text. That is what keeps
+ * the trail from becoming a second copy of the knowledge base.
+ */
+export interface AICallLogEntry {
+  id: number
+  created_at: string
+  surface: string
+  endpoint: string
+  model: string
+  prompt_hash: string
+  prompt_chars: number
+  response_chars: number
+  input_verdict: string
+  output_verdict: string
+}
+
 export interface Todo {
   id: number
   project_id: number
@@ -151,7 +196,28 @@ export interface Note {
   // "user-conversation" | "project-extract" | "manual". Filled by the server,
   // never computed here — one mapping, one truth.
   source_type?: string
+  // The topic this note is filed under, inside its project (schema v27:
+  // project -> topic -> note). topic_id is 0 when the note has no topic —
+  // a legitimate state, since every note written before v27 has none.
+  topic_id: number
+  // The topic's display name, filled by the server alongside topic_id.
+  topic_name?: string
   sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+// NoteTopic is one topic of one project — the layer between a project and the
+// notes filed under it (schema v27). A topic belongs to exactly one project,
+// so the same subject name in two projects is two topics.
+export interface NoteTopic {
+  id: number
+  project_id: number
+  name: string
+  description: string
+  sort_order: number
+  // How many notes are filed under this topic.
+  note_count: number
   created_at: string
   updated_at: string
 }
@@ -551,14 +617,17 @@ export interface WikiPageVersion {
 
 // --- Update check -------------------------------------------------------------
 // Mirrors internal/service.UpdateInfo: the verdict of one GitHub Releases
-// check. Advisory only — the app never replaces its own binary; the download
-// button opens the release page (or the platform's asset) in the browser.
+// check. The app downloads the bundle and verifies its digest, but it never
+// replaces its own binary — the verified file is handed to the OS installer.
 
 // One downloadable file attached to a release.
 export interface UpdateAsset {
   name: string
   url: string
   size: number
+  // digest is the digest the release API publishes for this asset, in
+  // "sha256:<hex>" form. Empty when the release carries none.
+  digest: string
 }
 
 export interface UpdateInfo {
@@ -580,4 +649,48 @@ export interface UpdateInfo {
   // Empty when the release ships none for it — the UI falls back to the page.
   download_url: string
   download_name: string
+  // download_sha256 is the digest the release published for that bundle.
+  download_sha256: string
+  // download_size is the bundle's size in bytes, 0 when unknown.
+  download_size: number
+}
+
+/**
+ * Mirrors internal/service.DownloadState: the progress of the in-app update
+ * download.
+ */
+export type DownloadPhase =
+  /** No download has started. */
+  | 'idle'
+  /** Bytes are moving. */
+  | 'running'
+  /** The file is complete and its digest is being checked. */
+  | 'verifying'
+  /** The file is downloaded and its digest matched. */
+  | 'done'
+  /** The download or the verification failed. */
+  | 'failed'
+  /** The user canceled the download. */
+  | 'canceled'
+
+export interface DownloadState {
+  phase: DownloadPhase
+  /** The release tag this download belongs to. */
+  version: string
+  /** The bundle's file name. */
+  file_name: string
+  /** Bytes written so far. */
+  downloaded: number
+  /** Expected size in bytes, 0 when unknown. */
+  total: number
+  /** Smoothed transfer rate in bytes per second. */
+  speed: number
+  /** ETA in seconds, -1 when it cannot be estimated. */
+  remaining_seconds: number
+  /** The local file path, set once the download completes. */
+  path: string
+  /** The failure reason when phase is 'failed'. */
+  error: string
+  /** Whether the digest matched the one the release published. */
+  checksum_verified: boolean
 }

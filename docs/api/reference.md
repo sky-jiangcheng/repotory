@@ -135,6 +135,22 @@ cd .. && go build -o repotory-server ./cmd/server
 
 创建成功会发出插件事件 `note.created`。
 
+## 主题（项目 → 主题 → 笔记）
+
+主题是项目与笔记之间的一层：一个项目可以持有多个主题，笔记归类到其中之一。主题是**独立实体**（自己的行、自己的 id、自己的生命周期），因此改名是一次 UPDATE，而不是对每条笔记的重写，「这个主题下有多少条笔记」也才答得上来。主题**从属于且仅从属于一个项目**——同名主题出现在两个项目里就是两个主题，因为主题的意义来自项目的上下文。
+
+| 方法 | 说明 |
+|------|------|
+| `ListTopics(projectID)` | 列出项目的主题及其笔记数。只读，无 MCP 对应面 |
+| `CreateTopic(projectID, name, description)` | 在项目下新建主题；名称归一化（去首尾空白、折叠内部空白）后，同项目内重名被拒 |
+| `UpdateTopic(topicID, name, description)` | 重命名主题 / 改说明；落到同名主题上被拒 |
+| `DeleteTopic(topicID)` | 删除主题。**其下笔记保留**（`topic_id` 置空回落「无主题」）——删一个归档标签不该毁掉知识 |
+| `SetNoteTopic(noteID, topicID)` | 把笔记归入某主题；`topicID=0` 清除归类。跨项目的主题被拒（同项目校验在 db 层再查一次） |
+
+**NoteTopic**：`{ id, project_id, name, description, sort_order, note_count, created_at, updated_at }`。
+
+主题的写入是**人的归档动作**（与 `MoveNote` 同性质），因此五个绑定一律 desktop-only、无 MCP 对应面。
+
 ## 待办
 
 `ListTodos(projectID)` / `CreateTodo(projectID, title)` / `ToggleTodo(id)` / `DeleteTodo(id)` / `ReorderTodos(ids[])`（单事务重排）。

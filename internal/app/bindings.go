@@ -272,6 +272,35 @@ func (a *App) PinNote(noteID int64, pinned bool) error { return a.svc.PinNote(no
 // MoveNote reassigns a note to a different project.
 func (a *App) MoveNote(noteID, projectID int64) error { return a.svc.MoveNote(noteID, projectID) }
 
+// ListTopics returns a project's topics with their note counts.
+//
+// The topic layer sits between a project and its notes (schema v27): a
+// project holds topics, a note is filed under one of them.
+func (a *App) ListTopics(projectID int64) []domain.NoteTopic {
+	return a.svc.ListTopics(projectID)
+}
+
+// CreateTopic creates a topic in a project.
+func (a *App) CreateTopic(projectID int64, name, description string) (*domain.NoteTopic, error) {
+	return a.svc.CreateTopic(projectID, name, description)
+}
+
+// UpdateTopic renames a topic and/or changes its description.
+func (a *App) UpdateTopic(topicID int64, name, description string) error {
+	return a.svc.UpdateTopic(topicID, name, description)
+}
+
+// DeleteTopic removes a topic. The notes filed under it are kept and fall
+// back to "no topic" — deleting a filing label must never destroy
+// knowledge.
+func (a *App) DeleteTopic(topicID int64) error { return a.svc.DeleteTopic(topicID) }
+
+// SetNoteTopic files a note under a topic, or clears its topic when topicID
+// is zero.
+func (a *App) SetNoteTopic(noteID, topicID int64) error {
+	return a.svc.SetNoteTopic(noteID, topicID)
+}
+
 // ListAllNotes returns every note across all projects with project info.
 func (a *App) ListAllNotes() []domain.NoteWithProject { return a.svc.ListAllNotes() }
 
@@ -430,6 +459,25 @@ func (a *App) AskAI(projectID int64, question string) (string, error) {
 // as the plain path (and as the no-evidence fallback inside this one).
 func (a *App) AskAIWithEvidence(projectID int64, question string) (*service.EvidenceAnswer, error) {
 	return a.svc.AskAIWithEvidence(projectID, question, service.DefaultEvidenceBudget)
+}
+
+// GetAIAuditStatus reports the state of the AI call audit plugin (ADR-0030):
+// whether auditing and the input/output reviews are on, how many rules are
+// configured, and how many calls were recorded (and how many tripped a
+// rule).
+//
+// The audit trail is a desktop-visible fact, not only an agent-facing one:
+// the person who turned the gate on is the one who needs to see what it
+// caught.
+func (a *App) GetAIAuditStatus() (*service.AIAuditStatus, error) {
+	return a.svc.GetAIAuditStatus()
+}
+
+// ListAICallAudit returns the most recent audited model calls, newest first.
+// Prompts and replies are NOT included — the trail stores a hash and a size,
+// never the text.
+func (a *App) ListAICallAudit(limit int) ([]db.AICallLog, error) {
+	return a.svc.ListAICallAudit(limit)
 }
 
 // AskStreamResult is the immediate acknowledgement of StartAskStream: the
@@ -670,6 +718,38 @@ func (a *App) TestAIChat(baseURL, model, apiKey string) (*service.AITestResult, 
 // deployment channel.
 func (a *App) CheckUpdate() (*service.UpdateInfo, error) {
 	return a.svc.CheckUpdate()
+}
+
+// StartUpdateDownload fetches the release bundle for this platform into a
+// local file and verifies its SHA256 against the digest the release API
+// publishes for that asset.
+//
+// It does NOT install anything: the app never writes into the directory its
+// own binary lives in. The verified file is handed to the OS installer by
+// OpenDownloadedUpdate, so the user performs the install with the same
+// consent they give a browser download.
+//
+// url, fileName and sha256 come straight out of the UpdateInfo the check
+// returned; the backend rejects anything that is not https.
+func (a *App) StartUpdateDownload(url, fileName, sha256 string) error {
+	return a.svc.StartUpdateDownload(url, fileName, sha256)
+}
+
+// UpdateDownloadState returns the progress of the current (or last) update
+// download: phase, bytes, total, speed and ETA.
+func (a *App) UpdateDownloadState() service.DownloadState {
+	return a.svc.UpdateDownloadState()
+}
+
+// CancelUpdateDownload aborts an in-flight update download.
+func (a *App) CancelUpdateDownload() error {
+	return a.svc.CancelUpdateDownload()
+}
+
+// OpenDownloadedUpdate hands the downloaded bundle to the OS so the user can
+// install it (mounts the .dmg on macOS, reveals the folder elsewhere).
+func (a *App) OpenDownloadedUpdate(path string) error {
+	return a.svc.OpenDownloadedUpdate(path)
 }
 
 // OpenBrowserURL opens a URL in the system browser. Exists for the update

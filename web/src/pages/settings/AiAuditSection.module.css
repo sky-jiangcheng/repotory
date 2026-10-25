@@ -1,0 +1,106 @@
+/* AiAuditSection styles (component-owned CSS).
+ *
+ * `.settings-section`, `.form-group`, `.form-input`, `.empty-actions`,
+ * `.toggle-row` and `.btn*` are shared with the other settings tabs and stay
+ * in the global design system. Only what this panel owns lives here.
+ *
+ * The class names are camelCase on purpose. Vite's CSS modules default to
+ * `localsConvention: 'camelCaseOnly'`, so a kebab-case class (.audit-section)
+ * is not addressable as `css.auditSection` — and a file that is imported for
+ * its side effects only (no default import) gets tree-shaken out of the
+ * production bundle entirely, taking its rules with it. The panel then
+ * renders unstyled with no build error to explain why. camelCase + a default
+ * import is what every other module in this folder does, and it is the only
+ * form that survives `vite build`.
+ */
+
+/* The panel is a separate block below the semantic-search section, so it
+ * carries its own hairline. `.settings-group` would do the same thing, but
+ * that class also strips the bottom margin of the last group — a rule this
+ * panel must not inherit, since it is not the last group on the page. */
+.auditSection {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.auditIntro {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 72ch;
+}
+
+.auditHint {
+  margin: 4px 0 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+  max-width: 72ch;
+}
+
+/* The toggle rows use the SHARED `.toggle-row` (styles/design-system/shared.css
+ * defines it as flex + gap 12px). It is deliberately NOT redefined here: a
+ * local copy with `justify-content: space-between` would push the checkbox to
+ * the far right while the global rule still applies the label spacing, and
+ * the two together produced overlapping text in the first screenshot.
+ *
+ * `.auditToggle` adds the vertical breathing room the global row lacks, and
+ * keeps the label at the 13px the other settings tabs use — the inherited 16px
+ * body size made these three switches read as headings rather than as
+ * settings rows. */
+.auditToggle {
+  padding: 8px 0;
+}
+
+.auditToggle label {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The rules are regexes: monospace keeps the backslashes and character
+ * classes legible, which proportional type does not. */
+.auditRules {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+/* The counters read as one strip rather than as five separate numbers —
+ * they are four different readings of the same trail. */
+.auditStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.auditTable {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.auditTable th,
+.auditTable td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.auditTable th {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.auditTime {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}

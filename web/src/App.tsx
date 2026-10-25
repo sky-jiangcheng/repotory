@@ -12,6 +12,7 @@ import { getUpdateState, subscribeUpdateState, startUpdateCheck } from './api/up
 import Icon from './components/Icon'
 import type { IconName } from './components/Icon'
 import QuickCaptureFab from './components/QuickCaptureFab'
+import UpdateDownloadUI from './components/UpdateDownloadUI'
 import BrandMark from './components/BrandMark'
 import { ToastContext } from './hooks/useToast'
 import s from './App.module.css'
@@ -324,6 +325,11 @@ function App() {
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
           <ToastHost toasts={toasts} onDismiss={(id) => setToasts(prev => prev.filter(x => x.id !== id))} />
           <QuickCaptureFab onToast={pushToast} />
+          {/* The update download's progress surfaces live at the app level:
+              the download survives navigation, and a progress indicator that
+              disappears when the user leaves the settings page is not a
+              progress indicator. */}
+          <UpdateDownloadUI />
         </div>
       </ToastContext.Provider>
     </AppRouter>

@@ -106,6 +106,21 @@ var allowedConfigKeys = map[string]bool{
 	// users sit behind and a Finder-launched GUI app inherits no HTTP_PROXY.
 	"update_check_enabled": true,
 	"update_proxy":         true,
+	// AI call audit and content review (ADR-0030). All four default OFF: with
+	// them closed, behaviour is byte-for-byte what it was before and an
+	// existing user notices nothing.
+	//
+	// ai_audit_enabled writes one ai_call_log row per outbound model call.
+	// ai_review_input screens the prompt BEFORE it leaves; ai_review_output
+	// screens the reply as it arrives (streaming output review can only
+	// withhold the tail — the head is already on screen).
+	// ai_review_rules holds the user's own patterns, one regex per line;
+	// Repotory ships no built-in blocklist, because a keyword list is a weak
+	// control and a false promise of coverage.
+	"ai_audit_enabled": true,
+	"ai_review_input":  true,
+	"ai_review_output": true,
+	"ai_review_rules":  true,
 }
 
 // stringConfigKeys are exempt from the numeric-value check: they carry free-text
@@ -126,6 +141,7 @@ var stringConfigKeys = map[string]bool{
 	"ai_chat_model":           true,
 	"ai_chat_api_key":         true,
 	"update_proxy":            true,
+	"ai_review_rules":         true,
 }
 
 // secretConfigKeys are never returned in plaintext by GetConfig — a set value

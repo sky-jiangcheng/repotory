@@ -46,8 +46,8 @@ The reader is also the editor. A note's detail pane carries three maintenance ac
 
 | Action | What it does |
 |---|---|
-| **Edit** | Opens the note in the pane's editor: title, kind, tags, 主题 (topic = project, via a dropdown) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `repotory_notes_update` and then the 主题 change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge the JetBrains plugin uses). A failed save keeps your draft and says why |
-| **New note here** | Creates a note under the **same 主题** as the one you are reading — the editor opens empty, pre-set to that project. After creating, the note joins the result list and opens in full |
+| **Edit** | Opens the note in the pane's editor: title, kind, tags, 项目 (project, via a dropdown) and the Markdown body, with a live preview under the textarea. **Save** writes the fields through `repotory_notes_update` and then the project change through `MoveNote` (the one write the MCP surface deliberately keeps human-only, so it goes over the same local HTTP bridge the JetBrains plugin uses). A failed save keeps your draft and says why |
+| **New note here** | Creates a note under the **same project** as the one you are reading — the editor opens empty, pre-set to that project. After creating, the note joins the result list and opens in full |
 | **AI Tidy** | Asks the configured AI to restructure the note: same facts, cleaner sections, a table-of-contents index when the note grew sections, and a mermaid flowchart when the content is really a process. The result is a **proposal** — it opens in the same editor with a "review, then save" banner, so machine-generated wording is never saved silently; your save (or your edits first) is what lands it. Requires the AI endpoint configured in the desktop app (Settings → AI) |
 
 The tidy proposal is generated server-side by the shared service layer (`OrganizeNote`, twin tool `repotory_notes_organize`) and writes nothing by itself — the human save is the gate, exactly as in the desktop app.

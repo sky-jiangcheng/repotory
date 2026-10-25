@@ -3,8 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
-  getAppVersion, getUpdateState, openBrowserURL, runUpdateCheck, subscribeUpdateState,
-  updateConfig, type UpdateState,
+  beginUpdateDownload,
+  getAppVersion,
+  getUpdateState,
+  openBrowserURL,
+  runUpdateCheck,
+  subscribeUpdateState,
+  updateConfig,
+  type UpdateState,
 } from '../../api/client'
 import s from './UpdatesTab.module.css'
 
@@ -19,11 +25,18 @@ interface Props {
 /**
  * Version update card.
  *
- * Deliberately advisory: this never downloads or installs anything. The
- * button opens the release page (or the platform's own bundle) in the system
- * browser — the user stays in control of what replaces the running binary,
- * which matters because an app that silently swaps its own executable is a
- * much bigger trust surface than a button that opens a download URL.
+ * The check is advisory: it reports what GitHub published and nothing more.
+ * The DOWNLOAD it can start is a different thing, and the difference matters:
+ * the app fetches the bundle into a local file and verifies its SHA256
+ * against the digest the release published, so the user gets progress
+ * feedback and a checksum verdict instead of a browser download with
+ * neither.
+ *
+ * What the app still does NOT do is install anything. Nothing here writes
+ * into the directory the running binary lives in; the verified file is
+ * handed to the OS installer (mount the .dmg, reveal the .zip) and the
+ * user performs the install with the same consent they give a browser
+ * download. The button that says "download" says exactly that.
  *
  * The verdict comes from the shared store (api/updateStatus.ts), the same one
  * the navigation badge reads. One check, one answer: a badge saying
@@ -36,6 +49,7 @@ export default function UpdatesTab({ initialConfig, showMessage }: Props) {
   const [autoCheck, setAutoCheck] = useState(initialConfig.update_check_enabled !== '0')
   const [proxy, setProxy] = useState(initialConfig.update_proxy ?? '')
   const [saving, setSaving] = useState(false)
+  const [startingDownload, setStartingDownload] = useState(false)
   // The running build's version, read locally. A card that could only state
   // your version AFTER a round trip to GitHub would sit blank on a machine
   // that cannot reach it — which is exactly the machine that needs the proxy
@@ -86,14 +100,26 @@ export default function UpdatesTab({ initialConfig, showMessage }: Props) {
   // The platform bundle when the release ships one for this machine, the
   // release page otherwise — a release without a build for this platform is
   // not an error, the page is the right target then.
-  const downloadURL = info?.download_url || info?.release_url || ''
-
   const handleDownload = async () => {
-    if (!downloadURL) return
+    if (!info?.download_url || !info.download_name) {
+      // No bundle for this platform: the release page is the only target.
+      if (info?.release_url) {
+        try {
+          await openBrowserURL(info.release_url)
+        } catch (e: unknown) {
+          showMessage(t('settings.updates.openFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+        }
+      }
+      return
+    }
+    setStartingDownload(true)
     try {
-      await openBrowserURL(downloadURL)
+      await beginUpdateDownload(info.download_url, info.download_name, info.download_sha256 ?? '')
+      showMessage(t('settings.updates.downloadStarted'))
     } catch (e: unknown) {
-      showMessage(t('settings.updates.openFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+      showMessage(t('settings.updates.downloadStartFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setStartingDownload(false)
     }
   }
 
@@ -151,8 +177,8 @@ export default function UpdatesTab({ initialConfig, showMessage }: Props) {
             )}
 
             <div className={s.actionRow}>
-              <button className="btn btn-primary" onClick={handleDownload}>
-                {t('settings.updates.download')}
+              <button className="btn btn-primary" onClick={handleDownload} disabled={startingDownload}>
+                {startingDownload ? t('settings.updates.downloadStarting') : t('settings.updates.download')}
               </button>
               {info.download_name && (
                 <span className={s.assetName}>{info.download_name}</span>
@@ -165,6 +191,9 @@ export default function UpdatesTab({ initialConfig, showMessage }: Props) {
                 {t('settings.updates.viewRelease')}
               </button>
             </div>
+            {info.download_name && (
+              <p className={s.downloadNote}>{t('settings.updates.downloadNote')}</p>
+            )}
           </div>
         )}
       </section>

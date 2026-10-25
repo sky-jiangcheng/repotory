@@ -60,6 +60,7 @@ const note = (id: number, projectId: number, projectName: string): NoteWithProje
   kind: 'knowledge',
   pinned: false,
   source: '',
+  topic_id: 0,
   sort_order: 0,
   created_at: '2026-10-06T00:00:00Z',
   updated_at: '2026-10-06T00:00:00Z',

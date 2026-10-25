@@ -81,6 +81,9 @@ func main() {
 
 	gitUser := platform.GetGitUserName()
 	svc := service.New(database, gitUser, nil)
+	// This process IS the HTTP surface (ADR-0030): every model call it makes
+	// arrives over the HTTP / JSON-RPC API, and the audit row says so.
+	svc.SetAuditSurface(service.AISurfaceHTTP)
 
 	// Seed default scan roots like the desktop App and MCP entry points do
 	// (idempotent via the scan_roots_seeded flag): without it a fresh headless

@@ -518,6 +518,123 @@ func TestAIChatWithTimeout(baseURL, model, apiKey string, messages []chatMessage
 	return testAIChatWithTimeout(baseURL, model, apiKey, messages, timeout)
 }
 
+// chatWithAudit is the audited entry point for every NON-STREAMING model call.
+//
+// It exists because the package-level TestAIChatWithTimeout has no access to
+// the database, and therefore can neither read the review policy nor write
+// the audit row. Every business path that calls a model without streaming
+// (AskAI, the evidence Q&A, wiki compile, wiki lint, wiki merge, community
+// summary, note organize) routes through here instead, so the input review
+// and the audit row are applied uniformly — one place, not eight.
+//
+// With every gate off (the default), this is exactly TestAIChatWithTimeout:
+// the policy read returns empty verdicts, no row is written, and the request
+// goes out untouched.
+func (s *Service) chatWithAudit(cfg aiChatConfig, messages []chatMessage, timeout time.Duration) (*AITestResult, error) {
+	auditCfg := s.resolveAuditConfig()
+	prompt := aiPromptText(messages)
+
+	inputVerdict, blockedRule := s.aiReviewInputText(auditCfg, prompt)
+	if blockedRule != "" {
+		// The prompt is withheld: no request is made. The audit row records
+		// the attempt, because "a call was blocked" is exactly the kind of
+		// event an audit exists to surface.
+		if auditCfg.auditEnabled {
+			s.recordAICall(aiAuditEntry(s.auditSurfaceOf(), cfg.baseURL, cfg.model, prompt,
+				AIReviewBlocked, ""))
+		}
+		return nil, aiBlockedError{rule: blockedRule}
+	}
+
+	result, err := TestAIChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, messages, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	outputVerdict := ""
+	if auditCfg.reviewOutput && len(auditCfg.rules) > 0 {
+		if aiMatchRule(result.Reply, auditCfg.rules) != "" {
+			outputVerdict = AIReviewFlagged
+		} else {
+			outputVerdict = AIReviewAllow
+		}
+	}
+	if auditCfg.auditEnabled {
+		entry := aiAuditEntry(s.auditSurfaceOf(), cfg.baseURL, cfg.model, prompt, inputVerdict, outputVerdict)
+		entry.ResponseChars = len([]rune(result.Reply))
+		s.recordAICall(entry)
+	}
+	return result, nil
+}
+
+// streamChatWithAudit is the audited entry point for every STREAMING model
+// call. It is the streaming twin of chatWithAudit.
+//
+// The output review here is fundamentally weaker than the input review, and
+// the difference is worth stating plainly: the chunks are delivered to the
+// client as they decode, so by the time a rule matches, the text before the
+// match has already been rendered on screen and cannot be recalled. The
+// verdict is therefore "flagged" — the audit row records the hit — rather
+// than "blocked", which would be a claim the streaming path cannot honour.
+//
+// A match also STOPS further delivery: the onDelta callback is no longer
+// invoked once a rule trips, so the tail of the reply is withheld from the
+// client even though the head is not. That is the strongest guarantee
+// streaming review can give.
+func (s *Service) streamChatWithAudit(cfg aiChatConfig, messages []chatMessage, timeout time.Duration, onDelta func(string)) (string, finishReasons, error) {
+	auditCfg := s.resolveAuditConfig()
+	prompt := aiPromptText(messages)
+
+	inputVerdict, blockedRule := s.aiReviewInputText(auditCfg, prompt)
+	if blockedRule != "" {
+		if auditCfg.auditEnabled {
+			s.recordAICall(aiAuditEntry(s.auditSurfaceOf(), cfg.baseURL, cfg.model, prompt,
+				AIReviewBlocked, ""))
+		}
+		return "", "", aiBlockedError{rule: blockedRule}
+	}
+
+	// The output review needs to see the text as it accumulates, so the
+	// aggregate is tracked here rather than inside streamChatWithTimeout.
+	var seen strings.Builder
+	tripped := false
+	var delivery func(string)
+	if auditCfg.reviewOutput && len(auditCfg.rules) > 0 {
+		delivery = func(d string) {
+			if tripped {
+				return
+			}
+			seen.WriteString(d)
+			if aiMatchRule(seen.String(), auditCfg.rules) != "" {
+				tripped = true
+				return
+			}
+			if onDelta != nil {
+				onDelta(d)
+			}
+		}
+	} else {
+		delivery = onDelta
+	}
+
+	reply, reason, err := streamChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, messages, timeout, delivery)
+
+	outputVerdict := ""
+	if auditCfg.reviewOutput && len(auditCfg.rules) > 0 {
+		if tripped {
+			outputVerdict = AIReviewFlagged
+		} else {
+			outputVerdict = AIReviewAllow
+		}
+	}
+	if auditCfg.auditEnabled {
+		entry := aiAuditEntry(s.auditSurfaceOf(), cfg.baseURL, cfg.model, prompt, inputVerdict, outputVerdict)
+		entry.ResponseChars = len([]rune(reply))
+		s.recordAICall(entry)
+	}
+	return reply, reason, err
+}
+
 func testAIChatWithTimeout(baseURL, model, apiKey string, messages []chatMessage, timeout time.Duration) (*AITestResult, error) {
 	base := strings.TrimSpace(baseURL)
 	if base == "" || strings.TrimSpace(model) == "" {
@@ -593,7 +710,7 @@ func (s *Service) AskAI(projectID int64, question string) (string, error) {
 	}
 	messages = append(messages, chatMessage{Role: "user", Content: question})
 
-	result, err := TestAIChatWith(cfg.baseURL, cfg.model, cfg.apiKey, messages)
+	result, err := s.chatWithAudit(cfg, messages, aiChatTimeout)
 	if err != nil {
 		return "", err
 	}

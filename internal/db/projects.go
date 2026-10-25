@@ -353,6 +353,13 @@ func MergeProjectUp(db *sql.DB, id int64) (int, error) {
 			if _, err := tx.Exec("UPDATE project_notes SET project_id = ? WHERE project_id = ?", id, sid); err != nil {
 				return 0, fmt.Errorf("failed to move notes: %w", err)
 			}
+			// The topics move with the notes. Without this the sibling's
+			// topic rows die with the sibling (ON DELETE CASCADE) and every
+			// note it carried silently falls back to "no topic" — the user's
+			// filing is destroyed by a merge that never mentions topics.
+			if err := MigrateTopicsInto(tx, sid, id); err != nil {
+				return 0, fmt.Errorf("failed to move topics: %w", err)
+			}
 			if _, err := tx.Exec("UPDATE project_todos SET project_id = ? WHERE project_id = ?", id, sid); err != nil {
 				return 0, fmt.Errorf("failed to move todos: %w", err)
 			}

@@ -2,7 +2,7 @@
 // the VS Code webview and the desktop app also ship.
 //
 // One dialog serves three entries: editing an existing note, creating a new
-// note under the current 主题 (project), and reviewing an AI tidy PROPOSAL
+// note under the current project, and reviewing an AI tidy PROPOSAL
 // (same fields, plus a "review, then save" banner). The AI proposal path is
 // deliberately the SAME dialog as the manual edit: machine-generated wording
 // is never saved silently — it lands in the editor and the user's save is
@@ -37,7 +37,7 @@ private val NOTE_KINDS = listOf("knowledge", "log", "idea", "other")
 
 /**
  * @param draft the initial fields (id = 0 for a new note)
- * @param projects the 主题 dropdown options; empty hides the dropdown
+ * @param projects the project dropdown options; empty hides the dropdown
  * @param proposal true when the draft holds an unconfirmed AI tidy result
  * @param warning non-fatal caveat from the AI call (truncation etc.)
  */
@@ -104,10 +104,10 @@ class NoteEditorDialog(
         tagsRow.add(JLabel("Tags"), BorderLayout.WEST)
         tagsRow.add(tagsField, BorderLayout.CENTER)
         if (projects.isNotEmpty()) {
-            val topicBox = JPanel(BorderLayout(JBUI.scale(4), 0))
-            topicBox.add(JLabel("Topic (主题)"), BorderLayout.WEST)
-            topicBox.add(projectCombo, BorderLayout.CENTER)
-            tagsRow.add(topicBox, BorderLayout.EAST)
+            val projectBox = JPanel(BorderLayout(JBUI.scale(4), 0))
+            projectBox.add(JLabel("Project (项目)"), BorderLayout.WEST)
+            projectBox.add(projectCombo, BorderLayout.CENTER)
+            tagsRow.add(projectBox, BorderLayout.EAST)
         }
         form.add(tagsRow, BorderLayout.CENTER)
 

@@ -77,6 +77,23 @@ func NormalizeTags(tags string) string {
 }
 
 // CreateNote inserts a new note for a project.
+// noteColumns is the shared column list for reading a note.
+//
+// Every note query in this package selects the same columns in the same
+// order and scans them into the same struct, so the list lives in ONE place:
+// a query that forgot the topic columns (added in schema v27) would
+// otherwise compile fine and silently return notes with no topic, which
+// looks exactly like "the user's topics are empty".
+//
+// topic_id is COALESCEd to 0 because the column is nullable (a note may
+// have no topic) and SQLite cannot scan a NULL into an int64. Zero is the
+// same "no topic" the domain type uses.
+const noteColumns = "id, project_id, title, content, tags, kind, pinned, source, COALESCE(topic_id, 0), sort_order, created_at, updated_at"
+
+// noteColumnsJoined is noteColumns with the "n." alias, for the queries that
+// join a parent table.
+const noteColumnsJoined = "n.id, n.project_id, n.title, n.content, n.tags, n.kind, n.pinned, n.source, COALESCE(n.topic_id, 0), n.sort_order, n.created_at, n.updated_at"
+
 func CreateNote(db *sql.DB, projectID int64, content string) (*Note, error) {
 	return CreateNoteEx(db, projectID, "", content, "", "other", "manual")
 }
@@ -106,8 +123,8 @@ func CreateNoteEx(db *sql.DB, projectID int64, title, content, tags, kind, sourc
 func getNoteByID(db *sql.DB, id int64) (*Note, error) {
 	n := &Note{}
 	err := db.QueryRow(
-		"SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at FROM project_notes WHERE id = ?", id).
-		Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt)
+		"SELECT "+noteColumns+" FROM project_notes WHERE id = ?", id).
+		Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.TopicID, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +149,7 @@ func GetNoteByID(db *sql.DB, id int64) (*Note, error) {
 // deterministically (newest first) rather than by insertion luck.
 func ListNotes(db *sql.DB, projectID int64) ([]Note, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at FROM project_notes WHERE project_id = ? ORDER BY pinned DESC, sort_order ASC, updated_at DESC, id DESC",
+		"SELECT "+noteColumns+" FROM project_notes WHERE project_id = ? ORDER BY pinned DESC, sort_order ASC, updated_at DESC, id DESC",
 		projectID)
 	if err != nil {
 		return nil, err
@@ -141,7 +158,7 @@ func ListNotes(db *sql.DB, projectID int64) ([]Note, error) {
 	var notes []Note
 	for rows.Next() {
 		var n Note
-		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.TopicID, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
 		}
 		notes = append(notes, n)
@@ -153,7 +170,7 @@ func ListNotes(db *sql.DB, projectID int64) ([]Note, error) {
 // projectID>0 scopes the result to one project; zero means the latest across
 // all projects. It returns sql.ErrNoRows when none exists.
 func LatestHandoffNote(db *sql.DB, projectID int64) (*Note, error) {
-	query := "SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at " +
+	query := "SELECT " + noteColumns + " " +
 		"FROM project_notes WHERE ',' || REPLACE(LOWER(tags), ' ', '') || ',' LIKE '%,handoff,%'"
 	args := []any{}
 	if projectID > 0 {
@@ -164,7 +181,7 @@ func LatestHandoffNote(db *sql.DB, projectID int64) (*Note, error) {
 	note := &Note{}
 	err := db.QueryRow(query, args...).Scan(
 		&note.ID, &note.ProjectID, &note.Title, &note.Content, &note.Tags,
-		&note.Kind, &note.Pinned, &note.Source, &note.SortOrder,
+		&note.Kind, &note.Pinned, &note.Source, &note.TopicID, &note.SortOrder,
 		&note.CreatedAt, &note.UpdatedAt,
 	)
 	if err != nil {
@@ -179,7 +196,7 @@ func LatestHandoffNote(db *sql.DB, projectID int64) (*Note, error) {
 // the first-screen memory ring (D25): the same tag predicate as
 // LatestHandoffNote, but a window instead of a single row.
 func ListRecentHandoffNotes(db *sql.DB, projectID int64, limit int) ([]NoteWithProject, error) {
-	query := "SELECT n.id, n.project_id, n.title, n.content, n.tags, n.kind, n.pinned, n.source, n.sort_order, n.created_at, n.updated_at, p.name " +
+	query := "SELECT " + noteColumnsJoined + ", p.name " +
 		"FROM project_notes n JOIN projects p ON p.id = n.project_id " +
 		"WHERE ',' || REPLACE(LOWER(n.tags), ' ', '') || ',' LIKE '%,handoff,%'"
 	args := []any{}
@@ -202,7 +219,7 @@ func ListRecentHandoffNotes(db *sql.DB, projectID int64, limit int) ([]NoteWithP
 	var notes []NoteWithProject
 	for rows.Next() {
 		var np NoteWithProject
-		if err := rows.Scan(&np.ID, &np.ProjectID, &np.Title, &np.Content, &np.Tags, &np.Kind, &np.Pinned, &np.Source, &np.SortOrder, &np.CreatedAt, &np.UpdatedAt, &np.ProjectName); err != nil {
+		if err := rows.Scan(&np.ID, &np.ProjectID, &np.Title, &np.Content, &np.Tags, &np.Kind, &np.Pinned, &np.Source, &np.TopicID, &np.SortOrder, &np.CreatedAt, &np.UpdatedAt, &np.ProjectName); err != nil {
 			return nil, err
 		}
 		notes = append(notes, np)
@@ -299,9 +316,15 @@ func UpdateNoteMeta(db *sql.DB, noteID int64, title, tags, kind string, pinned b
 }
 
 // MoveNote reassigns a note to a different project.
+//
+// The note's topic is cleared in the same UPDATE. A topic belongs to exactly
+// one project (schema v27), so a note that keeps the old project's topic id
+// would point at a topic the new project does not own — the note would be
+// filed under a subject that is invisible in every view of its new home.
+// Clearing is the honest answer: the note is filed again, or not at all.
 func MoveNote(db *sql.DB, noteID, projectID int64) error {
 	res, err := db.Exec(
-		"UPDATE project_notes SET project_id = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
+		"UPDATE project_notes SET project_id = ?, topic_id = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
 		projectID, noteID)
 	if err != nil {
 		return err
@@ -338,9 +361,9 @@ func PinNote(db *sql.DB, noteID int64, pinned bool) error {
 func GetNoteBySourceTitle(db *sql.DB, projectID int64, source, title string) (*Note, error) {
 	n := &Note{}
 	err := db.QueryRow(
-		"SELECT id, project_id, title, content, tags, kind, pinned, source, sort_order, created_at, updated_at FROM project_notes WHERE project_id = ? AND source = ? AND title = ?",
+		"SELECT "+noteColumns+" FROM project_notes WHERE project_id = ? AND source = ? AND title = ?",
 		projectID, source, title).
-		Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt)
+		Scan(&n.ID, &n.ProjectID, &n.Title, &n.Content, &n.Tags, &n.Kind, &n.Pinned, &n.Source, &n.TopicID, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +376,7 @@ func GetNoteBySourceTitle(db *sql.DB, projectID int64, source, title string) (*N
 // notes_list, llms.txt) never load the whole knowledge base into memory; a
 // non-empty kind filters to that note kind.
 func ListAllNotes(db *sql.DB, limit int, kind string) ([]NoteWithProject, error) {
-	query := "SELECT n.id, n.project_id, n.title, n.content, n.tags, n.kind, n.pinned, n.source, n.sort_order, n.created_at, n.updated_at, p.name FROM project_notes n JOIN projects p ON p.id = n.project_id"
+	query := "SELECT " + noteColumnsJoined + ", p.name FROM project_notes n JOIN projects p ON p.id = n.project_id"
 	args := []any{}
 	if kind != "" {
 		query += " WHERE n.kind = ?"
@@ -374,7 +397,7 @@ func ListAllNotes(db *sql.DB, limit int, kind string) ([]NoteWithProject, error)
 	var notes []NoteWithProject
 	for rows.Next() {
 		var np NoteWithProject
-		if err := rows.Scan(&np.ID, &np.ProjectID, &np.Title, &np.Content, &np.Tags, &np.Kind, &np.Pinned, &np.Source, &np.SortOrder, &np.CreatedAt, &np.UpdatedAt, &np.ProjectName); err != nil {
+		if err := rows.Scan(&np.ID, &np.ProjectID, &np.Title, &np.Content, &np.Tags, &np.Kind, &np.Pinned, &np.Source, &np.TopicID, &np.SortOrder, &np.CreatedAt, &np.UpdatedAt, &np.ProjectName); err != nil {
 			return nil, err
 		}
 		notes = append(notes, np)

@@ -101,3 +101,10 @@ v25-rehearse/
 # Playwright CLI 本地会话产物（浏览器快照 / console 日志 / 本地 config，纯本地复现物）
 .playwright/
 .playwright-cli/
+
+# 本地 skill 包构建产物（由 skill/repotory/ 打成 .skill zip，纯本地复现物）
+outputs/skill-repotory/
+
+# 本地插件布局预览图（一次性截图，非巡检归档）
+outputs/jetbrains-tlayout-preview-*.png
+outputs/vscode-reader-preview-*.png

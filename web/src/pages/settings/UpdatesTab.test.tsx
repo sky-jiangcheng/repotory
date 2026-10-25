@@ -13,6 +13,7 @@ vi.mock('../../api/client', async (importOriginal) => {
     runUpdateCheck: vi.fn(),
     subscribeUpdateState: vi.fn(),
     getUpdateState: vi.fn(),
+    beginUpdateDownload: vi.fn(),
   }
 })
 
@@ -27,7 +28,8 @@ vi.mock('react-i18next', () => ({
 }))
 
 import {
-  getAppVersion, getUpdateState, openBrowserURL, runUpdateCheck, subscribeUpdateState, updateConfig,
+  beginUpdateDownload, getAppVersion, getUpdateState, openBrowserURL, runUpdateCheck,
+  subscribeUpdateState, updateConfig,
 } from '../../api/client'
 import UpdatesTab from './UpdatesTab'
 
@@ -41,6 +43,8 @@ const noUpdate = {
   assets: [],
   download_url: '',
   download_name: '',
+  download_sha256: '',
+  download_size: 0,
 }
 
 const newerVersion = {
@@ -49,6 +53,8 @@ const newerVersion = {
   has_update: true,
   download_url: 'https://example.invalid/repotory-darwin-arm64.dmg',
   download_name: 'repotory-darwin-arm64.dmg',
+  download_sha256: 'sha256:abc',
+  download_size: 1234,
   notes: '- **shiny** new thing',
 }
 
@@ -57,6 +63,7 @@ beforeEach(() => {
   vi.mocked(getAppVersion).mockResolvedValue('2.12.3')
   vi.mocked(getUpdateState).mockReturnValue({ phase: 'idle', info: null, error: '' })
   vi.mocked(subscribeUpdateState).mockReturnValue(() => {})
+  vi.mocked(beginUpdateDownload).mockResolvedValue(undefined)
 })
 
 function renderTab(config: Record<string, string> = {}) {
@@ -78,13 +85,20 @@ describe('UpdatesTab', () => {
     await waitFor(() => expect(runUpdateCheck).toHaveBeenCalled())
   })
 
-  it('opens the platform bundle in the system browser, not the release page', async () => {
+  it('downloads the platform bundle in-app instead of handing it to the browser', async () => {
     vi.mocked(getUpdateState).mockReturnValue({ phase: 'available', info: newerVersion, error: '' })
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'settings.updates.download' }))
     await waitFor(() =>
-      expect(openBrowserURL).toHaveBeenCalledWith('https://example.invalid/repotory-darwin-arm64.dmg'),
+      expect(beginUpdateDownload).toHaveBeenCalledWith(
+        'https://example.invalid/repotory-darwin-arm64.dmg',
+        'repotory-darwin-arm64.dmg',
+        'sha256:abc',
+      ),
     )
+    // The browser is NOT involved: the app fetches and verifies the bundle
+    // itself, which is what buys the progress readout and the checksum.
+    expect(openBrowserURL).not.toHaveBeenCalled()
   })
 
   it('falls back to the release page when the release has no bundle for this platform', async () => {

@@ -52,7 +52,14 @@ const schemaVersionKey = "schema_version"
 // project lands a note on a placeholder or the default instead of silently
 // dropping it. Additive: one ALTERed column with a constant default + one
 // idempotent seed, enum validated in Go (no CHECK rebuild).
-const ExpectedSchemaVersion = 26
+// v28 added the AI call audit log (internal/db's EnsureAICallLog, ADR-0030):
+// one new table with append-only trigger guards and no foreign key. It records
+// the evidence of an outbound model call (when, endpoint, model, surface,
+// sizes, review verdicts) and — by design — not the prompt or the reply text,
+// because writing those into the knowledge base would pollute it and pull API
+// keys into the same SQLite file the notes live in. Purely additive: no
+// existing table is touched.
+const ExpectedSchemaVersion = 28
 
 // StaleAfterDays is the age at which the repo_meta knowledge cache is reported
 // as stale. The cache feeds generated knowledge (tech stack, readme excerpt,

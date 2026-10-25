@@ -99,6 +99,15 @@
   color: var(--text-tertiary);
 }
 
+/* The one-line explanation under the download button. It says what the
+   button does NOT do (install) as clearly as what it does (download), so
+   the user is not left wondering whether the app will replace itself. */
+.downloadNote {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* ---- toggle (same shape as PluginsTab's) ---- */
 .toggle {
   width: 42px;

@@ -48,6 +48,11 @@ func CountProjectNotes(db *sql.DB, projectID int64) (int, error) {
 // calling (source is a landing project; target is a real/default project); the
 // UPDATE is the same primitive MergeProjectUp and MoveNote already use, just
 // bulked to the whole source.
+//
+// The source's topics move with the notes. A topic belongs to exactly one
+// project, so notes that keep pointing at a topic left behind in the source
+// would be filed under a subject their new project does not own — invisible in
+// every view of where they now live.
 func ReassignLandingNotes(db *sql.DB, sourceID, targetID int64) (int, error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -62,6 +67,9 @@ func ReassignLandingNotes(db *sql.DB, sourceID, targetID int64) (int, error) {
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
+		return 0, err
+	}
+	if err := MigrateTopicsInto(tx, sourceID, targetID); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {

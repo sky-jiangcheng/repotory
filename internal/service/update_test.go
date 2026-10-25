@@ -206,11 +206,12 @@ func TestCollectAppAssetsKeepsOnlyAppBundles(t *testing.T) {
 	// archives, the VSIX and the JetBrains plugin. Only the app bundles may be
 	// offered as "the new version".
 	raw := []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-		Size int64  `json:"size"`
+		Name   string `json:"name"`
+		URL    string `json:"browser_download_url"`
+		Size   int64  `json:"size"`
+		Digest string `json:"digest"`
 	}{
-		{Name: "repotory-darwin-arm64.dmg", URL: "https://example.invalid/dmg", Size: 10},
+		{Name: "repotory-darwin-arm64.dmg", URL: "https://example.invalid/dmg", Size: 10, Digest: "sha256:aa"},
 		{Name: "repotory-windows-amd64.zip", URL: "https://example.invalid/zip", Size: 20},
 		{Name: "repotory-linux-amd64.tar.gz", URL: "https://example.invalid/tgz", Size: 30},
 		{Name: "repotory-mcp-darwin-arm64.tar.gz", URL: "https://example.invalid/mcp", Size: 40},
@@ -229,22 +230,29 @@ func TestCollectAppAssetsKeepsOnlyAppBundles(t *testing.T) {
 			t.Errorf("assets[%d].Name = %q, want %q", i, assets[i].Name, want)
 		}
 	}
+	// The digest the release published must survive the filtering — the
+	// in-app download verifies the received bytes against it.
+	if assets[0].Digest != "sha256:aa" {
+		t.Errorf("assets[0].Digest = %q, want %q", assets[0].Digest, "sha256:aa")
+	}
 }
 
 func TestPlatformAssetMatchesRunningPlatform(t *testing.T) {
 	assets := []UpdateAsset{
 		{Name: "repotory-darwin-amd64.dmg", URL: "https://example.invalid/amd64.dmg"},
-		{Name: "repotory-darwin-arm64.dmg", URL: "https://example.invalid/arm64.dmg"},
+		{Name: "repotory-darwin-arm64.dmg", URL: "https://example.invalid/arm64.dmg", Size: 42, Digest: "sha256:bb"},
 		{Name: "repotory-linux-amd64.tar.gz", URL: "https://example.invalid/linux.tgz"},
 	}
 	want := "repotory-" + runtime.GOOS + "-" + runtime.GOARCH + "."
-	url := platformAssetURL(assets)
-	name := platformAssetName(assets)
-	if !strings.HasPrefix(name, want) {
-		t.Errorf("platformAssetName = %q, want a name starting with %q", name, want)
+	got := platformAsset(assets)
+	if !strings.HasPrefix(got.Name, want) {
+		t.Errorf("platformAsset name = %q, want a name starting with %q", got.Name, want)
 	}
-	if url == "" {
-		t.Errorf("platformAssetURL = %q for the running platform, want a URL", url)
+	if got.URL == "" {
+		t.Errorf("platformAsset URL = %q for the running platform, want a URL", got.URL)
+	}
+	if got.Size != 42 || got.Digest != "sha256:bb" {
+		t.Errorf("platformAsset must carry the size and digest, got size=%d digest=%q", got.Size, got.Digest)
 	}
 }
 
@@ -254,10 +262,7 @@ func TestPlatformAssetEmptyWhenReleaseHasNoneForThisPlatform(t *testing.T) {
 	assets := []UpdateAsset{
 		{Name: "repotory-plan9-amd64.zip", URL: "https://example.invalid/other.zip"},
 	}
-	if url := platformAssetURL(assets); url != "" {
-		t.Errorf("platformAssetURL = %q for a release without our platform, want empty", url)
-	}
-	if name := platformAssetName(assets); name != "" {
-		t.Errorf("platformAssetName = %q for a release without our platform, want empty", name)
+	if got := platformAsset(assets); got.URL != "" || got.Name != "" {
+		t.Errorf("platformAsset = %+v for a release without our platform, want the zero value", got)
 	}
 }

@@ -601,7 +601,7 @@ func (s *Service) AskAIWithEvidence(projectID int64, question string, budget Evi
 	ev := s.GatherEvidence(projectID, question, budget)
 	messages := s.evidenceMessages(projectID, question, ev.Render())
 
-	result, err := TestAIChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, messages, aiAskTimeout)
+	result, err := s.chatWithAudit(cfg, messages, aiAskTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +630,7 @@ func (s *Service) AskAIWithEvidenceStream(projectID int64, question string, budg
 	ev := s.GatherEvidence(projectID, question, budget)
 	messages := s.evidenceMessages(projectID, question, ev.Render())
 
-	reply, reason, err := streamChatWithTimeout(cfg.baseURL, cfg.model, cfg.apiKey, messages, aiAskTimeout, onDelta)
+	reply, reason, err := s.streamChatWithAudit(cfg, messages, aiAskTimeout, onDelta)
 	if err != nil {
 		return nil, err
 	}

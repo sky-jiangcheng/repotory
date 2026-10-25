@@ -14,6 +14,13 @@ vi.mock('../api/client', () => ({
   moveNote: vi.fn(),
   organizeNote: vi.fn(),
   getProjects: vi.fn(),
+  // The topic layer (schema v27): the section loads the project's topics and
+  // files notes under them.
+  listTopics: vi.fn(),
+  createTopic: vi.fn(),
+  updateTopic: vi.fn(),
+  deleteTopic: vi.fn(),
+  setNoteTopic: vi.fn(),
 }))
 
 const mockT = (_key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? _key
@@ -23,13 +30,14 @@ vi.mock('react-i18next', () => ({
 
 import NoteSection from './NoteSection'
 import {
-  listNotes, organizeNote, updateNoteFull,
+  listNotes, organizeNote, updateNoteFull, listTopics,
   type Note,
 } from '../api/client'
 
 const mockListNotes = vi.mocked(listNotes)
 const mockOrganize = vi.mocked(organizeNote)
 const mockUpdate = vi.mocked(updateNoteFull)
+const mockListTopics = vi.mocked(listTopics)
 
 const note: Note = {
   id: 345,
@@ -40,6 +48,7 @@ const note: Note = {
   kind: 'knowledge',
   pinned: false,
   source: 'manual',
+  topic_id: 0,
   sort_order: 0,
   created_at: '2026-10-20T00:00:00Z',
   updated_at: '2026-10-20T00:00:00Z',
@@ -49,6 +58,7 @@ beforeEach(() => {
   mockListNotes.mockReset().mockResolvedValue([note])
   mockOrganize.mockReset()
   mockUpdate.mockReset().mockResolvedValue(undefined)
+  mockListTopics.mockReset().mockResolvedValue([])
 })
 
 const flush = async () => { await waitFor(() => expect(mockListNotes).toHaveBeenCalled()) }

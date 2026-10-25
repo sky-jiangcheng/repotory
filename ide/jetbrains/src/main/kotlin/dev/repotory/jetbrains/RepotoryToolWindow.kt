@@ -257,7 +257,7 @@ class RepotoryPanel : JPanel(), Disposable {
         editButton.isEnabled = false
         editButton.addActionListener { editSelected() }
         newButton.isEnabled = false
-        newButton.addActionListener { newNoteUnderSelectedTopic() }
+        newButton.addActionListener { newNoteUnderSelectedProject() }
         organizeButton.isEnabled = false
         organizeButton.toolTipText = "Let the AI restructure this note — review the proposal, then save"
         organizeButton.addActionListener { organizeSelected() }
@@ -407,7 +407,7 @@ class RepotoryPanel : JPanel(), Disposable {
     /**
      * Edit the selected note. The hit is re-read (it carries only the
      * excerpt), the shared editor dialog opens, and an OK saves fields first
-     * and the 主题 (topic) change second — a failed move must not lose the
+     * and the project change second — a failed move must not lose the
      * edit the user just made.
      */
     private fun editSelected() {
@@ -440,8 +440,8 @@ class RepotoryPanel : JPanel(), Disposable {
         }
     }
 
-    /** New note under the SAME 主题 (project) as the selected note. */
-    private fun newNoteUnderSelectedTopic() {
+    /** New note under the SAME project as the selected note. */
+    private fun newNoteUnderSelectedProject() {
         val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
         val serverUrl = RepotorySettings.serverUrl()
         val app = ApplicationManager.getApplication()
@@ -523,7 +523,7 @@ class RepotoryPanel : JPanel(), Disposable {
     }
 
     /**
-     * Persists an edited draft: UpdateNoteFull, then MoveNote when the 主题
+     * Persists an edited draft: UpdateNoteFull, then MoveNote when the project
      * changed. The detail pane is repainted from the freshly stored note, so
      * what is on screen is what is in the database.
      */
@@ -574,7 +574,7 @@ class RepotoryPanel : JPanel(), Disposable {
             val fresh = repotoryClient.note(serverUrl, edited.id)
             app.invokeLater {
                 if (disposed) return@invokeLater
-                status.text = moveError?.let { "Fields saved, but the topic move failed: $it" }
+                status.text = moveError?.let { "Fields saved, but the project move failed: $it" }
                     ?: "Saved note #${edited.id}"
                 if (fresh != null) {
                     detail.text = noteHtml(fresh)

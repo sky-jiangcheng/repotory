@@ -36,6 +36,13 @@ type Service struct {
 	// only by tests so they never write into the real user data directory.
 	backupDir string
 
+	// auditSurface names the surface this process serves ("mcp", "http",
+	// "desktop"), written once at startup by each entry point and read when an
+	// AI call is audited (ADR-0030). Each binary IS one surface, so it is
+	// declared per process rather than passed per call — there is no moment at
+	// which one process serves two of them. An empty value reads as "unknown".
+	auditSurface string
+
 	// remoteDialer builds the object-store client for one L2 upload (ADR-0025
 	// L2). Nil at runtime — the real minio dialer runs — and overridden by
 	// tests so no test ever touches a network.
@@ -104,6 +111,11 @@ type Service struct {
 	syncMu      sync.Mutex
 	syncLastRun time.Time
 	syncLastErr error
+
+	// updates owns the single in-flight update download (see
+	// update_download.go). It is state, not a dependency, so it lives here
+	// rather than being threaded through every constructor.
+	updates *updateDownloader
 }
 
 // New creates a Service with production dependencies: the local git CLI
@@ -118,6 +130,7 @@ func NewWithDeps(database *sql.DB, provider git.Provider, runtime *pluginruntime
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	s := &Service{db: database, git: provider, rt: runtime, guser: gitUser, bgCtx: bgCtx, bgCancel: bgCancel}
 	s.roDB = roDatabase
+	s.updates = newUpdateDownloader()
 	return s
 }
 

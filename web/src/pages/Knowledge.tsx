@@ -21,9 +21,9 @@ function KnowledgePage() {
   const [pendingOrganize, setPendingOrganize] = useState(0)
   const {
     notes, tags, loading, error, query, hits, kindFilter, activeTag,
-    pinnedOnly, importing, message, newNotePicker, askMode, exportingId,
-    filtered, projectNames, recentNotes,
-    setKindFilter, setActiveTag, setPinnedOnly, setNewNotePicker,
+    activeTopic, pinnedOnly, importing, message, newNotePicker, askMode, exportingId,
+    filtered, projectNames, recentNotes, topicCounts,
+    setKindFilter, setActiveTag, setActiveTopic, setPinnedOnly, setNewNotePicker,
     handleSearchInput, handlePin, handleExport, handleImport, fetchAll, flashMessage,
   } = useKnowledgePage()
 
@@ -208,6 +208,30 @@ function KnowledgePage() {
                   onClick={() => setActiveTag(activeTag === tg ? null : tg)}
                 >
                   #{tg}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* The topic layer seen from the hub: one chip per subject that
+              actually has notes here, with its count. Clicking narrows the
+              list to that subject. */}
+          {topicCounts.length > 0 && (
+            <div className={s.tagChips}>
+              <button
+                className={`${s.tagChip} ${activeTopic === null ? s.tagChipActive : ''}`}
+                onClick={() => setActiveTopic(null)}
+              >
+                {t('knowledge.allTopics')}
+              </button>
+              {topicCounts.map(([name, count]) => (
+                <button
+                  key={name}
+                  className={`${s.tagChip} ${activeTopic === name ? s.tagChipActive : ''}`}
+                  onClick={() => setActiveTopic(activeTopic === name ? null : name)}
+                  title={t('knowledge.topicFilterHint', { name })}
+                >
+                  {name} ({count})
                 </button>
               ))}
             </div>
