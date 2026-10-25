@@ -334,9 +334,43 @@ jobs:
           path: ide/jetbrains/build/distributions/*.zip
           if-no-files-found: error
 
+  # The WorkBuddy skill package. It is platform-independent (markdown plus one
+  # python script), so unlike the binaries it is packaged ONCE per release
+  # rather than per matrix target. The .skill file is a zip whose single
+  # top-level directory is the skill name — the loader rejects a package
+  # whose root does not match, which is why the archive is built from the
+  # parent of skill/repotory rather than from skill/ itself.
+  skill-package:
+    name: Package WorkBuddy skill
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Package skill
+        run: |
+          set -euo pipefail
+          # The query script is invoked by absolute path from SKILL.md, so it
+          # must stay executable inside the archive.
+          chmod +x skill/repotory/scripts/repotory-query.py
+          cd skill
+          zip -r ../repotory.skill repotory
+          cd ..
+          unzip -l repotory.skill
+
+      - name: Upload skill artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: skill-package
+          path: repotory.skill
+          if-no-files-found: error
+
   create-release:
     name: Create GitHub Release
-    needs: [build, vscode-extension, jetbrains-plugin]
+    needs: [build, vscode-extension, jetbrains-plugin, skill-package]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -344,7 +378,7 @@ jobs:
       - name: Download all bundles
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: '{bundle-*,vsix-extension,jetbrains-plugin}'
+          pattern: '{bundle-*,vsix-extension,jetbrains-plugin,skill-package}'
           merge-multiple: true
 
       - name: List release files
@@ -374,6 +408,7 @@ jobs:
             *.vsix
             *.zip
             *.tar.gz
+            *.skill
             SHA256SUMS
           generate_release_notes: true
 

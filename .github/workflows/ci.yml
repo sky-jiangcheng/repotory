@@ -202,6 +202,29 @@ jobs:
       - name: Check interpolation syntax
         run: node scripts/check-i18n-interpolation.mjs
 
+  # The WorkBuddy skill package ships in the release, so three of its failure
+  # modes would reach users without any other job noticing: a malformed
+  # frontmatter stops the skill from being discovered at all, a stale schema
+  # column kills the query script on the user's machine, and a layout change
+  # makes the loader reject the package. The check builds a throwaway SQLite
+  # database and runs every subcommand against it — it never touches the real
+  # knowledge base (CI has none anyway).
+  skill-package:
+    name: WorkBuddy skill package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+
+      - name: Check skill package
+        run: node scripts/check-skill-package.mjs
+
   # --------------------------------------------------------------- Web ----
   web-test:
     name: Web typecheck, test & build

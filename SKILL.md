@@ -143,4 +143,15 @@ Or in a project-level `.mcp.json` / user-level MCP config (Cursor: Settings → 
 - **Markdown**: Mermaid, KaTeX, callouts, highlight.js
 - **Plugins**: yaegi in-process Go scripts for knowledge source import (see docs/plugins/overview.md)
 
+## Skill Packages
+
+This file is the platform-agnostic capability card. Hosts with a skill-package mechanism get a packaged version instead — `skill/repotory/` in this repo, shipped as `repotory.skill` with each release:
+
+| Host | Install |
+|------|---------|
+| WorkBuddy | `unzip repotory.skill -d ~/.workbuddy/skills/`, then trust the `repotory` MCP server in the connector manager |
+| Any host that reads a skill directory | Copy `skill/repotory/` into the host's skills directory |
+
+The package adds what this card cannot: a three-tier fallback (MCP → HTTP RPC → read-only SQLite) so an agent still reaches the knowledge base when no MCP client is wired up, plus the explicit list of bindings that are **desktop-only on purpose** — creating / renaming / deleting a topic, filing a note under a topic, merging projects, compiling and approving wiki pages. Those are organizing and review acts, and they belong to a human.
+
 Docs: <https://sky-jiangcheng.github.io/repotory/> · Repo: <https://github.com/sky-jiangcheng/repotory>
