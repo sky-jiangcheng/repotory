@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -137,3 +140,79 @@ func TestRPCUnsupportedSignature(t *testing.T) {
 }
 
 func (fakeBound) BadSignature() (string, int) { return "x", 1 }
+
+// The blocklist is the HTTP bridge's policy, and it has two failure modes
+// that no other test caught:
+//
+//   - An entry ADDED without thinking. The browser/standalone runtime reaches
+//     every binding through this bridge, so blocking a method the frontend
+//     calls breaks that runtime in production while the desktop app keeps
+//     working (it goes through Wails, not /api/rpc). The two halves then
+//     disagree about which capabilities exist.
+//
+//   - An entry REMOVED. Deleting "Shutdown" from the list would let one POST
+//     close the live database. TestRPCBlocksLifecycleMethods covers the
+//     lifecycle three by name; this pins the list's SHAPE, so a stray entry
+//     or a silently dropped one fails.
+//
+// The exact set is therefore asserted in both directions, and the frontend's
+// transport calls are checked against it.
+func TestRPCBlocklistIsExactlyTheReviewedSet(t *testing.T) {
+	want := map[string]bool{
+		"Startup":        true,
+		"Shutdown":       true,
+		"Service":        true,
+		"StartAskStream": true,
+	}
+	got := map[string]bool{}
+	for name := range rpcBlockedMethods {
+		got[name] = true
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%s must stay on the RPC blocklist", name)
+		}
+	}
+	for name := range got {
+		if !want[name] {
+			t.Errorf("%s is on the RPC blocklist but is not part of the reviewed set — "+
+				"blocking a method breaks the browser runtime if the frontend calls it, "+
+				"and every extra entry needs a stated reason", name)
+		}
+	}
+}
+
+// The frontend must not call a blocked method. This is the check that turns
+// "someone added a blocklist entry" from a production-only bug into a build
+// failure.
+//
+// The frontend's method name is a plain string on the TS side, so TypeScript
+// cannot know the bridge refuses it — the call would simply 403 at runtime.
+var frontendMethodCall = regexp.MustCompile(`method:\s*'([A-Za-z][A-Za-z0-9_]*)'`)
+
+// frontendInitBlock matches the RequestInit the transport carries alongside
+// the RPC method (`init: { method: 'POST' }`) — its `method` key is an HTTP
+// verb, not a binding name.
+var frontendInitBlock = regexp.MustCompile(`init:\s*\{[^}]*\}`)
+
+func TestFrontendCallsNoBlockedRPCMethod(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "api", "endpoints.ts"))
+	if err != nil {
+		t.Fatalf("read frontend endpoints: %v", err)
+	}
+	src := frontendInitBlock.ReplaceAllString(string(raw), "")
+
+	seen := map[string]bool{}
+	for _, m := range frontendMethodCall.FindAllStringSubmatch(src, -1) {
+		seen[m[1]] = true
+	}
+	if len(seen) < 50 {
+		t.Fatalf("extracted only %d frontend method calls — the extractor is stale, update it", len(seen))
+	}
+	for name := range seen {
+		if rpcBlockedMethods[name] {
+			t.Errorf("the frontend calls %q, which /api/rpc refuses with 403 — "+
+				"the browser runtime would break at call time with no type error on either side", name)
+		}
+	}
+}
