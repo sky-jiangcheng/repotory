@@ -1,0 +1,114 @@
+name: Verify manifests
+
+# There is no official Scoop equivalent of `brew test`, so this does the two
+# checks that actually matter for a bucket:
+#
+#   1. The manifest is valid JSON with the fields Scoop requires.
+#   2. Its `hash` matches the digest GitHub reports for the release asset the
+#      manifest's `url` points at.
+#
+# (2) is the one that catches the failure mode that actually happens: a manifest
+# generated from a local build of the same version, whose binary is a different
+# file from the one the release serves. Every user install then fails on
+# checksum verification, and nothing in the bucket would otherwise notice.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # A release can be re-uploaded or a tag can move out from under a manifest,
+    # and neither event touches this repository. Re-check daily.
+    - cron: "23 4 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify ${{ matrix.manifest }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - manifest: repotory.json
+          - manifest: repotory-mcp.json
+          # The pre-rename aliases serve the SAME artifacts, so the digest
+          # check must hold for them too — otherwise the alias is free to rot
+          # into a version whose hash no longer matches.
+          - manifest: reponest.json
+          - manifest: reponest-mcp.json
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate manifest shape
+        run: |
+          set -euo pipefail
+          f="bucket/${{ matrix.manifest }}"
+          python3 - "$f" <<'PY'
+          import json, re, sys
+          path = sys.argv[1]
+          m = json.load(open(path))
+          required = ["version", "description", "homepage", "license", "url", "hash", "bin"]
+          missing = [k for k in required if not m.get(k)]
+          if missing:
+              sys.exit(f"{path}: missing required field(s): {', '.join(missing)}")
+          if not re.fullmatch(r"[0-9a-fA-F]{64}", m["hash"].removeprefix("sha256:")):
+              sys.exit(f"{path}: hash is not a 64-char hex digest: {m['hash']!r}")
+          if not m["url"].startswith("https://github.com/"):
+              sys.exit(f"{path}: url must be an https GitHub release URL, got {m['url']}")
+          # A trailing v$version is what autoupdate rewrites; the top-level url
+          # must be pinned, or every install re-resolves to "latest".
+          if "$version" in m["url"]:
+              sys.exit(f"{path}: top-level url must be pinned to a tag, not $version")
+          print(f"  {path}: shape OK, version {m['version']}")
+          PY
+
+      - name: Verify hash against the published release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          f="bucket/${{ matrix.manifest }}"
+          url="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$f")"
+          want="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['hash'].removeprefix('sha256:'))" "$f")"
+
+          # .../<owner>/<repo>/releases/download/<tag>/<asset>
+          # A regex rather than cut: "releases/download" is two path segments,
+          # and off-by-one field indexing silently produces the wrong tag.
+          if ! parsed="$(printf '%s' "$url" | sed -nE 's#^https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/(.+)$#\1 \2 \3#p')"; then
+            echo "::error::cannot parse url: $url"
+            exit 1
+          fi
+          [ -n "$parsed" ] || { echo "::error::cannot parse url: $url"; exit 1; }
+          # shellcheck disable=SC2086
+          set -- $parsed
+          repo="$1"; tag="$2"; asset="$3"
+
+          echo "  repo=$repo tag=$tag asset=$asset"
+          # `|| true` on purpose: a missing tag makes `gh api` exit non-zero, and
+          # under `set -o pipefail` that would abort the step with gh's own error
+          # before the check below could print which manifest and asset were at
+          # fault. Let it return empty and be reported as a missing asset.
+          got="$(gh api "repos/$repo/releases/tags/$tag" \
+                   --jq ".assets[] | select(.name == \"$asset\") | .digest" \
+                   2>/dev/null | head -1 | sed 's/^sha256://' || true)"
+
+          if [ -z "$got" ]; then
+            echo "::error::$f: release '$tag' in $repo has no asset named '$asset'"
+            echo "::error::the manifest points at something that does not exist"
+            exit 1
+          fi
+          if [ "$got" != "$want" ]; then
+            echo "::error::hash mismatch for $asset"
+            echo "::error::  manifest: $want"
+            echo "::error::  release  : $got"
+            echo "::error::run scripts/update-manifests.sh --fill-sha256 in the main repo"
+            exit 1
+          fi
+          echo "  hash matches the published asset ✓"

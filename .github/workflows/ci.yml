@@ -122,6 +122,34 @@ jobs:
           fi
           echo "gofmt clean"
 
+  # ------------------------------------------------------------ Packaging ----
+  # The Homebrew tap and the Scoop bucket are published from packaging/ in this
+  # repository, so these manifests are shipped artifacts and need the same
+  # treatment as any other: a defect in them must fail HERE, not in a user's
+  # terminal after a release.
+  #
+  # Two real defects were sitting in packaging/ unnoticed until the tap
+  # actually received the files on 2026-10-26:
+  #
+  #   - the casks carried a `license "MIT"` stanza, which is a FORMULA method;
+  #     `brew install --cask` rejects the whole definition with
+  #     "undefined method 'license' for Cask".
+  #   - the Scoop alias manifests carried `#` comment lines, which JSON cannot
+  #     parse — the bucket's CI rejected them as malformed.
+  #
+  # Both are cheap to check on Linux (no Homebrew needed), so they are checked
+  # here, before scripts/sync-packaging.sh pushes anything.
+  packaging-manifests:
+    name: Package manager manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check the manifests
+        run: ./scripts/check-packaging-manifests.sh
+
   # ------------------------------------------------------------- Icons ----
   # The brand mark lives once (build/icon.svg); every shipped icon — the
   # Wails appicon, the Windows .ico, the VS Code extension icon and the docs

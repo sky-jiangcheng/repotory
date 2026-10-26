@@ -16,8 +16,89 @@ permissions:
   contents: write
 
 jobs:
+  # The release must not ship a commit whose CI was red.
+  #
+  # This gate exists because the release workflow had no dependency on CI at
+  # all: it triggered on the tag push and published whatever it built. v2.14.0
+  # proved the hole is real — CI FAILED on the tagged commit and the release
+  # workflow still published a formal version. The failure was caught later
+  # (commit 2c2b8f1 fixed a checkout SHA and a test that hardcoded
+  # darwin/arm64), but by then the bad build was already out.
+  #
+  # The gate polls rather than samples: the tagged commit's CI run starts when
+  # the branch push lands, which can be moments before the tag lands, so a
+  # single sample would report "no CI run yet" and fail the release for the
+  # wrong reason.
+  ci-gate:
+    name: Require a green CI run on the release commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve the release commit
+        id: resolve
+        env:
+          TAG: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "${REF#refs/tags/}" != "$REF" ]; then
+            # An ANNOTATED tag's object SHA is the tag object, not the commit.
+            # The ^{} pattern dereferences it to the commit the tag points at.
+            SHA=$(git ls-remote "https://github.com/${REPO}.git" "refs/tags/${TAG}^{}" | awk 'NR==1{print $1}')
+            if [ -z "$SHA" ]; then
+              SHA=$(git ls-remote "https://github.com/${REPO}.git" "refs/tags/${TAG}" | awk 'NR==1{print $1}')
+            fi
+          else
+            SHA="${GITHUB_SHA}"
+          fi
+          if [ -z "$SHA" ]; then
+            echo "::error::could not resolve the release commit"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "release commit: $SHA"
+
+      - name: Require CI to be green on that commit
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          CI_WAIT_SECONDS: 1800
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + CI_WAIT_SECONDS ))
+          while :; do
+            runs=$(gh api "repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=100" \
+                   --jq '.workflow_runs[] | select(.name == "CI") | "\(.status) \(.conclusion)"' || true)
+            if [ -n "$runs" ] && echo "$runs" | grep -q '^completed failure$'; then
+              echo "::error::CI FAILED on ${SHA} — refusing to publish a release from a red build"
+              echo "$runs"
+              gh api "repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=100" \
+                 --jq '.workflow_runs[] | select(.name == "CI") | .html_url' || true
+              exit 1
+            fi
+            if [ -n "$runs" ] && echo "$runs" | grep -q '^completed success$'; then
+              echo "CI green on ${SHA}"
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::no successful CI run on ${SHA} after ${CI_WAIT_SECONDS}s — refusing to publish"
+              [ -n "$runs" ] && echo "$runs"
+              exit 1
+            fi
+            echo "waiting for CI on ${SHA} (runs seen: ${runs:-none})..."
+            sleep 20
+          done
+
   build:
     name: ${{ matrix.target }}
+    needs: ci-gate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -189,49 +270,68 @@ jobs:
           mkdir -p release
 
           # Wails produces .app bundle in build/bin/
+          #
+          # A missing .app is a BUILD FAILURE, not something to skip past. The
+          # old code guarded the whole packaging block with `if [ -n "$APP" ]`,
+          # so a Wails run that produced no bundle silently published a release
+          # with the mcp/server archives but no app: the Homebrew cask and the
+          # in-app updater both point at the .dmg, and neither 404s until a
+          # user tries to install. The upload step's `if-no-files-found: error`
+          # does not catch it — the directory is not empty, the dmg is just
+          # not in it.
           APP=$(ls -d build/bin/*.app 2>/dev/null | head -1)
-          APP_NAME=$(basename "$APP" .app)
+          if [ -z "$APP" ]; then
+            echo "::error::Wails produced no .app bundle in build/bin/ — refusing to publish a release without the macOS download"
+            echo "build/bin contents:"
+            ls -la build/bin/ || true
+            exit 1
+          fi
+          APP_NAME=$(basename "$APP")
+          APP_PATH="$APP"
 
-          if [ -n "$APP" ]; then
-            APP_NAME=$(basename "$APP")
-            APP_PATH="$APP"
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "Signing $APP_NAME..."
+            echo "$APPLE_CERTIFICATE" | base64 -d -o /tmp/cert.p12
+            security create-keychain -p "github-actions" /tmp/signing.keychain
+            security import /tmp/cert.p12 -k /tmp/signing.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security list-keychains -s /tmp/signing.keychain
+            security default-keychain -s /tmp/signing.keychain
+            security unlock-keychain -p "github-actions" /tmp/signing.keychain
+            codesign --deep --force --sign "$APPLE_TEAM_ID" --options runtime "$APP_PATH"
+            echo "Signed successfully"
+          fi
 
-            if [ -n "$APPLE_CERTIFICATE" ]; then
-              echo "Signing $APP_NAME..."
-              echo "$APPLE_CERTIFICATE" | base64 -d -o /tmp/cert.p12
-              security create-keychain -p "github-actions" /tmp/signing.keychain
-              security import /tmp/cert.p12 -k /tmp/signing.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-              security list-keychains -s /tmp/signing.keychain
-              security default-keychain -s /tmp/signing.keychain
-              security unlock-keychain -p "github-actions" /tmp/signing.keychain
-              codesign --deep --force --sign "$APPLE_TEAM_ID" --options runtime "$APP_PATH"
-              echo "Signed successfully"
-            fi
+          STAGING=$(mktemp -d)
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          mkdir -p "$STAGING/.background"
+          sips -s format png "build/dmg-background.svg" --out "$STAGING/.background/background.png"
+          pip install create-dmg 2>/dev/null || brew install create-dmg 2>/dev/null || curl -sL https://github.com/create-dmg/create-dmg/archive/refs/tags/v1.0.0.tar.gz | tar -xz && cd create-dmg-1.0.0 && sudo make install && cd ..
+          create-dmg \
+            --volname "$APP_NAME" \
+            --window-size 600 400 \
+            --icon-size 80 \
+            --icon "$APP_NAME" 100 280 \
+            --hide-extension "$APP_NAME" \
+            --app-drop-link 400 280 \
+            --background "$STAGING/.background/background.png" \
+            --format UDZO \
+            "release/repotory-${{ matrix.target }}.dmg" \
+            "$STAGING/"
+          rm -rf "$STAGING"
 
-            STAGING=$(mktemp -d)
-            cp -R "$APP" "$STAGING/"
-            ln -s /Applications "$STAGING/Applications"
-            mkdir -p "$STAGING/.background"
-            sips -s format png "build/dmg-background.svg" --out "$STAGING/.background/background.png"
-            pip install create-dmg 2>/dev/null || brew install create-dmg 2>/dev/null || curl -sL https://github.com/create-dmg/create-dmg/archive/refs/tags/v1.0.0.tar.gz | tar -xz && cd create-dmg-1.0.0 && sudo make install && cd ..
-            create-dmg \
-              --volname "$APP_NAME" \
-              --window-size 600 400 \
-              --icon-size 80 \
-              --icon "$APP_NAME" 100 280 \
-              --hide-extension "$APP_NAME" \
-              --app-drop-link 400 280 \
-              --background "$STAGING/.background/background.png" \
-              --format UDZO \
-              "release/repotory-${{ matrix.target }}.dmg" \
-              "$STAGING/"
-            rm -rf "$STAGING"
+          # Belt and braces: the .dmg is the artifact every installer points
+          # at, so its absence must fail the job even if create-dmg exited 0.
+          if [ ! -f "release/repotory-${{ matrix.target }}.dmg" ]; then
+            echo "::error::release/repotory-${{ matrix.target }}.dmg was not produced"
+            ls -la release/ || true
+            exit 1
+          fi
 
-            if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_ID" ]; then
-              echo "Notarizing DMG..."
-              xcrun notarytool submit "release/repotory-${{ matrix.target }}.dmg" --keychain-profile "github-actions" --wait 2>&1 || true
-              xcrun stapler staple "release/repotory-${{ matrix.target }}.dmg" 2>&1 || true
-            fi
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_ID" ]; then
+            echo "Notarizing DMG..."
+            xcrun notarytool submit "release/repotory-${{ matrix.target }}.dmg" --keychain-profile "github-actions" --wait 2>&1 || true
+            xcrun stapler staple "release/repotory-${{ matrix.target }}.dmg" 2>&1 || true
           fi
 
           # MCP server: separate archive, same release, no codesign/notary impact
@@ -245,16 +345,22 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          set -e
           mkdir -p release
-          if [ -f "build/bin/repotory.exe" ]; then
-            powershell Compress-Archive -Path "build/bin/repotory.exe" -DestinationPath "release/repotory-windows-amd64.zip"
-          fi
-          if [ -f "build/mcp/repotory-mcp.exe" ]; then
-            powershell Compress-Archive -Path "build/mcp/repotory-mcp.exe" -DestinationPath "release/repotory-mcp-windows-amd64.zip"
-          fi
-          if [ -f "build/server/repotory-server.exe" ]; then
-            powershell Compress-Archive -Path "build/server/repotory-server.exe","build/server/web" -DestinationPath "release/repotory-server-windows-amd64.zip"
-          fi
+          # Same rule as the macOS job: a missing binary is a build failure.
+          # Skipping it publishes a release whose Windows download 404s, and
+          # the artifact upload's if-no-files-found:error does not catch it
+          # because the directory is not empty.
+          for f in build/bin/repotory.exe build/mcp/repotory-mcp.exe build/server/repotory-server.exe; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f was not produced — refusing to publish a release with a missing Windows artifact"
+              ls -la build/bin build/mcp build/server 2>/dev/null || true
+              exit 1
+            fi
+          done
+          powershell Compress-Archive -Path "build/bin/repotory.exe" -DestinationPath "release/repotory-windows-amd64.zip"
+          powershell Compress-Archive -Path "build/mcp/repotory-mcp.exe" -DestinationPath "release/repotory-mcp-windows-amd64.zip"
+          powershell Compress-Archive -Path "build/server/repotory-server.exe","build/server/web" -DestinationPath "release/repotory-server-windows-amd64.zip"
           echo "RELEASE_DIR=release" >> "$GITHUB_ENV"
 
       - name: Upload release artifacts
@@ -384,6 +490,47 @@ jobs:
       - name: List release files
         run: ls -lhR
 
+      - name: Assert every expected asset is present
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF#refs/tags/v}"
+          # The release is the only thing the outside world can reach: the
+          # Homebrew cask, the Scoop manifest, the in-app updater and the IDE
+          # marketplaces all point at these files by name. A missing asset is
+          # a 404 for a user, and softprops/action-gh-release's glob list
+          # matches whatever happens to be there — a missing file simply does
+          # not match, and the release is published anyway.
+          #
+          # This is the last line of defence for every platform at once; the
+          # per-platform packaging jobs fail on their own missing binaries
+          # earlier. A release that cannot be installed must not be tagged as
+          # published.
+          missing=()
+          for t in linux-amd64 darwin-amd64 darwin-arm64 windows-amd64; do
+            # The app bundle and the companion archives do NOT share an
+            # extension: the macOS app is a .dmg while its mcp/server archives
+            # are tarballs; only Windows uses .zip for all three.
+            case "$t" in
+              linux-*)   app="repotory-${t}.tar.gz"; arch="tar.gz" ;;
+              darwin-*)  app="repotory-${t}.dmg";     arch="tar.gz" ;;
+              windows-*) app="repotory-${t}.zip";     arch="zip" ;;
+            esac
+            [ -f "$app" ] || missing+=("$app")
+            for f in "repotory-mcp-${t}.${arch}" "repotory-server-${t}.${arch}"; do
+              [ -f "$f" ] || missing+=("$f")
+            done
+          done
+          for f in "repotory-vscode-${VER}.vsix" "repotory-jetbrains-${VER}.zip" "repotory.skill"; do
+            [ -f "$f" ] || missing+=("$f")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::release assets are missing: ${missing[*]}"
+            echo "refusing to publish a release that cannot be installed"
+            ls -lh . || true
+            exit 1
+          fi
+          echo "all expected assets present for ${VER}"
+
       - name: Generate SHA256SUMS
         run: |
           set -euo pipefail
@@ -411,6 +558,59 @@ jobs:
             *.skill
             SHA256SUMS
           generate_release_notes: true
+
+  # Push the manifests to the external tap and bucket.
+  #
+  # This job exists because packaging/README.md claimed the tap and the bucket
+  # "are copied here on every release" — and nothing did it. The manifests were
+  # updated in THIS repository (fill-sha256 commits them back to master) and
+  # then went nowhere: the tap still served the pre-rename RepoNest v1.8.0
+  # manifests while the product shipped v2.14.0, so `brew install --cask
+  # repotory` did not exist at all.
+  #
+  # scripts/sync-packaging.sh is the missing half. It runs after fill-sha256,
+  # which is what puts the real digests in the manifests — syncing before the
+  # digests are filled would publish placeholders, and Homebrew and Scoop both
+  # hard-fail on a digest mismatch.
+  sync-packaging:
+    name: Sync manifests to the tap and bucket
+    needs: fill-sha256
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    env:
+      # A PAT with write access to the tap and the bucket. The workflow token
+      # of THIS repository cannot write to them, and cannot update
+      # .github/workflows/* at all (that needs the `workflow` scope). Kept at
+      # job level so the steps' `if` can see whether it is set.
+      PACKAGING_PUSH_TOKEN: ${{ secrets.PACKAGING_PUSH_TOKEN }}
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The manifests live on master, not on the tag: fill-sha256 pushes
+          # the filled digests back to master, and that is the state the tap
+          # must receive.
+          ref: master
+
+      - name: Guard the manifests before publishing them
+        run: ./scripts/check-packaging-manifests.sh
+
+      - name: Sync the Homebrew tap
+        if: env.PACKAGING_PUSH_TOKEN != ''
+        run: ./scripts/sync-packaging.sh homebrew --push
+
+      - name: Sync the Scoop bucket
+        if: env.PACKAGING_PUSH_TOKEN != ''
+        run: ./scripts/sync-packaging.sh scoop --push
+
+      - name: Report that the sync was skipped
+        if: env.PACKAGING_PUSH_TOKEN == ''
+        run: |
+          echo "::notice::PACKAGING_PUSH_TOKEN is not set — the tap and the bucket were NOT updated."
+          echo "::notice::Run scripts/sync-packaging.sh <homebrew|scoop> --push with a token that"
+          echo "::notice::has write access to sky-jiangcheng/homebrew-repo and sky-jiangcheng/scoop-repo."
 
   # Publish the extension to the VS Code Marketplace with the same version
   # number as the product release. Requires the VSCE_PAT secret (a Personal

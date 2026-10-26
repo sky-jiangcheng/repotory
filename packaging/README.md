@@ -79,8 +79,28 @@ carrying its digest would reject every real download.
 The tap keeps its own CI (`brew tap` → `brew install` → verify the installed
 layout) so a broken manifest fails there rather than in a user's terminal. The
 bucket validates each manifest's `hash` against the digest GitHub reports for
-the release asset. Neither repository should be edited by hand: these files are
-copied here on every release.
+the release asset.
+
+**This directory is the source of truth for both repositories, and the copy is
+automated.** `scripts/sync-packaging.sh` pushes these manifests — and the tap's
+and the bucket's own CI definitions, kept under `packaging/homebrew/` and
+`packaging/scoop/` — to the two repositories; `release.yml`'s `sync-packaging`
+job runs it after every release. Do not edit the tap or the bucket by hand:
+the next release overwrites them.
+
+That automation is recent. Until it existed, this paragraph claimed the copy
+happened "on every release" and nothing did it — the tap served the pre-rename
+RepoNest v1.8.0 manifests while the product shipped v2.14.0, so
+`brew install --cask repotory` did not exist at all. Two defects were sitting
+in these files the whole time, and only the tap's CI surfaced them once the
+manifests actually reached it:
+
+- the casks carried a `license "MIT"` stanza, which is a **Formula** method —
+  `brew install --cask` rejects the whole definition;
+- the Scoop alias manifests carried `#` comment lines, which JSON cannot parse.
+
+`scripts/check-packaging-manifests.sh` guards both classes here, before
+anything is pushed.
 
 ## Trying a manifest before publishing
 

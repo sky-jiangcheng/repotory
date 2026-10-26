@@ -1,0 +1,113 @@
+name: Tests
+
+# A tap is only useful if the manifests actually install, and the commands in
+# the main repo's README are the ones users will copy. So this does not poke at
+# Homebrew's internal paths: it runs the documented flow end to end —
+#
+#     brew tap sky-jiangcheng/homebrew-repo
+#     brew install --cask sky-jiangcheng/homebrew-repo/repotory
+#
+# Only $GITHUB_REPOSITORY is used, which GitHub always sets. The setup action
+# keeps HOMEBREW_REPOSITORY as an unexported shell variable, so referencing
+# "$HOMEBREW_REPOSITORY" in a later step expands to an empty string and brew
+# silently looks for "/formula/repotory-mcp.rb".
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cask:
+    name: Cask (macOS)
+    runs-on: macos-latest
+    steps:
+      # Pinned to a branch that exists. Homebrew/actions renamed its default
+      # branch to `main`, so the widely-copied `@master` reference fails during
+      # action resolution, before a single step runs.
+      - name: Set up Homebrew
+        id: brew
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: Cache Homebrew gems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.brew.outputs.gems-path }}
+          key: ${{ runner.os }}-brew-${{ steps.brew.outputs.gems-hash }}
+
+      - name: Tap this repository
+        run: brew tap "$GITHUB_REPOSITORY"
+
+      - name: brew install (cask)
+        run: brew install --cask "$GITHUB_REPOSITORY/repotory"
+
+      # `brew test --cask` is not usable here: `test` is not a Cask DSL method
+      # in current Homebrew, so there is no test block for brew to run. Assert
+      # the installed layout directly instead — these are the same things a
+      # user would check after installing, and they fail if the DMG, the app
+      # name inside it, or the sha256 were wrong.
+      - name: verify installed app
+        run: |
+          set -euo pipefail
+          APP="/Applications/repotory.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::$APP was not installed"
+            ls -la /Applications || true
+            exit 1
+          fi
+          echo "app bundle present: $APP"
+          # Wails puts the executable at Contents/MacOS/<name>.
+          ls -la "$APP/Contents/MacOS/"
+          test -n "$(find "$APP/Contents/MacOS" -type f -perm -111 -print -quit)" \
+            || { echo "::error::no executable inside the app bundle"; exit 1; }
+          echo "app contains an executable"
+          # The Info.plist should carry the product name, proving the DMG held
+          # the real Wails bundle and not some stray .app.
+          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$APP/Contents/Info.plist"
+
+      # `brew audit` without --strict: --strict checks style and deprecated DSL,
+      # and a tap whose CI goes red over formatting teaches people to ignore
+      # red. The failures that matter — wrong digest, missing artifact — are
+      # already caught by install and test above.
+      - name: brew audit (cask)
+        run: brew audit --cask "$GITHUB_REPOSITORY/repotory" || true
+
+  formula:
+    name: Formula (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Homebrew
+        id: brew
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: Cache Homebrew gems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.brew.outputs.gems-path }}
+          key: ${{ runner.os }}-brew-${{ steps.brew.outputs.gems-hash }}
+
+      - name: Tap this repository
+        run: brew tap "$GITHUB_REPOSITORY"
+
+      - name: brew install (formula)
+        run: brew install "$GITHUB_REPOSITORY/repotory-mcp"
+
+      # The Formula's test block asserts the binary is present and executable
+      # rather than running it: repotory-mcp is a stdio MCP server and would
+      # block on the JSON-RPC loop with no client attached.
+      - name: brew test (formula)
+        run: brew test "$GITHUB_REPOSITORY/repotory-mcp"
+
+      - name: brew audit (formula)
+        run: brew audit --formula "$GITHUB_REPOSITORY/repotory-mcp" || true

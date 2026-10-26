@@ -10,7 +10,9 @@ cask "repotory" do
   name "Repotory"
   desc "Local-first code project context base"
   homepage "https://github.com/sky-jiangcheng/repotory"
-  license "MIT"
+  # NOTE: no `license` stanza — `license` is a FORMULA method, not a Cask
+  # one. `brew install --cask` rejects the whole definition with
+  # "undefined method 'license' for Cask". The license is MIT; see README.
 
   on_arm do
     url "https://github.com/sky-jiangcheng/repotory/releases/download/v#{version}/repotory-darwin-arm64.dmg"
@@ -22,7 +24,13 @@ cask "repotory" do
     sha256 "666a9acdbaccf4af003f04716e017ca5e74c293dec5b79189ea8dc1c8c810e21"
   end
 
-  app "Repotory.app"
+  # The bundle inside the DMG is named after wails.json's `outputfilename`
+  # ("repotory"), NOT after the productName ("Repotory"): the build produces
+  # build/bin/repotory.app and create-dmg ships that bundle as-is. macOS
+  # volumes are case-insensitive by default so the old spelling resolved
+  # anyway, but a case-sensitive volume would not find it — and the tap's
+  # tests.yml asserts the installed path, so the two must agree exactly.
+  app "repotory.app"
 
   # Application Support and Logs paths come from internal/platform; they are
   # where GetDbPath() and GetLogPath() point on macOS. A bundle-identifier
