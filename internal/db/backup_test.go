@@ -142,3 +142,82 @@ func TestCreateBackupFailureCleansPartialFile(t *testing.T) {
 		t.Fatalf("partial snapshot must be cleaned after failure, stat err=%v", err)
 	}
 }
+
+// TestCreateBackupRebuildsCorruptedSnapshot pins the fix for "the file for
+// today exists, therefore today's backup succeeded".
+//
+// A VACUUM INTO killed by SIGKILL leaves a half-written file behind. The old
+// code returned that path as the day's backup, and every later tick of the
+// day saw the same file and skipped — so a broken snapshot was reported as a
+// healthy one until the next calendar day. A backup that exists but cannot be
+// restored is worse than a missing one: it silences the "I have no backup"
+// signal.
+func TestCreateBackupRebuildsCorruptedSnapshot(t *testing.T) {
+	database := openSourceDB(t)
+	dir := t.TempDir()
+	day := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+
+	path, err := CreateBackup(database, dir, day, 14)
+	if err != nil {
+		t.Fatalf("first backup: %v", err)
+	}
+	good, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Truncate it to a fragment — what a killed VACUUM INTO leaves behind.
+	if err := os.WriteFile(path, good[:len(good)/3], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rebuilt, err := CreateBackup(database, dir, day.Add(3*time.Hour), 14)
+	if err != nil {
+		t.Fatalf("second backup should rebuild the corrupted snapshot: %v", err)
+	}
+	if rebuilt != path {
+		t.Fatalf("expected the same daily path, got %s vs %s", rebuilt, path)
+	}
+
+	// The rebuilt file must be a readable database again, with the data back.
+	conn, err := sql.Open("sqlite", rebuilt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var v string
+	if err := conn.QueryRow("SELECT v FROM t WHERE id = 1").Scan(&v); err != nil || v != "hello" {
+		t.Fatalf("rebuilt snapshot row = %q (err=%v)", v, err)
+	}
+	var check string
+	if err := conn.QueryRow("PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
+		t.Fatalf("rebuilt snapshot quick_check = %q (err=%v)", check, err)
+	}
+}
+
+// TestCreateBackupRejectsEmptySnapshot pins the other half: a zero-length file
+// is not a database either, and must not be accepted as today's backup.
+func TestCreateBackupRejectsEmptySnapshot(t *testing.T) {
+	database := openSourceDB(t)
+	dir := t.TempDir()
+	day := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+
+	path := filepath.Join(dir, "repotory-2026-10-18.db")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rebuilt, err := CreateBackup(database, dir, day, 14)
+	if err != nil {
+		t.Fatalf("an empty file should be rebuilt, not accepted: %v", err)
+	}
+	conn, err := sql.Open("sqlite", rebuilt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var v string
+	if err := conn.QueryRow("SELECT v FROM t WHERE id = 1").Scan(&v); err != nil || v != "hello" {
+		t.Fatalf("rebuilt snapshot row = %q (err=%v)", v, err)
+	}
+}

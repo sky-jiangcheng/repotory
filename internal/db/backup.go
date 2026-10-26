@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,6 +28,13 @@ const BackupSnapshotPrefix = "repotory-"
 // dir is created if missing (0700 — snapshots carry the full dataset). retain
 // bounds how many snapshots survive; rotation only removes files matching
 // BackupSnapshotPrefix. Returns the snapshot path.
+//
+// "The file for today already exists" is NOT treated as success on its own.
+// A VACUUM INTO killed by SIGKILL leaves a half-written file behind, and the
+// old code returned that path as today's backup — after which every later
+// tick of the day saw the same file and skipped, so a broken snapshot was
+// reported as a healthy one for the rest of the day. The file is now verified
+// (see verifySnapshot) before it is accepted, and rebuilt when it is not.
 func CreateBackup(database *sql.DB, dir string, now time.Time, retain int) (string, error) {
 	if dir == "" {
 		return "", fmt.Errorf("a backup directory is required")
@@ -36,7 +44,18 @@ func CreateBackup(database *sql.DB, dir string, now time.Time, retain int) (stri
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s%s.db", BackupSnapshotPrefix, now.Format("2006-01-02")))
 	if _, err := os.Stat(path); err == nil {
-		return path, nil // today's snapshot already exists: daily idempotency
+		if verr := verifySnapshot(path); verr == nil {
+			return path, nil // today's snapshot exists and is readable: daily idempotency
+		} else {
+			// Unreadable or half-written (most often a VACUUM INTO that was
+			// killed mid-flight). Remove it and rebuild, so the day gets a real
+			// snapshot instead of a corrupt one that every later tick would
+			// accept as done.
+			log.Printf("backup: today's snapshot %s is not a readable database (%v) — rebuilding", path, verr)
+			if rerr := os.Remove(path); rerr != nil {
+				return "", fmt.Errorf("remove invalid snapshot %s: %w", path, rerr)
+			}
+		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
@@ -55,12 +74,62 @@ func CreateBackup(database *sql.DB, dir string, now time.Time, retain int) (stri
 		_ = os.Remove(path)
 		return "", fmt.Errorf("chmod snapshot: %w", err)
 	}
+	// The write succeeded, but "succeeded" is not "the file on disk is a
+	// database": a disk that fills up mid-write, or a filesystem that
+	// reordered the flush, can leave a file SQLite would refuse to read.
+	// Verify before the snapshot is ever reported as a backup, and drop it
+	// if it is not — a backup that exists but cannot be restored is worse
+	// than a missing one, because it silences the "I have no backup" signal.
+	if verr := verifySnapshot(path); verr != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("verify snapshot %s: %w", path, verr)
+	}
 	if err := rotateBackups(dir, retain); err != nil {
 		// Rotation is housekeeping — a failed prune must not fail the backup
 		// that already succeeded on disk.
 		return path, nil
 	}
 	return path, nil
+}
+
+// verifySnapshot opens a snapshot read-only and asks SQLite whether it can
+// read the file at all.
+//
+// mode=ro is enforced by SQLite, not by convention: the check never writes, so
+// it creates no -wal/-shm sidecars next to the snapshot and cannot modify the
+// thing it is inspecting.
+//
+// The query is a cheap schema count, not PRAGMA integrity_check on purpose.
+// integrity_check walks every page of the file (seconds on a 10MB snapshot)
+// and answers a broader question than the one here. What matters for the
+// daily-idempotency decision is narrower: "is this a readable database, or a
+// fragment VACUUM INTO left behind when it was killed?" — a fragment fails to
+// open or to read sqlite_master, which is exactly what this detects.
+func verifySnapshot(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", path, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("snapshot file is empty")
+	}
+	conn, err := sql.Open("sqlite", "file:"+filepath.ToSlash(abs)+"?mode=ro")
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	var objects int
+	if err := conn.QueryRow("SELECT count(*) FROM sqlite_master").Scan(&objects); err != nil {
+		return err
+	}
+	if objects == 0 {
+		return fmt.Errorf("snapshot contains no schema objects")
+	}
+	return nil
 }
 
 // rotateBackups deletes the oldest snapshots beyond retain. Names sort in
