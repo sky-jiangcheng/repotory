@@ -60,7 +60,20 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
     setImportingSource(name)
     try {
       const r = await triggerKnowledgeImport(name)
-      showMessage(t('settings.importDone', { created: r.created, updated: r.updated, skipped: r.skipped }))
+      // A non-zero failed count changes what the message says: "0 imported"
+      // alone reads as "nothing new", and that is exactly how the 2026-10-18
+      // opencode breakage stayed invisible for days.
+      if (r.failed && r.failed > 0) {
+        showMessage(t('settings.importDoneWithFailures', {
+          created: r.created,
+          updated: r.updated,
+          skipped: r.skipped,
+          failed: r.failed,
+          msg: (r.errors && r.errors[0]) || '',
+        }))
+      } else {
+        showMessage(t('settings.importDone', { created: r.created, updated: r.updated, skipped: r.skipped }))
+      }
     } catch (e: unknown) {
       showMessage(t('settings.importFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
     } finally {
@@ -190,6 +203,20 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
                     )}
                     {s.last_error && (
                       <span className={css.syncError}>{t('settings.syncLastError', { msg: s.last_error })}</span>
+                    )}
+                    {/* Documents the importer REFUSED to produce — files it could
+                        not read or parse. Without this line the only signal was
+                        "0 imported", which is indistinguishable from "there was
+                        nothing new"; on 2026-10-18 an upstream format change
+                        made every opencode session unreadable and the import
+                        reported a clean zero with no error anywhere. */}
+                    {!!s.failed && s.failed > 0 && (
+                      <span className={css.syncError}>
+                        {t('settings.sourceRejectedFiles', {
+                          count: s.failed,
+                          msg: (s.errors && s.errors[0]) || '',
+                        })}
+                      </span>
                     )}
                   </div>
                   <div className={css.pluginActions}>

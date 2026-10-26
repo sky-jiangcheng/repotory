@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"repotory/internal/core/plugin"
@@ -39,6 +40,36 @@ const maxSessionFileBytes = db.MaxNoteContentLen + 1
 // Importer implements plugin.KnowledgeImporter for OpenCode sessions.
 type Importer struct {
 	db *sql.DB
+
+	// rejections collects the session files this importer refused to produce a
+	// document from, with the reason. It is what makes a format change
+	// upstream visible instead of silent — see plugin.RejectionReporter.
+	mu         sync.Mutex
+	rejections []plugin.Rejection
+}
+
+// reject records one unusable file. Bounded so a directory of thousands of
+// broken files cannot grow the importer without limit.
+func (i *Importer) reject(path, reason string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if len(i.rejections) >= maxRejections {
+		return
+	}
+	i.rejections = append(i.rejections, plugin.Rejection{Path: path, Reason: reason})
+}
+
+// maxRejections bounds the collected rejection list.
+const maxRejections = 200
+
+// Rejections implements plugin.RejectionReporter: the session files this
+// import could not read.
+func (i *Importer) Rejections() []plugin.Rejection {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	out := make([]plugin.Rejection, len(i.rejections))
+	copy(out, i.rejections)
+	return out
 }
 
 // New creates an OpenCode importer bound to the application database.
@@ -98,6 +129,12 @@ func (f *summaryField) UnmarshalJSON(b []byte) error {
 
 // Import walks the OpenCode session storage and returns one note per session.
 func (i *Importer) Import() ([]plugin.ImportDoc, error) {
+	// Each run reports its own rejections; a stale list from the previous run
+	// would claim failures that have since been fixed.
+	i.mu.Lock()
+	i.rejections = nil
+	i.mu.Unlock()
+
 	root, ok := sessionRoot()
 	if !ok {
 		return nil, nil // no OpenCode data dir: successful no-op
@@ -123,10 +160,17 @@ func (i *Importer) docFor(path string, projects []db.Project, repos []db.Reposit
 	raw, err := memsrc.ReadCapped(path, maxSessionFileBytes)
 	if err != nil {
 		log.Printf("opencode importer: skipping %s: %v", path, err)
+		i.reject(path, "读取失败: "+err.Error())
 		return plugin.ImportDoc{}, false
 	}
 	var s sessionFile
-	if json.Unmarshal(raw, &s) != nil {
+	if err := json.Unmarshal(raw, &s); err != nil {
+		// The 2026-10-18 incident: OpenCode changed a field's type upstream and
+		// EVERY session file stopped unmarshalling. The import then reported
+		// zero created notes, with no error anywhere — indistinguishable from
+		// "nothing new to import". This rejection is what turns that into a
+		// visible "12 files could not be read".
+		i.reject(path, "无法解析为 OpenCode 会话文件: "+err.Error())
 		return plugin.ImportDoc{}, false // not a session file we recognize
 	}
 	title := strings.TrimSpace(s.Title)
@@ -135,6 +179,7 @@ func (i *Importer) docFor(path string, projects []db.Project, repos []db.Reposit
 	}
 	summary := strings.TrimSpace(string(s.Summary))
 	if title == "" && summary == "" {
+		i.reject(path, "会话文件没有可用的标题或摘要")
 		return plugin.ImportDoc{}, false // nothing usable
 	}
 

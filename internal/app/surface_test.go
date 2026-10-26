@@ -93,6 +93,7 @@ func TestBindingSurfaceHumanGateHolds(t *testing.T) {
 	gated := []string{
 		"CompileNote", "CompileProjectNotes", "StartCompileJob",
 		"ApproveWikiPage", "RejectWikiPage", "DeleteCompiledPage",
+		"PromoteWikiPageToGlobal", "AssignWikiPageProject",
 		"MergeWikiPages", "RunCommunitySummary", "FileAnswerAsPage",
 		"UpdateConfig", "UpdateScanRoots", "DeleteNote", "RestoreNoteVersion",
 		"TriggerKnowledgeImport", "ImportClaudeMemory", "CaptureClaudeHandoff",

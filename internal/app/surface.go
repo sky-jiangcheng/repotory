@@ -28,6 +28,28 @@ package app
 //     merge, community synthesis) or UI chrome whose shape is deliberately lossy.
 //   - SurfaceLifecycle — process control, never an agent capability. Kept in sync
 //     with httpapi's RPC blocklist by test assertion rather than by hope.
+//
+// WHICH SURFACE THIS TABLE IS ABOUT. The categories describe MCP reachability —
+// "can an AI agent get at this capability". They are NOT a statement about the
+// HTTP bridge: /api/rpc exposes every binding except the four on its
+// blocklist (lifecycle + the Wails-events-only streaming method), including the
+// desktop-only ones. That is deliberate — the browser/standalone runtime
+// reaches the desktop UI's bindings through that bridge, and the UI is what
+// drives the human gate (the Review page calls ApproveWikiPage). So the
+// desktop-only entries are "not MCP-reachable", not "unreachable outside the
+// app".
+//
+// The local threat model makes that acceptable on its own terms: the bridge is
+// loopback-only and guarded against DNS rebinding (httpapi/guard.go), and a
+// local process that could call ApproveWikiPage could equally well open the
+// SQLite file and UPDATE it directly. The gate worth keeping is the one that
+// blocks a REMOTE page from reaching the knowledge base, and that is the
+// guard's job, not this table's.
+//
+// Two cross-surface checks keep the three views from drifting apart:
+// internal/app/frontend_contract_test.go asserts every method the frontend
+// calls really exists on *App, and internal/httpapi/rpc_test.go asserts the
+// blocklist is exactly the reviewed set and that the frontend calls none of it.
 
 // SurfaceCategory classifies how a binding is reachable outside the desktop UI.
 type SurfaceCategory string
@@ -180,6 +202,11 @@ var bindingSurfaces = map[string]BindingSurface{
 	"RejectWikiPage":        {SurfaceDesktopOnly, "", "reject writes an error-page tombstone rather than deleting; the review decision is human-only (ADR-0015 decision 3)"},
 	"ListRejectedWikiPages": {SurfaceDesktopOnly, "", "the error-page list in the review tab, so tombstones stay visible to the person who can clean them up"},
 	"DeleteCompiledPage":    {SurfaceDesktopOnly, "", "permanent removal of never-published pages: human only"},
+
+	// ---- page scope: project tier <-> global tier (ADR-0031) -------------------
+	"ListApprovedWikiPages":   {SurfaceDesktopOnly, "", "the scope surface a person looks at in order to decide which pages speak for the user across projects"},
+	"PromoteWikiPageToGlobal": {SurfaceDesktopOnly, "", "widening a page's scope puts it into the cross-project profile that steers every answer; that is a curated human statement, and an agent doing it is the no-gate write ADR-0015 refuses (ADR-0031)"},
+	"AssignWikiPageProject":   {SurfaceDesktopOnly, "", "the inverse of the promotion and what makes it reversible; scope is a human curation, not an agent's inference (ADR-0031)"},
 
 	// ---- knowledge graph (ADR-0019 / 0020 / 0021) ----------------------------
 	"FindMergeCandidates":  {SurfaceDesktopOnly, "", "read-only, but it is the surface a person looks at in order to decide — exposing it invites an agent to merge without the human"},

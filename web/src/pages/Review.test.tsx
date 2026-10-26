@@ -12,6 +12,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getProjects: vi.fn(),
     listPendingWikiPages: vi.fn(),
     listRejectedWikiPages: vi.fn(),
+    listApprovedWikiPages: vi.fn(),
     listCompileJobs: vi.fn(),
     findMergeCandidates: vi.fn(),
     mergeWikiPages: vi.fn(),
@@ -24,6 +25,8 @@ vi.mock('../api/client', async (importOriginal) => {
     startLintJob: vi.fn(),
     cancelCompileJob: vi.fn(),
     deleteCompiledPage: vi.fn(),
+    promoteWikiPageToGlobal: vi.fn(),
+    assignWikiPageProject: vi.fn(),
   }
 })
 
@@ -37,9 +40,10 @@ vi.mock('react-i18next', () => ({
 }))
 
 import {
-  approveWikiPage, cancelCompileJob, deleteCompiledPage, diffWikiPageVersion, findMergeCandidates,
-  getProjects, listCompileJobs, listPendingWikiPages, listRejectedWikiPages, listWikiPageVersions,
-  mergeWikiPages, rejectWikiPage, runCommunitySummary, startCompileJob, startLintJob,
+  approveWikiPage, assignWikiPageProject, cancelCompileJob, deleteCompiledPage, diffWikiPageVersion,
+  findMergeCandidates, getProjects, listApprovedWikiPages, listCompileJobs, listPendingWikiPages,
+  listRejectedWikiPages, listWikiPageVersions, mergeWikiPages, promoteWikiPageToGlobal,
+  rejectWikiPage, runCommunitySummary, startCompileJob, startLintJob,
   type MergeCandidate, type MergeCandidateReport, type WikiCommunityReport,
   type WikiPageVersion, type WikiPendingPage,
 } from '../api/client'
@@ -48,17 +52,33 @@ import ReviewPage, { jobErrorText } from './Review'
 const mockGetProjects = vi.mocked(getProjects)
 const mockListPending = vi.mocked(listPendingWikiPages)
 const mockListRejected = vi.mocked(listRejectedWikiPages)
+const mockListApproved = vi.mocked(listApprovedWikiPages)
 const mockListJobs = vi.mocked(listCompileJobs)
 const mockFindCandidates = vi.mocked(findMergeCandidates)
 const mockMerge = vi.mocked(mergeWikiPages)
 const mockCommunity = vi.mocked(runCommunitySummary)
 const mockListVersions = vi.mocked(listWikiPageVersions)
 const mockDiff = vi.mocked(diffWikiPageVersion)
+const mockPromote = vi.mocked(promoteWikiPageToGlobal)
+const mockAssign = vi.mocked(assignWikiPageProject)
 
 const pendingPage = (over: Partial<WikiPendingPage> = {}): WikiPendingPage => ({
   page: {
     id: 11, slug: 'payment-gateway', title: '支付网关', kind: 'concept', project_id: 4,
     content: '正文', updated_at: '2026-10-12 15:04:05', status: 'pending', source: 'compiler',
+  },
+  source_note_ids: [],
+  out_links: [],
+  in_links: [],
+  ...over,
+})
+
+// An approved page, for the scope surface (ADR-0031). The scope feed carries
+// the same row shape as the review feed — a page is a page.
+const approvedPage = (over: Partial<WikiPendingPage> = {}): WikiPendingPage => ({
+  page: {
+    id: 21, slug: 'retry-policy', title: '重试策略', kind: 'concept', project_id: 4,
+    content: '正文', updated_at: '2026-10-12 15:04:05', status: 'approved', source: 'manual',
   },
   source_note_ids: [],
   out_links: [],
@@ -135,6 +155,17 @@ function mergeRows(section: HTMLElement): HTMLLIElement[] {
   return Array.from(section.querySelectorAll('li'))
 }
 
+// The scope section carries no accessible name either (just an <h2>), so its
+// rows are counted through the same container pattern as the merge section.
+async function scopeSection(): Promise<HTMLElement> {
+  const heading = await screen.findByText('review.scopeHeading')
+  return heading.closest('section') as HTMLElement
+}
+
+function scopeRows(section: HTMLElement): HTMLLIElement[] {
+  return Array.from(section.querySelectorAll('li'))
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   // The three promises ADR-0026 names as this page's load path. Under
@@ -143,12 +174,15 @@ beforeEach(() => {
   mockGetProjects.mockImplementation(() => lagged([]))
   mockListPending.mockImplementation(() => lagged([]))
   mockListRejected.mockResolvedValue([])
+  mockListApproved.mockResolvedValue([])
   mockListJobs.mockResolvedValue([])
   mockFindCandidates.mockImplementation(() => lagged(report({ candidates: [] })))
   mockMerge.mockResolvedValue(null)
   mockCommunity.mockResolvedValue(communityReport())
   mockListVersions.mockResolvedValue([])
   mockDiff.mockResolvedValue('')
+  mockPromote.mockResolvedValue(undefined)
+  mockAssign.mockResolvedValue(undefined)
 })
 
 describe('Review merge suggestions (ADR-0019)', () => {
@@ -242,6 +276,87 @@ describe('Review merge suggestions (ADR-0019)', () => {
     mockFindCandidates.mockResolvedValue(report({ truncated: true }))
     await renderReview()
     expect(await screen.findByText('review.mergeTruncated')).toBeTruthy()
+  })
+})
+
+describe('Review page scope (ADR-0031)', () => {
+  // The scope surface shows where a page currently speaks. A project-scoped
+  // page names its project; a global page says so outright, because "which
+  // project does this belong to?" has no answer for it.
+  it('labels each approved page with the scope it speaks from', async () => {
+    mockGetProjects.mockResolvedValue([{
+      id: 4, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
+      is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
+    }])
+    mockListApproved.mockImplementation(() => lagged([
+      approvedPage(),
+      approvedPage({
+        page: {
+          id: 22, slug: 'global-rule', title: '全局约定', kind: 'synthesis', project_id: 0,
+          content: '正文', updated_at: '2026-10-12 15:04:05', status: 'approved', source: 'manual',
+        },
+      }),
+    ]))
+    await renderReview()
+    const section = await scopeSection()
+    const rows = scopeRows(section)
+    expect(rows).toHaveLength(2)
+    // A project page names its project; a global page says "global".
+    expect(rows[0].textContent).toContain('Alpha')
+    expect(rows[0].textContent).toContain('review.scopePromote')
+    expect(rows[1].textContent).toContain('review.scopeGlobal')
+    // A global page offers the reverse move instead of the promotion.
+    expect(rows[1].textContent).toContain('review.scopeDemote')
+    expect(rows[1].textContent).not.toContain('review.scopePromote')
+  })
+
+  // The promotion changes what steers every future answer in every project,
+  // so one click must never be enough — same two-click arm as the merge row.
+  it('asks for confirmation before promoting a page to the global tier', async () => {
+    mockListApproved.mockImplementation(() => lagged([approvedPage()]))
+    await renderReview()
+    const promote = await screen.findByText('review.scopePromote')
+    fireEvent.click(promote)
+    expect(mockPromote).not.toHaveBeenCalled()
+    expect(promote.textContent).toBe('review.scopePromoteConfirm')
+    fireEvent.click(screen.getByText('review.scopePromoteConfirm'))
+    await waitFor(() => expect(mockPromote).toHaveBeenCalledWith(21))
+  })
+
+  // Moving a page back needs an explicit target: once a page is global, the
+  // project it came from is not knowable from the row.
+  it('moves a global page back into a project the reviewer picks', async () => {
+    mockGetProjects.mockResolvedValue([{
+      id: 4, name: 'Alpha', root_path: '/x', level_override: 0, is_auto_grouped: false,
+      is_starred: false, created_at: '', repo_count: 1, total_added: 0, total_deleted: 0,
+      my_added: 0, my_deleted: 0, my_files: 0, my_added_7d: 0, is_workday: false, below_standard: false,
+    }])
+    mockListApproved.mockImplementation(() => lagged([
+      approvedPage({
+        page: {
+          id: 22, slug: 'global-rule', title: '全局约定', kind: 'synthesis', project_id: 0,
+          content: '正文', updated_at: '2026-10-12 15:04:05', status: 'approved', source: 'manual',
+        },
+      }),
+    ]))
+    await renderReview()
+    const demote = (await screen.findByText('review.scopeDemote')) as HTMLButtonElement
+    // No project picked yet: the button says so by being disabled.
+    await waitFor(() => expect(demote.disabled).toBe(true))
+    const select = (await screen.findByLabelText('review.scopeTarget')) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: '4' } })
+    await waitFor(() => expect(demote.disabled).toBe(false))
+    fireEvent.click(demote)
+    await waitFor(() => expect(mockAssign).toHaveBeenCalledWith(22, 4))
+  })
+
+  // No approved pages, no scope section: a section about a move nobody can make
+  // is noise.
+  it('hides the scope section when there is nothing to scope', async () => {
+    await renderReview()
+    await screen.findByText('review.pendingHeading')
+    expect(screen.queryByText('review.scopeHeading')).toBeNull()
   })
 })
 

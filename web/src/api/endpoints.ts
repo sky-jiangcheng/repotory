@@ -728,6 +728,29 @@ export function deleteCompiledPage(pageId: number): Promise<void> {
   return call<void>({ method: 'DeleteCompiledPage', args: [pageId] })
 }
 
+// --- page scope: the project tier and the global tier (ADR-0031) ----------------
+
+// listApprovedWikiPages is the scope surface's feed: the approved pages whose
+// scope a human may widen (into the global tier) or narrow (back into a
+// project). A project id narrows to that project; 0 means every page, global
+// ones included.
+export function listApprovedWikiPages(projectId: number): Promise<WikiPendingPage[]> {
+  return call<WikiPendingPage[]>({ method: 'ListApprovedWikiPages', args: [projectId] }).then(d => d ?? [])
+}
+
+// promoteWikiPageToGlobal moves an approved page into the global tier, where
+// it enters the cross-project profile and becomes visible to every project's
+// evidence gathering. Human-only by design: there is no automatic path here.
+export function promoteWikiPageToGlobal(pageId: number): Promise<void> {
+  return call<void>({ method: 'PromoteWikiPageToGlobal', args: [pageId] })
+}
+
+// assignWikiPageProject moves a page back into a project tier — the inverse of
+// the promotion, and what makes it reversible.
+export function assignWikiPageProject(pageId: number, projectId: number): Promise<void> {
+  return call<void>({ method: 'AssignWikiPageProject', args: [pageId, projectId] })
+}
+
 // startCompileJob queues a batch compile and returns the job id immediately; the
 // caller polls. Submission is not supposed to block on the model.
 export function startCompileJob(projectId: number, maxNotes: number): Promise<number> {

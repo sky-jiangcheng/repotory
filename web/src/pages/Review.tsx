@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  approveWikiPage, cancelCompileJob, deleteCompiledPage, diffWikiPageVersion, findMergeCandidates,
-  getProjects, listCompileJobs, listPendingWikiPages, listRejectedWikiPages, listWikiPageVersions,
-  mergeWikiPages, rejectWikiPage, runCommunitySummary, startCompileJob, startLintJob,
+  approveWikiPage, assignWikiPageProject, cancelCompileJob, deleteCompiledPage, diffWikiPageVersion,
+  findMergeCandidates, getProjects, listApprovedWikiPages, listCompileJobs, listPendingWikiPages,
+  listRejectedWikiPages, listWikiPageVersions, mergeWikiPages, promoteWikiPageToGlobal,
+  rejectWikiPage, runCommunitySummary, startCompileJob, startLintJob,
 } from '../api/client'
 import type {
   CompileJob, MergeCandidate, MergeCandidateReport, Project, WikiCommunityReport,
@@ -26,6 +27,11 @@ const maxNotesPerRun = 10
 // (mergeDefaultTopK) is the same number; passing it explicitly keeps the note
 // ("仅显示前 N 对") true no matter what the binding's default becomes.
 const mergeTopK = 20
+// The scope surface lists every approved page, and a long-lived library has
+// hundreds of them. The rows are one line each, but the list still has to end
+// somewhere — and it says so rather than pretending the count is the whole
+// truth.
+const scopeMaxRows = 100
 
 // Job rows render {done} / {total} with total = notes_total || requested_notes.
 // A queued job legitimately has both at 0 only when the worker has not claimed
@@ -88,6 +94,7 @@ function ReviewPage() {
   const [projectFilter, setProjectFilter] = useState<number>(0) // 0 = all
   const [pending, setPending] = useState<WikiPendingPage[]>([])
   const [rejected, setRejected] = useState<WikiPendingPage[]>([])
+  const [approved, setApproved] = useState<WikiPendingPage[]>([])
   const [jobs, setJobs] = useState<CompileJob[]>([])
   const [merge, setMerge] = useState<MergeCandidateReport | null>(null)
   const [dismissed, setDismissed] = useState<string[]>([])
@@ -112,13 +119,15 @@ function ReviewPage() {
       getProjects(),
       listPendingWikiPages(projectFilter),
       listRejectedWikiPages(projectFilter),
+      listApprovedWikiPages(projectFilter),
       listCompileJobs(projectFilter, '', 10),
       findMergeCandidates(projectFilter, mergeTopK),
-    ]).then(([projs, pend, rej, jb, cand]) => {
+    ]).then(([projs, pend, rej, appr, jb, cand]) => {
       if (cancelled) return
       setProjects(projs)
       setPending(pend)
       setRejected(rej)
+      setApproved(appr)
       setJobs(jb)
       setMerge(cand)
       setLoadError('')
@@ -189,6 +198,20 @@ function ReviewPage() {
 
   const onIgnoreMerge = (c: MergeCandidate) =>
     setDismissed(d => (d.includes(mergePairKey(projectFilter, c)) ? d : [...d, mergePairKey(projectFilter, c)]))
+
+  // ADR-0031: the scope moves. Promotion WIDENS a page's reach — it enters the
+  // cross-project profile (L3) and every project's evidence gathering — and
+  // the reverse move puts it back. Both are human acts: no compiler, no job
+  // and no agent reaches them, because a page that speaks for the user across
+  // projects is a curated claim, not an inferred one.
+  const onPromote = (id: number) => void runGuarded(async () => {
+    await promoteWikiPageToGlobal(id)
+    toast({ kind: 'success', title: t('review.scopePromoted') })
+  })
+  const onAssign = (id: number, projectId: number) => void runGuarded(async () => {
+    await assignWikiPageProject(id, projectId)
+    toast({ kind: 'success', title: t('review.scopeAssigned') })
+  })
 
   // ADR-0020: slow and paid for, so it is its own in-flight flag rather than
   // riding on `busy` — the page's other buttons should not grey out for it, and
@@ -325,6 +348,27 @@ function ReviewPage() {
                 ))}
               </ul>}
         </section>
+
+        {/* Page scope (ADR-0031). Only rendered when there is something to scope:
+            a section about a move nobody can make is noise. */}
+        {approved.length > 0 && (
+          <section>
+            <div className={s.sectionHead}>
+              <h2>{t('review.scopeHeading')}</h2>
+              <span className={s.countChip}>{approved.length}</span>
+            </div>
+            <p className={s.lead}>{t('review.scopeHint')}</p>
+            <ul className={s.scopeList}>
+              {approved.slice(0, scopeMaxRows).map(p => (
+                <ScopeRow key={p.page.id} item={p} projects={projects} projectLabel={projectLabel}
+                  busy={busy} onPromote={onPromote} onAssign={onAssign} />
+              ))}
+            </ul>
+            {approved.length > scopeMaxRows && (
+              <p className={s.note}>{t('review.scopeTruncated', { n: approved.length })}</p>
+            )}
+          </section>
+        )}
 
         {/* Merge suggestions (ADR-0019): always mounted, because "the structural
             pass found nothing" is itself the answer a reviewer wants — unlike the
@@ -520,6 +564,78 @@ function CommunityReport({ report }: { report: WikiCommunityReport }) {
           so it is rendered verbatim rather than paraphrased into a counter. */}
       {report.llm_note && <p className={s.jobNote}>{report.llm_note}</p>}
     </section>
+  )
+}
+
+// One approved page and its scope (ADR-0031). The row is deliberately NOT a
+// review card: a scope move is not a verdict, so it gets no body, no source
+// notes and no version history — only the page's identity, where it currently
+// speaks, and the one move available from there.
+function ScopeRow({
+  item, projects, projectLabel, busy, onPromote, onAssign,
+}: {
+  item: WikiPendingPage
+  projects: Project[]
+  projectLabel: (pid: number) => string
+  busy: boolean
+  onPromote: (id: number) => void
+  onAssign: (id: number, projectId: number) => void
+}) {
+  const { t } = useTranslation()
+  const p = item.page
+  const isGlobal = p.project_id === 0
+  // The target project is picked per row: once a page is global, "put it back
+  // where it was" is not knowable from the row, so the human names it.
+  const [target, setTarget] = useState(0)
+  // Two-click arm, same as the merge row: the promotion changes what steers
+  // every future answer in every project, so it must not be one stray click.
+  const { armed, click } = useConfirmClick(() => onPromote(p.id))
+
+  return (
+    <li className={s.scopeRow}>
+      <div className={s.scopeTop}>
+        <span className={`${s.kindBadge} ${s['kindBadge_' + p.kind] ?? ''}`}>
+          {t(`review.kind_${p.kind}`, p.kind)}
+        </span>
+        <span className={s.cardTitle}>{p.title || p.slug}</span>
+        <span className={s.scopeBadge}>
+          {isGlobal ? t('review.scopeGlobal') : projectLabel(p.project_id)}
+        </span>
+      </div>
+      <p className={s.scopeSlug}>{p.slug}</p>
+      <div className={s.scopeActions}>
+        {isGlobal ? (
+          <>
+            <select
+              className={s.select}
+              value={target}
+              onChange={e => setTarget(Number(e.target.value))}
+              aria-label={t('review.scopeTarget')}
+            >
+              <option value={0}>{t('review.scopeChooseProject')}</option>
+              {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+            </select>
+            <button
+              className="btn btn-sm"
+              disabled={busy || target === 0}
+              onClick={() => onAssign(p.id, target)}
+              title={t('review.scopeDemoteHint')}
+            >
+              {t('review.scopeDemote')}
+            </button>
+          </>
+        ) : (
+          <button
+            className={`btn btn-sm ${armed ? 'btn-primary' : ''}`}
+            disabled={busy}
+            onClick={click}
+            title={t('review.scopePromoteHint')}
+          >
+            {armed ? t('review.scopePromoteConfirm') : t('review.scopePromote')}
+          </button>
+        )}
+      </div>
+    </li>
   )
 }
 

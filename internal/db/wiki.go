@@ -493,6 +493,62 @@ func SetWikiPageStatus(db *sql.DB, id int64, status string) error {
 	return nil
 }
 
+// SetWikiPageScope moves a page between the project tier and the global tier
+// (ADR-0031). projectID == 0 means the global tier.
+//
+// The global tier is stored as SQL NULL, not as the literal 0. project_id
+// carries a foreign key to projects(id) and the database runs with PRAGMA
+// foreign_keys=ON (internal/db/db.go), so `project_id = 0` would be rejected by
+// the constraint — there is no project row with id 0. NULL is what the schema
+// already means by "a page may span projects" (the design notes at the top of
+// this file), and every read path projects it to 0 through COALESCE, so Go
+// code keeps seeing ProjectID == 0 for a global page.
+//
+// updated_at is deliberately NOT touched. Scope says where a page may speak,
+// not when its claim was last revised, and the lint's staleness pass reads
+// updated_at as "which of two conflicting pages is the newer claim" — a scope
+// change must not make stale knowledge look fresh.
+//
+// A page that is already in the requested scope is left alone and reported as
+// success: the move is idempotent, so a double click cannot fail.
+func SetWikiPageScope(db *sql.DB, id int64, projectID int64) error {
+	if projectID < 0 {
+		return fmt.Errorf("db: invalid project id %d for wiki page scope", projectID)
+	}
+	if projectID > 0 {
+		// Check the project first so the failure says "no such project" instead of
+		// the constraint's bare "FOREIGN KEY constraint failed".
+		var exists int
+		err := db.QueryRow("SELECT COUNT(1) FROM projects WHERE id = ?", projectID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("db: check project %d for wiki page scope: %w", projectID, err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("db: no project %d", projectID)
+		}
+	}
+	var (
+		res sql.Result
+		err error
+	)
+	if projectID == 0 {
+		res, err = db.Exec("UPDATE wiki_pages SET project_id = NULL WHERE id = ?", id)
+	} else {
+		res, err = db.Exec("UPDATE wiki_pages SET project_id = ? WHERE id = ?", projectID, id)
+	}
+	if err != nil {
+		return fmt.Errorf("db: set wiki page scope: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("db: set wiki page scope: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("db: wiki page %d not found", id)
+	}
+	return nil
+}
+
 // PageEdge is one directed link; Direction says which end the query came from.
 type PageEdge struct {
 	PageID   int64  `json:"page_id"`

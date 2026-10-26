@@ -82,6 +82,14 @@ type SourceStatus struct {
 	Type      SourceType `json:"type"`
 	LastRun   string     `json:"last_run,omitempty"`   // RFC3339; empty when never run
 	LastError string     `json:"last_error,omitempty"` // empty when the last run was clean
+	// Failed counts the documents the last run REFUSED to produce (a file it
+	// could not read or parse). Zero with an empty LastError means the source
+	// is simply idle; a non-zero Failed with an empty LastError means the
+	// importer is broken in a way that does not raise — the case that used to
+	// be invisible.
+	Failed int `json:"failed"`
+	// Errors carries a bounded sample of the rejection reasons.
+	Errors []string `json:"errors,omitempty"`
 }
 
 // sourceEntry is a registered knowledge importer with its latest run result.
@@ -90,8 +98,16 @@ type sourceEntry struct {
 	plugin   string
 	importFn func() ([]plugin.ImportDoc, error)
 	probeFn  func() plugin.ProbeResult
-	imported int
-	lastErr  error
+	// rejectionsFn reports documents the importer refused to produce. Nil when
+	// the importer does not implement plugin.RejectionReporter.
+	rejectionsFn func() []plugin.Rejection
+	imported     int
+	lastErr      error
+	// lastFailed / lastErrors are what the LAST run refused to produce. They
+	// are what the settings page shows as "could not read N files", the
+	// difference between "nothing new to import" and "the importer is broken".
+	lastFailed int
+	lastErrors []string
 	// lastRun is when this source was last IMPORT ATTEMPTED (RFC3339, empty
 	// when never). It is per source rather than per round, so the settings
 	// page can say "hermes synced 2 minutes ago, codex failed 1 hour ago"
@@ -130,22 +146,26 @@ func New(database *sql.DB) *Runtime {
 func (r *Runtime) SourceStatuses() []SourceStatus {
 	r.mu.Lock()
 	type snapshot struct {
-		name    string
-		plugin  string
-		enabled bool
-		lastRun string
-		lastErr error
-		probeFn func() plugin.ProbeResult
+		name       string
+		plugin     string
+		enabled    bool
+		lastRun    string
+		lastErr    error
+		lastFailed int
+		lastErrors []string
+		probeFn    func() plugin.ProbeResult
 	}
 	entries := make([]snapshot, 0, len(r.sources))
 	for _, s := range r.sources {
 		entries = append(entries, snapshot{
-			name:    s.name,
-			plugin:  s.plugin,
-			enabled: s.lastErr == nil,
-			lastRun: s.lastRun,
-			lastErr: s.lastErr,
-			probeFn: s.probeFn,
+			name:       s.name,
+			plugin:     s.plugin,
+			enabled:    s.lastErr == nil,
+			lastRun:    s.lastRun,
+			lastErr:    s.lastErr,
+			lastFailed: s.lastFailed,
+			lastErrors: s.lastErrors,
+			probeFn:    s.probeFn,
 		})
 	}
 	r.mu.Unlock()
@@ -159,6 +179,8 @@ func (r *Runtime) SourceStatuses() []SourceStatus {
 			Type:      SourceTypeFor(e.name),
 			LastRun:   e.lastRun,
 			LastError: errString(e.lastErr),
+			Failed:    e.lastFailed,
+			Errors:    e.lastErrors,
 		}
 		if e.probeFn != nil {
 			pr := safeProbe(e.probeFn)
@@ -202,7 +224,20 @@ type ImportRun struct {
 	Created int `json:"created"`
 	Updated int `json:"updated"`
 	Skipped int `json:"skipped"`
+	// Failed counts documents the importer REFUSED to produce — a file it
+	// could not read or parse. It is the difference between "there was
+	// nothing to import" and "the importer is broken": without it, a source
+	// whose format changed upstream reports a clean zero-import run.
+	Failed int `json:"failed"`
+	// Errors carries up to maxImportErrors human-readable rejection reasons.
+	// Bounded because a broken source can reject thousands of files and the
+	// report is rendered in a settings panel.
+	Errors []string `json:"errors,omitempty"`
 }
+
+// maxImportErrors caps how many rejection reasons one import report carries.
+// The COUNT (ImportRun.Failed) is never capped — only the sample of reasons.
+const maxImportErrors = 10
 
 // Total returns the number of documents processed.
 func (r ImportRun) Total() int { return r.Created + r.Updated + r.Skipped }
@@ -302,12 +337,42 @@ func (r *Runtime) TriggerImport(name string) (ImportRun, error) {
 		}
 	}
 
+	// Fold in what the importer refused to produce. This runs BEFORE the
+	// summary log so the log line carries the failure count: a run that
+	// rejected forty files and imported nothing must not look like a clean
+	// zero-import run in the log either.
+	if src.rejectionsFn != nil {
+		for _, rej := range src.rejectionsFn() {
+			run.Failed++
+			if len(run.Errors) < maxImportErrors {
+				msg := rej.Reason
+				if rej.Path != "" {
+					msg = rej.Path + ": " + rej.Reason
+				}
+				run.Errors = append(run.Errors, msg)
+			}
+		}
+		if run.Failed > 0 {
+			log.Printf("plugin runtime: import %q REJECTED %d document(s) it could not read (first: %v)",
+				name, run.Failed, run.Errors)
+		}
+	} else {
+		// No reporter: a clean run must not inherit the previous run's
+		// failures, or a fixed importer would keep showing the old breakage.
+		run.Failed = 0
+		run.Errors = nil
+	}
+
 	r.mu.Lock()
 	src.imported = run.Total()
 	src.lastErr = firstErr
+	src.lastFailed = run.Failed
+	src.lastErrors = run.Errors
 	src.lastRun = time.Now().Format(time.RFC3339)
 	r.mu.Unlock()
-	log.Printf("plugin runtime: import %q -> created %d, updated %d, skipped %d", name, run.Created, run.Updated, run.Skipped)
+
+	log.Printf("plugin runtime: import %q -> created %d, updated %d, skipped %d, failed %d",
+		name, run.Created, run.Updated, run.Skipped, run.Failed)
 	return run, nil
 }
 
@@ -476,6 +541,14 @@ func (r *Runtime) registerSource(name string, importer plugin.KnowledgeImporter,
 	// plugin.Prober contribute their read-only probe to the settings page.
 	if p, ok := importer.(plugin.Prober); ok {
 		e.probeFn = p.Probe
+	}
+	// Optional rejection reporting: importers that can tell "nothing to
+	// import" from "I could not read this" implement plugin.RejectionReporter,
+	// and the runtime folds the result into the import report. Without it a
+	// format change upstream turns into a silent zero-import run — the
+	// 2026-10-18 opencode incident.
+	if rr, ok := importer.(plugin.RejectionReporter); ok {
+		e.rejectionsFn = rr.Rejections
 	}
 	r.mu.Lock()
 	r.sources[name] = e

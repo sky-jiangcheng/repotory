@@ -369,12 +369,24 @@ export interface SourceStatus {
   // "the last sync had a problem"; these say WHICH source and when.
   last_run?: string
   last_error?: string
+  // How many documents the last import REFUSED to produce (a file it could
+  // not read or parse). Zero means "nothing new to import"; non-zero means
+  // the importer is broken in a way that does not raise — the case that used
+  // to be invisible (the 2026-10-18 opencode incident).
+  failed?: number
+  // A bounded sample of the rejection reasons.
+  errors?: string[]
 }
 
 export interface ImportRun {
   created: number
   updated: number
   skipped: number
+  // Documents the importer refused to produce (files it could not read or
+  // parse). Non-zero means the source is broken, not idle.
+  failed?: number
+  // A bounded sample of the rejection reasons.
+  errors?: string[]
 }
 
 export interface ImportPreviewItem {

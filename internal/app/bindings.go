@@ -615,6 +615,29 @@ func (a *App) ListRejectedWikiPages(projectID int64) ([]service.WikiPendingPage,
 // rejected); the escape hatch that keeps rejected tombstones from piling up.
 func (a *App) DeleteCompiledPage(pageID int64) error { return a.svc.DeleteCompiledPage(pageID) }
 
+// ---- page scope: the project tier and the global tier (ADR-0031) ------------
+
+// ListApprovedWikiPages is the scope surface's feed: the approved pages whose
+// scope a human may widen (into the global tier) or narrow (back into a
+// project).
+func (a *App) ListApprovedWikiPages(projectID int64) ([]service.WikiPendingPage, error) {
+	return a.svc.ListApprovedWikiPages(projectID)
+}
+
+// PromoteWikiPageToGlobal moves an approved page into the global tier, where it
+// enters the L3 cross-project profile and becomes visible to every project's
+// evidence gathering. There is no automatic path here: the global tier is a
+// curated statement about how the user works, and only a human may make it.
+func (a *App) PromoteWikiPageToGlobal(pageID int64) error {
+	return a.svc.PromoteWikiPageToGlobal(pageID)
+}
+
+// AssignWikiPageProject moves a page back into a project tier — the inverse of
+// the promotion, and what makes it reversible.
+func (a *App) AssignWikiPageProject(pageID int64, projectID int64) error {
+	return a.svc.AssignWikiPageProject(pageID, projectID)
+}
+
 // ---- knowledge graph: merge, communities, page history (ADR-0019/0020/0021) ----
 
 // FindMergeCandidates returns the pairs of pages that look like the same concept

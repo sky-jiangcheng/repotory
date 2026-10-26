@@ -40,6 +40,40 @@ type Prober interface {
 	Probe() ProbeResult
 }
 
+// Rejection is one document an importer refused to produce, and why.
+//
+// It exists because "the importer silently dropped files" is invisible by
+// construction: an importer that cannot parse one file returns fewer
+// documents, and the runtime reports "created 0, updated 0, skipped 0" —
+// indistinguishable from "there was nothing new to import". That is not a
+// hypothetical. On 2026-10-18 the opencode importer's Summary field changed
+// type upstream; every session file then failed to unmarshal, every session
+// was silently rejected, and the import reported zero created notes with no
+// error anywhere. The symptom was noticed days later, by a user wondering
+// why nothing had come in.
+type Rejection struct {
+	// Path is the file that was rejected, when the importer knows it.
+	Path string
+	// Reason is a short human-readable explanation.
+	Reason string
+}
+
+// RejectionReporter is an OPTIONAL capability of a KnowledgeImporter.
+//
+// An importer that can tell the difference between "nothing to import" and
+// "I could not read this" implements it, and the runtime folds the result
+// into the import report (ImportRun.Failed / ImportRun.Errors) and the
+// settings page shows it.
+//
+// It is optional rather than required because the alternative — adding a
+// rejections return value to Import() — would change every importer's
+// signature at once, for a capability most sources have no use for. An
+// importer that does not implement it keeps its current behaviour, which is
+// correct for a source whose "nothing found" really does mean "nothing found".
+type RejectionReporter interface {
+	Rejections() []Rejection
+}
+
 // ImportDoc is a single document produced by a KnowledgeImporter, to be
 // upserted into the knowledge base.
 type ImportDoc struct {
