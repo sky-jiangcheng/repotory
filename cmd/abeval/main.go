@@ -120,9 +120,25 @@ func main() {
 	// front (the pre-fix wiring) left both arms running with semantic_search
 	// on — lexical was silently hybrid, the recall delta was always 0, and
 	// the gate could never pass.
+	//
+	// BOTH arms run svc.SearchAll — the PRODUCTION path. That is the whole
+	// point: every real query (five frontend entry points, the MCP
+	// repotory_notes_search / repotory_ask tools, the HTTP
+	// /api/search?all=1 endpoint) goes through SearchAll, while this gate used
+	// to measure svc.SearchNotes. SearchAll used to skip the vector fusion
+	// entirely, so the ADR-0012 / ADR-0018 gains this gate reported were
+	// never reaching a single user query — the gate certified a path the
+	// product did not take. Measuring the production function removes that
+	// class of false green permanently.
+	//
+	// The note/todo split is why noteIDs() filters by type: SearchAll returns
+	// notes AND todos, and a todo's id lives in project_todos while the
+	// labeled cases carry project_notes ids — id 1 exists in both tables.
+	// Counting a todo hit as a note hit would inflate recall with false
+	// positives.
 	lexical := func(q string) []int64 {
 		_ = db.SetConfig(database, "semantic_search", "0")
-		return ids(svc.SearchNotes(q))
+		return noteIDs(svc.SearchAll(q))
 	}
 
 	// Hybrid arm: enable + rebuild the vector index once, then search with
@@ -137,13 +153,26 @@ func main() {
 	}
 	hybrid := func(q string) []int64 {
 		_ = db.SetConfig(database, "semantic_search", "1")
-		return ids(svc.SearchNotes(q))
+		return noteIDs(svc.SearchAll(q))
 	}
 
 	lex, hyb, dRecall, dNDCG := abeval.Compare(cases, *k, lexical, hybrid)
-	fmt.Println(lex.SummaryLine("lexical"))
-	fmt.Println(hyb.SummaryLine("hybrid "))
+	fmt.Println(lex.SummaryLine("lexical (production path)"))
+	fmt.Println(hyb.SummaryLine("hybrid  (production path)"))
 	fmt.Printf("delta: recall@%d=%+.3f ndcg@%d=%+.3f\n", *k, dRecall, *k, dNDCG)
+
+	// Continuity line: the same comparison through svc.SearchNotes, which is
+	// what every historical gate number in the ADRs and CHANGELOG was
+	// measured on. It is printed, not gated on — the production path is what
+	// decides. If the two diverge, the production path moved and the older
+	// number is the one that needs re-measuring.
+	notesOnly := func(q string) []int64 {
+		_ = db.SetConfig(database, "semantic_search", "1")
+		return ids(svc.SearchNotes(q))
+	}
+	_, hybNotes, dRecallNotes, dNDCGNotes := abeval.Compare(cases, *k, lexical, notesOnly)
+	fmt.Println(hybNotes.SummaryLine("hybrid  (SearchNotes, continuity)"))
+	fmt.Printf("delta (SearchNotes): recall@%d=%+.3f ndcg@%d=%+.3f\n", *k, dRecallNotes, *k, dNDCGNotes)
 
 	restore()
 
@@ -193,11 +222,28 @@ func loadCases(path string) ([]abeval.Case[int64], error) {
 	return out, sc.Err()
 }
 
-// ids extracts note ids from search hits, preserving ranked order.
+// ids extracts hit ids from search hits, preserving ranked order.
 func ids(hits []domain.SearchHit) []int64 {
 	out := make([]int64, len(hits))
 	for i, h := range hits {
 		out[i] = h.ID
+	}
+	return out
+}
+
+// noteIDs extracts only the NOTE hits, preserving ranked order.
+//
+// Needed whenever the search path returns notes AND todos (SearchAll): the
+// labeled cases carry project_notes ids, but a todo's id comes from
+// project_todos — id 1 exists in both tables. Without the type filter a todo
+// hit would be counted as a note hit and inflate recall with false positives.
+func noteIDs(hits []domain.SearchHit) []int64 {
+	out := make([]int64, 0, len(hits))
+	for _, h := range hits {
+		if h.Type == "todo" {
+			continue
+		}
+		out = append(out, h.ID)
 	}
 	return out
 }

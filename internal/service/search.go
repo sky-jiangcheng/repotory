@@ -28,6 +28,20 @@ func (s *Service) SearchNotes(query string) []domain.SearchHit {
 }
 
 // SearchAll searches notes and todos together, returning ranked unified hits.
+//
+// It applies the same optional vector recall as SearchNotes — this is the path
+// the product actually uses (all five frontend search entry points, the MCP
+// repotory_notes_search / repotory_ask tools, and the HTTP /api/search?all=1
+// endpoint), so leaving the fusion out here meant the ADR-0012 / ADR-0018
+// evaluation gains never reached a single real query.
+//
+// The fusion runs on the NOTES SUBSET ONLY, and that is not a detail: note
+// IDs come from project_notes and todo IDs from project_todos, both
+// AUTOINCREMENT — id 1 exists in both tables and means different rows. The
+// fusion's byID map is keyed by bare int64, so fusing the mixed list would
+// let a todo and a note collide and silently overwrite each other. Splitting
+// first keeps the two ID spaces apart; the vector index only ever holds note
+// embeddings, so notes are the only subset it can extend.
 func (s *Service) SearchAll(query string) []domain.SearchHit {
 	if strings.TrimSpace(query) == "" {
 		return nil
@@ -40,7 +54,19 @@ func (s *Service) SearchAll(query string) []domain.SearchHit {
 	if results == nil {
 		results = []domain.SearchHit{}
 	}
-	return results
+	notes := make([]domain.SearchHit, 0, len(results))
+	todos := make([]domain.SearchHit, 0, len(results))
+	for _, h := range results {
+		if h.Type == "todo" {
+			todos = append(todos, h)
+			continue
+		}
+		notes = append(notes, h)
+	}
+	// Notes first (fused), then todos — the same shape db.SearchAll returns,
+	// so a lexical-only run keeps byte-identical ordering.
+	fused := s.fuseSemantic(notes, query)
+	return append(fused, todos...)
 }
 
 // FormatSearchAnswer renders up to limit search hits in the shared
