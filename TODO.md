@@ -5,8 +5,8 @@
 
 ## 现状速查（新会话从这里开始）
 
-- 品牌 **Repotory**（原 RepoNest），版本 **v2.10.0**（2026-10-21），SSOT 在 `wails.json`。
-- schema **v26**（v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.0 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 已随 lane 2 晋升开启（2026-10-21））；ADR-0018 lane 1 与 lane 2 均 **Accepted**（lane 1 真库演练 PASS，产物 `v21-rehearse/`；lane 2 于 2026-10-21 过条件 10 三门，实现定型与负结果见 ADR 晋升记录）。
+- 品牌 **Repotory**（原 RepoNest），版本 **v2.14.0**（2026-10-25），SSOT 在 `wails.json`。
+- schema **v28**（v28：ADR-0030 AI 调用审计 `ai_call_log` 底座；v27：ADR-0028 主题层 `note_topics`；v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.0 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 已随 lane 2 晋升开启（2026-10-21））；ADR-0018 lane 1 与 lane 2 均 **Accepted**（lane 1 真库演练 PASS，产物 `v21-rehearse/`；lane 2 于 2026-10-21 过条件 10 三门，实现定型与负结果见 ADR 晋升记录）。
 - 近期大项均已落地：插件脚本运行时（yaegi）已移除（C11-B）、全局 CSS Modules 迁移收口（全局 1,227 行）、D25 首屏经 **ADR-0024** 演进为**首页工作台**——记忆环条 + 知识库智能助手（`web/src/pages/home/HomeKnowledgeAssistant.tsx`）+ 重点项目速览 / 今日动态（`web/src/pages/Home.tsx`），全局搜索独立为 `/search` 顶级页（空闲态含热门项目 top6 / 热门标签 top12 推荐，`web/src/pages/Search.tsx`）。⚠ **`/dashboard` 从未重定向**：仪表盘是独立顶级页、主导航「仪表盘」与「搜索」两项并存，首页只给「进入完整仪表盘」直达链接——ADR-0024 决策 1 的「单栏融合 + 重定向」措辞已于 2026-10-23 按落码修订。
 - **M7 lane 2 生产管线已激活（2026-10-22）**：`semantic_search=1` + LM Studio 端点（`text-embedding-nomic-embed-text-v1.5`，dim=768）+ 双向量重建落库（笔记 133 / approved 页 27，经运行中 headless server 的 `/api/rpc` 完成，激活前 live 已文件备份 `repotory.db.backup-20261022-093904`）。live 直评证据门 **k=2/5/10/20 delta +0.114 / +0.159 / +0.205 / +0.205**（ndcg 全正，与晋升 v4 逐点一致，graph perfect 13/22、零回退）——生产口径由 FTS-only +0.023 升级为全管线。
 - **真库事故（2026-10-14）已完全恢复并归档**：恢复过程、48 条笔记重导找回与 TM/快照双点验证见归档 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。内置每日本地快照（ADR-0025 L1）与 S3 远端推送（L2）均已落码。
@@ -14,6 +14,56 @@
 ---
 
 ## 当前待办
+
+### ⚠ P0 改进计划（2026-10-26 全量审计产出，优先于一切新功能）
+
+> 来源：静态代码审计 + live 库只读查询 + `gh` 发布面核对 + `go test ./...` / `npm test` 双绿。
+> 完整报告见 [Session Handoff 2026-10-26 09:36](note 209)。**总原则：这一轮不写新架构，先把已花掉的三个月接通。**
+> 审计实证的三个断裂：① 语义检索的 A/B 门测 `svc.SearchNotes`，产品全部搜索入口走 `svc.SearchAll`（后者从不调用 `fuseSemantic`）；② 已批准 wiki 页在产品里零可达路径（27 approved 页仅 6 张被 AI 取证碰到，`access_count` 唯一写入点是证据路径）；③ `repotory_context` 的 L3 层因要求 `project_id=0` 而在真实库恒为空（45 张页全部 project-scoped）。
+
+#### Sprint 0 —— 止血（不写新功能）✅ 全部完成（2026-10-26）
+
+- [x] **0.1 语义融合接进生产路径** —— `internal/service/search.go` 的 `SearchAll` 现在调用 `fuseSemantic`。**关键细节**：融合只在 notes 子集上做，因为 note 的 ID 来自 `project_notes`、todo 的来自 `project_todos`，两表都自增、**ID 1 在两边都存在**，直接对混合列表融合会让 todo 覆盖 note（已用 `TestSearchAllKeepsNoteAndTodoIDSpacesApart` 钉住，回退实现即红）。`cmd/abeval` 的两臂改走 `svc.SearchAll`（生产路径），并新增 `noteIDs()` 按 type 过滤（否则 todo 命中会被当成 note 命中，虚增 recall）；`SearchNotes` 那一路作为 continuity 行保留打印、不参与判定
+- [x] **0.2 修 callout 渲染的 `$` 模式吃掉用户内容** —— `web/src/utils/markdown.ts:212` 改函数式替换 `() => renderCallout(...)`。新增两条用例（`$$` / `$&` / `$'` 在 callout 内）；回退实现即红。**顺带核对**：该文件其余 17 处 `replace` 要么函数式、要么固定字面量（含 `$1` 捕获组引用，本意如此），只有这一处把用户内容放进替换串
+- [x] **0.3 绑定面契约门** —— ⚠ **原审计判断有误，此处更正**：项目**已有** `internal/app/surface.go` 的 `bindingSurfaces` 注册表，`surface_test.go` 断言它完整、当前、带理由，且新增绑定**不可能**不分类就过构建；`SurfaceDesktopOnly` 的含义是「无 MCP 对应」，不是「HTTP 也挡住」（HTTP 桥确实暴露它们，因为浏览器 UI 需要）。真正缺的是两道跨面契约门，已补：① `internal/app/frontend_contract_test.go` —— **前端 transport 调用的 93 个方法必须都是真实的 `*App` 方法**（方法名在 TS 侧是字符串，两个工具链都查不出改名/删除）；② `internal/httpapi/rpc_test.go` —— **HTTP 封禁名单必须恰好是已审阅的 4 个**（加第 5 个会静默弄坏浏览器模式），且前端不得调用其中任何一个。`internal/app/surface.go` 已补「三个可达面」说明
+- [x] **0.4 备份「成功」不再从文件存在推断** —— `internal/db/backup.go` 新增 `verifySnapshot()`（沿用仓库既有的 `file:` + `mode=ro` 打开模式，只读、产生不了 sidecar）。已存在但读不出来 → 删掉重建（截断文件会被认成 `database disk image is malformed`）；新建后立即自检，不通过则删除并报错——**一份存在但恢复不了的备份比没有备份更糟，因为它会消掉「我没有备份」这个信号**。新增 `TestCreateBackupRebuildsCorruptedSnapshot` / `TestCreateBackupRejectsEmptySnapshot`
+- [x] **0.5 发布链路拦截红灯 CI** —— `release.yml` 新增 `ci-gate` job：解析 tag 指向的 commit（注解 tag 用 `refs/tags/<tag>^{}` 解引用，`ls-remote` 实测拿到的是 commit 而非 tag 对象）、按 `head_sha` 查 CI run、**轮询等待**（tag 落地时 CI 可能还没跑完，单次采样会误杀）、失败或超时不发布。**用真实历史双向验证**：v2.14.0 的 tagged commit → CI `completed failure` → 新门会拦；修复后的 commit → `completed success` → 放行
+- [x] **0.6 同步 Homebrew tap / Scoop bucket** —— ✅ **已实际推送**，两个外部仓库 CI 全绿。新增 `scripts/sync-packaging.sh`（本仓成为 tap/bucket 的唯一真值源，含其 CI 工作流）；`release.yml` 新增 `sync-packaging` job（依赖 `fill-sha256`，因为摘要要先填好）；`packaging/README.md` 那句「每次发布自动复制」的不实描述已改成事实。旧名 `reponest` / `reponest-mcp` 保留为**别名且指向当前版本**（原来指向 v1.8.0，静默装 6 个版本前的构建）。**过程中 tap 的 CI 抓出两个真实缺陷**：① 本仓 Cask 带了 `license "MIT"` —— `license` 是 **Formula** 方法，`brew install --cask` 会直接拒绝整个定义（`brew install --cask repotory` 本来是装不上的）；② 别名 JSON 清单带了 `#` 注释 —— JSON 无注释语法，bucket 判为格式非法。两者均已修，并在 `scripts/check-packaging-manifests.sh`（新增，已进 `ci.yml` 的 `packaging-manifests` job）里做了**本仓侧**守卫——用探针验过它确实能抓到这两类
+- [x] **0.7 dmg 打包静默跳过改为硬失败** —— `release.yml` 的 macOS job：Wails 没产出 `.app` 直接 `exit 1`（原来整段被 `if [ -n "$APP" ]` 静默跳过）；`create-dmg` 后断言 `.dmg` 真的产出；Windows job 同样对三个二进制做存在性断言。另加**发布前资产完整性门**（`create-release` job）：按矩阵逐个平台核对 app / mcp / server / vsix / jetbrains / skill 六类资产齐全，缺一个就拒绝发布——`softprops/action-gh-release` 的 glob 匹配不到缺失文件时不会报错，Release 会照发。脚本用 v2.14.0 真实资产名 + 四种缺失场景验证过
+
+#### Sprint 1 —— 价值回收（接通已有投入）
+
+- [ ] **1.1 已批准 wiki 页可见化**（= 下方「用户动作」里那条欠账的正面解）。① `/wiki` 浏览界面 + `/wiki/:id` 路由 ② 暴露 `SearchWikiPages` 绑定 ③ VS Code / JetBrains 两个 IDE 分发面都消费它。**按 TODO 约定先落 ADR 再动工**
+- [x] **1.2 导入失败可见化** —— ✅ 后端+前端已落码。① `internal/core/plugin/plugin.go` 新增**可选**能力 `Rejection` / `RejectionReporter`（做成可选接口而非改 `Import()` 签名，是因为后者要一次性动全部导入器）；② `runtime.ImportRun` 增 `Failed` + `Errors`（有界采样 10 条），`SourceStatus` 增 `failed` / `errors`，运行时把导入器上报的拒绝折进报告并写进日志行；③ `internal/importers/opencode/opencode.go` 实现上报（三个丢弃点：读取失败 / 反序列化失败 / 无可用标题摘要，其中反序列化那条正是 2026-10-18 事故现场）；④ 前端 `PluginsTab.tsx` 展示「上次同步有 N 个文件无法读取：<首个原因>」，手动导入结果在 `failed>0` 时换一条提示；⑤ 双语 i18n 词条（`sourceRejectedFiles` / `importDoneWithFailures`）；⑥ 三条回归测试（拒绝被计入 / 未实现该能力的源保持干净 / 源修好后失败数归零）。**其余导入器（claude / codex / cursor / codebuddy / hermes / openclaw）尚未实现上报**，框架已就位，逐个接入即可
+- [ ] **1.3 快照完整性校验 + 异盘出口**：L1 快照落在数据目录同盘，而 2026-10-14 事故的成因正是「活库只在单盘上」；L2 六键默认全空 = 零外发 → 默认配置下事故成因未缓解。**验收**：提供「复制到指定目录」选项（用户挂外盘/NAS）
+- [x] **1.4 L3 全局画像层填实** —— ✅ **已落码 + 真库副本演练通过 + ADR-0031（中英双份）**。方案仍是①（人点），不是②（自动兜底）：`context_layers.go:29-33` 引的 ADR-0015 原文「Producing L3 automatically is exactly the 'model writes into the store with no gate'」继续有效，故**没有任何自动路径能填 L3**。实现：① `internal/db/wiki.go` 新增 `SetWikiPageScope(db, id, projectID)`——**全局页存 SQL `NULL` 而不是字面量 0**（`project_id` 带 `FOREIGN KEY ... REFERENCES projects(id)` 且库以 `PRAGMA foreign_keys=ON` 打开，`projects` 里没有 id 0 的行，写 0 会被约束拒绝；`CreateWikiPageAs` 早就是用 NULL 表达全局页的，本项沿用同一写法，并有测试 `TestSetWikiPageScope_LiteralZeroIsRejectedByTheForeignKey` 钉死「哪天外键不生效这条测试就红」）；② `internal/service/wiki_scope.go`：`ListApprovedWikiPages` / `PromoteWikiPageToGlobal` / `AssignWikiPageProject`——**只有已批准页能改作用域**（pending 页提升后在所有项目范围的审核队列里都不可见 → 变成没人能批准的孤儿页；rejected 是墓碑），提升幂等，移回必须显式点名项目（提升因此可逆，单向棘轮不是功能），**不改 status/content/source 也不改 `updated_at`**（新鲜度语义属于内容修订）；③ `internal/app/bindings.go` + `surface.go` 三个绑定全部 `SurfaceDesktopOnly` 且带理由，其中两个进 `surface_test.go` 的人闸门清单；④ 审核页新增「**页面作用域**」区（`Review.tsx` 的 `ScopeRow`）：已批准页逐行列出并标注当前作用域，提升**两击确认**（同页「采纳合并」的形态），移回用项目下拉点名，未选时按钮禁用并说明原因；⑤ 双语 i18n 词条（`scopeHeading` / `scopePromote` / `scopeDemote` 等 13 条）；⑥ ADR-0031 中英双份（`docs/adr/0031-global-page-scope.md` + `docs/en/adr/...`）+ 双语 ADR 索引各加一行 + `docs/api/reference.md` 中英各加一节 + 手册 `docs/features/knowledge.md` 中英各加一段。**验收达成**：真库副本演练（live 库 `.backup` 副本，全程只读 live）——演练页 `id=1 slug=cbipay project=25`：**L3 条目 0 → 1**、原始列 `project_id IS NULL` = 1、**按 slug 检索仍命中该页**、**移回项目后 L3 回到 0**。回归：db 5 例 + service 8 例 + 前端 4 例。**已知代价（ADR 里写明）**：提升是**扩权**（一页错判的知识从此影响所有项目）、页面离开原项目的 lint/export/词表/合并候选（取证不受影响）、作用域变更**不产生 `page_versions` 快照**（历史只记内容）、审核页已批准列表前端截 100 行
+- [ ] **1.5 MCP `repotory_ask` 接上证据问答**：现实现是 `SearchAll` + 格式化前 5 条命中（`cmd/mcp/main.go:217-221`），是 FTS grep 不是问答；桌面端已有 `AskAIWithEvidence`。**验收**：桌面端与 MCP 对同一问题给出带出处的答案
+- [ ] **1.6 i18n key 覆盖 CI 门**：前端 227 处 `t()` 调用带 `defaultValue`，缺 key 会静默回落到硬编码文案（多为中文）。**验收**：英文环境下无中文残留
+
+#### Sprint 2 —— 转向核心闭环
+
+- [ ] **2.1 handoff 闭环可用性优先于新功能**：live 库 handoff 笔记精确计数 = **1**（2026-10-26 审计当日补到 2），而它才是跨 agent 差异化所在。先补零配置试用路径（ADR-0010 已 Accepted-in-principle、默认关）。**验收**：连续 2 周 ≥ 5 条 handoff，且 `repotory_context` 首条命中 handoff
+- [ ] **2.2 停止扩 wiki / 图谱层**：27 approved / 18 rejected（**拒绝率 40%**）、page_links 55、compile_jobs 历史仅 3 次共 15 条笔记、证据门测的是 22 案例覆盖 27 页的玩具语料——在 approved 页可见化前，每加一行都是加深一个没人看的抽屉。产出率转向「知识类笔记 → 交接」
+- [ ] **2.3 `ai_call_log` 做成 UI**：现有数据 0 行（ADR-0030 默认全关）。叠加 ADR-0012「语义检索默认关 = 显式隐私授权」，已有一套完整的「本机私有 + 可审计」叙事，但目前只存在于 ADR 里
+- [ ] **2.4 CI 补齐**：Go 测试矩阵扩到 macos/windows（v2.14.0 红灯的直接成因是测试写死 `darwin/arm64`）；加 `go vet` job；加 `govulncheck`
+
+#### 审计过程中新发现（2026-10-26，均已核实）
+
+- **[`packaging/homebrew/Casks/repotory.rb:13`] Cask 带了 `license "MIT"`** —— `license` 是 **Formula** 方法，`brew install --cask` 会拒绝整个定义（`undefined method 'license' for Cask`）。**这条意味着 `brew install --cask repotory` 从来就装不上**，只是因为清单从没推到 tap，无人发现。已修（Formula 里的 `license` 合法，保留）
+- **[`packaging/homebrew/Casks/repotory.rb` 的 `app` stanza]** 原本写 `app "Repotory.app"`，而 dmg 里实际是 **`repotory.app`**（`wails.json` 的 `outputfilename: "repotory"` 决定，与 `productName: "Repotory"` 无关）。macOS 默认大小写不敏感所以没炸，但 tap 的 runner 是大小写敏感的——已按实际产物名改正
+- **[v2.14.0 的 dmg 内容]** 核验过：`repotory.app`，`CFBundleName=Repotory`、`CFBundleExecutable=repotory`
+- **[`internal/app/surface.go` 的注册表是完备的]** —— 原审计说「新增绑定会自动获得 HTTP 可达性、无门禁」是**错的**：注册表 + 完整性断言已经堵住了。真正的缺口是前端↔绑定的跨语言契约（已补测试）
+- **[`internal/service/service.go:29` 的 `Service.roDB`] 是死代码** —— 全项目无任何读取点，三个入口全传 nil
+- **[live 库数据卫生]** 2 条笔记 `source` 为空、1 条 `kind` 为空且 `content` 长度 0（"OpenClaw · AGENTS"）；`note_topics` 0 行（ADR-0028 上线次日）、`ai_call_log` 0 行（ADR-0030 默认全关）
+- **[live 库规模]** 33 项目 / 143 仓库 / 133 笔记（log 94 / knowledge 38 / **idea 0** / **manual 仅 1**）/ 45 wiki 页（approved 27 / rejected 18 = **40% 拒绝率**）/ 55 边 / **compile_jobs 全history 仅 3 次共 15 条笔记** / **handoff 笔记精确计数 = 1**（审计当日补到 2）。上游没东西喂给下游，是 M6/M7 全部无产出的根因
+
+#### Sprint 3 —— 一致性常态维护
+
+- [ ] **3.1 版本/schema 漂移纳入 CI**：`TODO.md`（已修）、`SECURITY.md:8-9`（支持版本写 1.5.x，产品 2.14.0）、`SECURITY.md:42`（说「每周扫描」而 `dependabot.yml` 是 monthly）、~~`AGENTS.md:9`（说 27 份 ADR）~~（**已随 ADR-0031 落码改为 31 份，但下次加 ADR 还会再漂——系统性修复仍未做**）、`ci.yml:75-76`（说 18/10 个测试文件，实为 136/34）——或让 `scripts/bump-version.sh` 覆盖，或加 CI 检查
+- [ ] **3.2 仓库瘦身**：`git ls-files outputs` = 241 个文件 / 18.4 MB（截图与设计 HTML）；`.gitignore` 漏了 `v21-rehearse/`（含 4.2MB 真库副本，仅靠 `*.db` 通配侥幸排除）
+- [ ] **3.3 `dsh-plugin-repotory` 加锁文件 + CI 构建门**：无 `package-lock.json`，依赖 `"@deepseek-ai/dsh-tools": "*"`，无任何 CI job 构建它；`Dockerfile` 入库但无构建无发布
+- [ ] **3.4 清死代码**：`Service.roDB`（`internal/service/service.go:29`）被存下来但全项目无任何读取点，三个入口全传 nil——读代码的人会以为存在只读副本分流
+- [ ] **3.5 `release.yml` 权限收窄**到 job 级：工作流级 `contents: write` 让只读 build 矩阵也持写 token，且在持写环境里跑 `npm install sharp` + `go install ...@v2.13.0`（`ci.yml:26-29` 反倒做对了 `contents: read`）
 
 ### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **已晋升 Accepted（2026-10-21，条件 10 三门全过：密度 27 approved/55 边、delta +0.205 @k=10 且 k=2..20 全区间为正、22 案例零回退；`wiki_graph_search` 已开启；种子召回补全与被否形态见 ADR 晋升记录）**
 
@@ -29,7 +79,7 @@
 ### 用户动作 / 外部依赖
 
 - [x] **真库事故收尾（2026-10-14）**：已完全闭环并归档至 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。源重导找回 48 条（笔记总数 107）、本地每日本地快照（L1）与 S3 远端推送（L2）均已交付。
-- [ ] **已批准 wiki 页的用户可见面**（2026-10-22 随 JetBrains 插件 MVP 落码时发现）：**真库有 27 个 approved 页，但 UI 上完全不可见** —— `web/src` 无任何组件渲染已批准页内容（`Review.tsx` 只读 pending 队列与 rejected 墓碑两处 `p.content`），`/knowledge` 与 `/review` 不接受页面参数，路由表无 wiki 页条目。db 层检索能力**已齐备**（`db.SearchWikiPages`，bm25 + approved-only + CJK 松弛，ADR-0014 W2 落的且有测试），但**从未暴露到 service/app 绑定层**（`SearchAll` 只覆盖 notes + todos）—— ADR-0014 注释里那句「W2 is that consumer」的消费者一直没来。**要做的**（属新功能，先落 ADR 再动工）：① 新增已批准页的浏览界面与可寻址路由；② 暴露 `SearchWikiPages` 绑定；③ 让两个 IDE 分发面（VS Code / JetBrains）都消费它。**为什么不在 JetBrains 插件里顺手做**：薄客户端纪律要求插件零逻辑复制（插件自己写 FTS 查询就是复制），且只补后端绑定不闭环——插件搜到 wiki 命中后前端无处可落。详见 [ADR-0027](docs/adr/0027-jetbrains-plugin.md)「实施修正记录」节
+- [ ] **已批准 wiki 页的用户可见面**（2026-10-22 随 JetBrains 插件 MVP 落码时发现）：**真库有 27 个 approved 页，但 UI 上完全不可见** —— `web/src` 无任何组件渲染已批准页内容（`Review.tsx` 只读 pending 队列与 rejected 墓碑两处 `p.content`），`/knowledge` 与 `/review` 不接受页面参数，路由表无 wiki 页条目。db 层检索能力**已齐备**（`db.SearchWikiPages`，bm25 + approved-only + CJK 松弛，ADR-0014 W2 落的且有测试），但**从未暴露到 service/app 绑定层**（`SearchAll` 只覆盖 notes + todos）—— ADR-0014 注释里那句「W2 is that consumer」的消费者一直没来。**要做的**（属新功能，先落 ADR 再动工）：① 新增已批准页的浏览界面与可寻址路由；② 暴露 `SearchWikiPages` 绑定；③ 让两个 IDE 分发面（VS Code / JetBrains）都消费它。**为什么不在 JetBrains 插件里顺手做**：薄客户端纪律要求插件零逻辑复制（插件自己写 FTS 查询就是复制），且只补后端绑定不闭环——插件搜到 wiki 命中后前端无处可落。详见 [ADR-0027](docs/adr/0027-jetbrains-plugin.md)「实施修正记录」节。**→ 已排入 P0 改进计划 Sprint 1.1（见上「P0 改进计划」节），2026-10-26 审计复核确认该判断成立：live 库 27 approved 页、0 条 UI 路由、0 个绑定暴露，`access_count>0` 仅 6 张且唯一写入点是 AI 取证路径**
 - [ ] **桌面 GUI 真机冒烟**：扫描→收藏→刷新历史→笔记 CRUD→版本恢复→知识库搜索→MCP 问答，并覆盖本轮新增的合并建议区 / 社区摘要 / 页面版本历史三块界面。（D25 的 ≤1080px 断点已实测修复——记忆环塌陷、搜索框与 handoff 列表被仪表盘遮盖；ADR-0017 已据此晋升 Accepted）（**进展 2026-10-19**：v2.7.0 wails build 通过、新包已真机启动——schema v25 真机迁移完成、污染 repo_meta 清零；交互清单待用户按序核验，新增「向上合并确认弹窗」「按仓库拆分」两项）（**进展 2026-10-22**：ADR-0022 的 GUI 冒烟部分已用隔离环境替代一轮——hermes 源「探活 → 导入 → 幂等复跑 → 定时同步 → 设置页展示」全链路走通，截图见 `outputs/screenshots/2026-10-22-adr0022-closure/`；**但桌面端（非 headless）的点击核验仍需用户本人按交互清单走一遍**）
   - **进展 2026-10-22（本轮两处新增 UI 已用 headless + chromium 实测截图）**：① 笔记卡片按来源类型的 badge —— 后端下发 `source_type` 已实测（opencode 笔记 = user-conversation、hermes 笔记 = agent-import），前端共享组件 `SourceTypeBadge` 渲染出「会话记录 · opencode」（accent 色调）与「Agent 记忆 · hermes」（info 色调），样式与卡片上既有的 Knowledge/Log/Idea 过滤 chip 同构；② 设置页逐源「本来源上次同步：<time>」已实测渲染（opencode 与 hermes 两行），`last_error` 行为空因两源均无失败。截图见 [outputs/screenshots/2026-10-22-adr0022-closure/](outputs/screenshots/2026-10-22-adr0022-closure/)。**过程中发现并已澄清的坑**：`--web-dist` 服务端栈必须用 `npm run build:server` 的产物（base `/`），桌面版 `web/dist`（base `./`）在深链接 `/project/1` 下会把资源解析成 `/project/assets/...` 而全部 404 —— 这是 vite.config.ts 早已写明的既有约定，非本轮引入的缺陷。
 - [ ] **Hermes sessions 真机核验 — state.db 链路已跑通（2026-10-20），剩设置页点源一眼**：Hermes Agent v0.22.2 已按官方 install.sh 装上本机（HTTPS 克隆超时 → `HERMES_REPO_URL` 走 SSH 源），配 LM Studio（`model.provider=lmstudio`，bonsai-27b）跑通 `hermes chat --oneshot` 产出真 `~/.hermes/state.db`（WAL、274KB，`source='oneshot'`）；官方 `session-storage.md` 与导入器读取列逐一致（schema 证据由 Tencent 侧证升级为官方文档 + 真机数据）。沙箱库 + 真数据实测：探活 detected ✓（state.db 单独判活）、首导 created=1、复跑幂等 updated=1、memories/ 缺失优雅 no-op、笔记落「未分类」（hermes_project 未设的既定语义）。**剩**：设置页点源验证（v2.8.0 桌面包重启后点一下）；curated memories 半边仍空（`~/.hermes/memories/` 待真实使用产生 MEMORY.md/USER.md）

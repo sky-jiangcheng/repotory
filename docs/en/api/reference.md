@@ -155,6 +155,23 @@ Writing a topic is a **human organizing act** (like `MoveNote`), so all five bin
 
 `ListTodos(projectID)` / `CreateTodo(projectID, title)` / `ToggleTodo(id)` / `DeleteTodo(id)` / `ReorderTodos(ids[])` (reordered in a single transaction).
 
+## Knowledge-page review and scope
+
+Compiled knowledge pages land as pending first, and only a human publishes them into retrieval (ADR-0015). **Scope** says where a page may speak: the project tier (the default) or the global tier (`project_id = 0`, which enters L3, the cross-project profile of `repotory_context`, and is visible to retrieval in every project). Both moves are **human acts**, so this family of bindings is desktop-only with no MCP twin.
+
+| Method | Description |
+|------|------|
+| `ListPendingWikiPages(projectID)` | the pending queue (each entry carries its source notes and edges, so it can be compared before approval); `projectID=0` means every project |
+| `ApproveWikiPage(pageID)` | publishes a page into retrieval. Neither the compiler nor the lint can reach it |
+| `RejectWikiPage(pageID)` | replaces a pending page with an error-page tombstone (the row is kept, so inbound links stay resolvable); approved pages are refused |
+| `ListRejectedWikiPages(projectID)` | the error-page list |
+| `DeleteCompiledPage(pageID)` | permanently removes a never-published page (pending or rejected); approved pages are refused |
+| `ListApprovedWikiPages(projectID)` | the approved-page list (the scope surface); `projectID=0` includes the global pages |
+| `PromoteWikiPageToGlobal(pageID)` | promotes an approved page into the global tier. **Only approved pages may be promoted** (a pending page is invisible to every project-scoped review feed, so promoting one would create an orphan nobody could approve); idempotent |
+| `AssignWikiPageProject(pageID, projectID)` | moves a global page back into a named project (which is what makes the promotion reversible); the target project must exist |
+
+Neither move changes a page's status or content, and neither touches `updated_at` (freshness semantics belong to content revisions). A global page is stored as SQL `NULL` — `project_id` carries a foreign key and the database runs with `PRAGMA foreign_keys=ON`, so the literal 0 is rejected by the constraint; Go projects it to 0 uniformly. See ADR-0031.
+
 ## Configuration
 
 | Method | Description |

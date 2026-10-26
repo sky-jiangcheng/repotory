@@ -155,6 +155,23 @@ cd .. && go build -o repotory-server ./cmd/server
 
 `ListTodos(projectID)` / `CreateTodo(projectID, title)` / `ToggleTodo(id)` / `DeleteTodo(id)` / `ReorderTodos(ids[])`（单事务重排）。
 
+## 知识页面审核与作用域
+
+编译产出的知识页先落在 pending，由人批准才进检索（ADR-0015）。**作用域**决定这一页「在哪里说话」：项目层（默认）或全局层（`project_id = 0`，进入 `repotory_context` 的 L3 跨项目画像，并对所有项目的取证可见）。两者都是**人的动作**，因此这一族绑定一律 desktop-only、无 MCP 对应面。
+
+| 方法 | 说明 |
+|------|------|
+| `ListPendingWikiPages(projectID)` | 待审队列（每项带来源笔记与边，供批准前对照）；`projectID=0` 为全部项目 |
+| `ApproveWikiPage(pageID)` | 批准一页，使其进入检索。编译器与 lint 都到不了这里 |
+| `RejectWikiPage(pageID)` | 把待审页替换为错误页墓碑（不删行，引用它的链接仍可解析）；已批准的页被拒 |
+| `ListRejectedWikiPages(projectID)` | 错误页清单 |
+| `DeleteCompiledPage(pageID)` | 彻底删除从未发布的页（待审或已拒绝）；已批准的页被拒 |
+| `ListApprovedWikiPages(projectID)` | 已批准页清单（作用域面）；`projectID=0` 含全局页 |
+| `PromoteWikiPageToGlobal(pageID)` | 把已批准页提升为全局页。**仅已批准页可提升**（未批准页在项目范围的审核队列里不可见，提升会造出没人能批准的孤儿页）；幂等 |
+| `AssignWikiPageProject(pageID, projectID)` | 把全局页移回指定项目（提升因此可逆）；目标项目必须存在 |
+
+提升与移回**不改页面的状态与内容**，也不改 `updated_at`（新鲜度语义属于内容修订）。全局页在库里存为 SQL `NULL`——`project_id` 带外键且库以 `PRAGMA foreign_keys=ON` 打开，字面量 0 会被约束拒绝；Go 侧统一投影为 0。详见 ADR-0031。
+
 ## 配置
 
 | 方法 | 说明 |
