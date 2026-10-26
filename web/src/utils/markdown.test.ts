@@ -88,6 +88,32 @@ describe('renderMarkdown', () => {
     expect(result).toContain('after')
   })
 
+  // Regression: injectCallouts used to pass the rendered callout as a STRING
+  // replacement, and String.prototype.replace interprets `$` patterns in a
+  // string replacement. The callout body is user content, so `$$` collapsed to
+  // `$` (a note saying `echo $$` rendered as `echo $`) and `$&` expanded to the
+  // matched placeholder — leaking the internal `%%CALLOUT_0_xxx%%` token into
+  // the visible output.
+  //
+  // The dollars sit inside a code span because the inline-math renderer runs
+  // AFTER the callout injection and would otherwise read `$...$` as a math
+  // expression. A code span is stashed before math rendering — which is also
+  // where these patterns realistically appear (a note quoting shell syntax).
+  it('keeps dollar patterns in callout content literal', () => {
+    const result = renderMarkdown('> [!NOTE]\n> run `echo $$` and perl `$&` match')
+    expect(result).toContain('echo $$')
+    expect(result).toContain('$&amp;')
+    expect(result).not.toContain('%%CALLOUT')
+  })
+
+  // `$'` splices the text AFTER the match into the replacement — so a callout
+  // containing it duplicated the rest of the document into the callout body.
+  it('does not splice the following document into a callout body', () => {
+    const result = renderMarkdown('> [!NOTE]\n> literal `$`\'` token\n\nTAILMARKER')
+    expect(result.match(/TAILMARKER/g)?.length).toBe(1)
+    expect(result).not.toContain('%%CALLOUT')
+  })
+
   it('renders code blocks with syntax highlighting', () => {
     const result = renderMarkdown('```js\nconsole.log("hi")\n```')
     expect(result).toContain('<pre><code')

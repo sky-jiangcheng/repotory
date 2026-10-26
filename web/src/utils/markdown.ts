@@ -206,10 +206,18 @@ function renderInlineMath(html: string): string {
 // injectCallouts swaps each extraction placeholder for its rendered callout
 // HTML. Placeholders are index-scoped (`%%CALLOUT_<i>_<rand>%%`), so N callouts
 // — even N of the same type — each get exactly their own block.
+//
+// The replacement MUST be a function, not a string. String.prototype.replace
+// interprets `$` patterns in a string replacement: `$$` collapses to `$`, `$&`
+// expands to the matched placeholder, and `` $` `` / `$'` splice in the text
+// before/after the match. The callout body is USER CONTENT (a note can
+// legitimately contain `echo $$`, a perl `$&`, or a `$'`), so a string
+// replacement silently rewrote the user's text and leaked the internal
+// placeholder into the visible output. A function replacement is literal.
 function injectCallouts(html: string, callouts: CalloutBlock[]): string {
   for (let i = 0; i < callouts.length; i++) {
     const placeholderRegex = new RegExp(`%%CALLOUT_${i}_\\w+%%`)
-    html = html.replace(placeholderRegex, renderCallout(callouts[i]))
+    html = html.replace(placeholderRegex, () => renderCallout(callouts[i]))
   }
   return html
 }
