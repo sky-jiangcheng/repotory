@@ -31,9 +31,12 @@ go test ./...            # Go 全量测试（service/db/knowledge/scanner/diff�
 cd web && npm test       # vitest
 cd web && npm run build  # tsc 严格检查（ESLint 现状见 TODO.md）
 node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** ↔ docs/en/**）
+node scripts/check-i18n-keys.mjs    # locale 词条覆盖守卫（key 缺失 / 语言漂移 / 英文残留中文）
 ```
 
 > 双语文档镜像守卫：`docs/**/*.md`（中文源）与 `docs/en/**/*.md`（英文源）必须互为 1:1。改一边、只改一边的「双语漂移」会被 `scripts/check-docs-mirror.mjs` 在 CI（`docs-mirror` job）拦下。有意只出中文的研究文档（`competitive-positioning.md`、`positioning-brief.md`、`product-review/*`）在该脚本的 `ZH_ONLY` 白名单里；新增此类文档时同步登记白名单，否则守卫会误报。
+
+> **locale 词条覆盖守卫**：`scripts/check-i18n-keys.mjs`（CI `i18n-keys` job）断言四件事——① 代码里静态引用到的每个 `t()` key 在每个 locale 都存在；② 各 locale 的 base key 集合一致（没有「只加一边」的漂移）；③ 用了复数变体（`_other` 等）就必须有 base key；④ 英文 locale 的值里不残留中文。**新增界面文案时，中英两份 `web/src/locales/*/common.json` 必须同批改**——只改一边会在 CI 上报红。
 
 > **绑定面契约守卫**：`internal/app/api_contract_test.go` 会在 `go test ./...` 里核对 `docs/api/reference.md`（中英双份）与 `*App` 的绑定面——文档写到的绑定必须真实存在、已删除的绑定不得复活、两边文档的绑定集必须一致。改绑定面时**只改代码不同步文档会被这条门拦下**。
 
@@ -98,7 +101,7 @@ node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** �
 
 ## PR 检查清单
 
-- [ ] `go test ./...`、`npm test`、`npm run build` 全绿；`node scripts/check-docs-mirror.mjs`（双语文档 1:1 镜像守卫，CI `docs-mirror` job）通过
+- [ ] `go test ./...`、`npm test`、`npm run build` 全绿；`node scripts/check-docs-mirror.mjs`（双语文档 1:1 镜像守卫，CI `docs-mirror` job）与 `node scripts/check-i18n-keys.mjs`（locale 词条覆盖守卫，CI `i18n-keys` job）通过
 - [ ] 不触碰范围冻结与冻结标识（或已在 Issue/ADR 中说明理由）
 - [ ] 绑定面变更已同步 API 参考；用户可见变更已更新手册与 CHANGELOG
 - [ ] 新增依赖有明确理由（本项目依赖极简：wails、mcp-go、minio-go、chromem-go、modernc sqlite）

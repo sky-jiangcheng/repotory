@@ -27,6 +27,7 @@ bash scripts/dev.sh
 
 - **双语手册必须同批改**：`docs/**` 与 `docs/en/**` 是镜像，只改一边 = 双语漂移（历史上英文站曾讲出不存在的产品架构）。已有 CI 硬门 `docs-mirror`（`scripts/check-docs-mirror.mjs`）拦截——改中文页记得补英文 twin；有意只出中文的研究文档（`competitive-positioning` / `positioning-brief` / `product-review/*` / `product/*`）走该脚本的 `ZH_ONLY` 白名单
 - **`docs/**/*.html` 是构建产物，不手改**；内容源是 `docs/**/*.md`
+- **界面文案中英必须同批改**：`web/src/locales/{zh-CN,en}/common.json` 是镜像，只改一边 = 英文界面显示 key 本身，或被调用点的中文 `defaultValue` 悄悄接管。已有 CI 硬门 `i18n-keys`（`scripts/check-i18n-keys.mjs`）拦截——新增 `t()` key 时两份都要补，英文文案里也不该留中文
 - **schema 变更**：`ExpectedSchemaVersion`（`internal/integrity/checks.go`）与迁移表（`internal/db/migrate.go`）+ 防漂移测试是守卫，版本号必须同步推进且可逆测试跟上
 - **CSS 语义色顺序不变量**由 `web/src/styles/semanticInk.test.ts` 钉住；改全局 CSS 顺序前先读它
 - **冻结标识**（`repotory` 二进制名/数据目录/MCP 前缀 `repotory_*`）绑定用户数据迁移史，不「顺手统一」——见 CONTRIBUTING「范围冻结」

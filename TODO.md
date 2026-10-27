@@ -5,7 +5,7 @@
 
 ## 现状速查（新会话从这里开始）
 
-- 品牌 **Repotory**（原 RepoNest），版本 **v2.14.0**（2026-10-25），SSOT 在 `wails.json`。
+- 品牌 **Repotory**（原 RepoNest），版本 **v2.15.0**（2026-10-26），SSOT 在 `wails.json`。
 - schema **v28**（v28：ADR-0030 AI 调用审计 `ai_call_log` 底座；v27：ADR-0028 主题层 `note_topics`；v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.0 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 已随 lane 2 晋升开启（2026-10-21））；ADR-0018 lane 1 与 lane 2 均 **Accepted**（lane 1 真库演练 PASS，产物 `v21-rehearse/`；lane 2 于 2026-10-21 过条件 10 三门，实现定型与负结果见 ADR 晋升记录）。
 - 近期大项均已落地：插件脚本运行时（yaegi）已移除（C11-B）、全局 CSS Modules 迁移收口（全局 1,227 行）、D25 首屏经 **ADR-0024** 演进为**首页工作台**——记忆环条 + 知识库智能助手（`web/src/pages/home/HomeKnowledgeAssistant.tsx`）+ 重点项目速览 / 今日动态（`web/src/pages/Home.tsx`），全局搜索独立为 `/search` 顶级页（空闲态含热门项目 top6 / 热门标签 top12 推荐，`web/src/pages/Search.tsx`）。⚠ **`/dashboard` 从未重定向**：仪表盘是独立顶级页、主导航「仪表盘」与「搜索」两项并存，首页只给「进入完整仪表盘」直达链接——ADR-0024 决策 1 的「单栏融合 + 重定向」措辞已于 2026-10-23 按落码修订。
 - **M7 lane 2 生产管线已激活（2026-10-22）**：`semantic_search=1` + LM Studio 端点（`text-embedding-nomic-embed-text-v1.5`，dim=768）+ 双向量重建落库（笔记 133 / approved 页 27，经运行中 headless server 的 `/api/rpc` 完成，激活前 live 已文件备份 `repotory.db.backup-20261022-093904`）。live 直评证据门 **k=2/5/10/20 delta +0.114 / +0.159 / +0.205 / +0.205**（ndcg 全正，与晋升 v4 逐点一致，graph perfect 13/22、零回退）——生产口径由 FTS-only +0.023 升级为全管线。
@@ -38,7 +38,7 @@
 - [ ] **1.3 快照完整性校验 + 异盘出口**：L1 快照落在数据目录同盘，而 2026-10-14 事故的成因正是「活库只在单盘上」；L2 六键默认全空 = 零外发 → 默认配置下事故成因未缓解。**验收**：提供「复制到指定目录」选项（用户挂外盘/NAS）
 - [x] **1.4 L3 全局画像层填实** —— ✅ **已落码 + 真库副本演练通过 + ADR-0031（中英双份）**。方案仍是①（人点），不是②（自动兜底）：`context_layers.go:29-33` 引的 ADR-0015 原文「Producing L3 automatically is exactly the 'model writes into the store with no gate'」继续有效，故**没有任何自动路径能填 L3**。实现：① `internal/db/wiki.go` 新增 `SetWikiPageScope(db, id, projectID)`——**全局页存 SQL `NULL` 而不是字面量 0**（`project_id` 带 `FOREIGN KEY ... REFERENCES projects(id)` 且库以 `PRAGMA foreign_keys=ON` 打开，`projects` 里没有 id 0 的行，写 0 会被约束拒绝；`CreateWikiPageAs` 早就是用 NULL 表达全局页的，本项沿用同一写法，并有测试 `TestSetWikiPageScope_LiteralZeroIsRejectedByTheForeignKey` 钉死「哪天外键不生效这条测试就红」）；② `internal/service/wiki_scope.go`：`ListApprovedWikiPages` / `PromoteWikiPageToGlobal` / `AssignWikiPageProject`——**只有已批准页能改作用域**（pending 页提升后在所有项目范围的审核队列里都不可见 → 变成没人能批准的孤儿页；rejected 是墓碑），提升幂等，移回必须显式点名项目（提升因此可逆，单向棘轮不是功能），**不改 status/content/source 也不改 `updated_at`**（新鲜度语义属于内容修订）；③ `internal/app/bindings.go` + `surface.go` 三个绑定全部 `SurfaceDesktopOnly` 且带理由，其中两个进 `surface_test.go` 的人闸门清单；④ 审核页新增「**页面作用域**」区（`Review.tsx` 的 `ScopeRow`）：已批准页逐行列出并标注当前作用域，提升**两击确认**（同页「采纳合并」的形态），移回用项目下拉点名，未选时按钮禁用并说明原因；⑤ 双语 i18n 词条（`scopeHeading` / `scopePromote` / `scopeDemote` 等 13 条）；⑥ ADR-0031 中英双份（`docs/adr/0031-global-page-scope.md` + `docs/en/adr/...`）+ 双语 ADR 索引各加一行 + `docs/api/reference.md` 中英各加一节 + 手册 `docs/features/knowledge.md` 中英各加一段。**验收达成**：真库副本演练（live 库 `.backup` 副本，全程只读 live）——演练页 `id=1 slug=cbipay project=25`：**L3 条目 0 → 1**、原始列 `project_id IS NULL` = 1、**按 slug 检索仍命中该页**、**移回项目后 L3 回到 0**。回归：db 5 例 + service 8 例 + 前端 4 例。**已知代价（ADR 里写明）**：提升是**扩权**（一页错判的知识从此影响所有项目）、页面离开原项目的 lint/export/词表/合并候选（取证不受影响）、作用域变更**不产生 `page_versions` 快照**（历史只记内容）、审核页已批准列表前端截 100 行
 - [ ] **1.5 MCP `repotory_ask` 接上证据问答**：现实现是 `SearchAll` + 格式化前 5 条命中（`cmd/mcp/main.go:217-221`），是 FTS grep 不是问答；桌面端已有 `AskAIWithEvidence`。**验收**：桌面端与 MCP 对同一问题给出带出处的答案
-- [ ] **1.6 i18n key 覆盖 CI 门**：前端 227 处 `t()` 调用带 `defaultValue`，缺 key 会静默回落到硬编码文案（多为中文）。**验收**：英文环境下无中文残留
+- [x] **1.6 i18n key 覆盖 CI 门** —— ✅ **已落码（详见下方「前端审计」小节）**。⚠ **更正原前提**：实测 746 个不同 `t()` key，**739 两语齐备、英文缺失 0 个**，真实缺口是 **7 个在中英两份 locale 里都不存在**的 key（不是「227 处 t() 回落」；227 是带 `defaultValue` 的调用数，那些 key 绝大多数都存在）。7 个孤儿 key 已补齐两份 locale + 去掉调用点的 `defaultValue`；新增 `scripts/check-i18n-keys.mjs` + CI `i18n-keys` job，四条断言（key 存在 / 无语言漂移 / 复数变体须有 base key / 英文 locale 不留中文）。**验收（英文环境下无中文残留）达成**，盲区见小节内的说明
 
 #### Sprint 2 —— 转向核心闭环
 
@@ -57,9 +57,30 @@
 - **[live 库数据卫生]** 2 条笔记 `source` 为空、1 条 `kind` 为空且 `content` 长度 0（"OpenClaw · AGENTS"）；`note_topics` 0 行（ADR-0028 上线次日）、`ai_call_log` 0 行（ADR-0030 默认全关）
 - **[live 库规模]** 33 项目 / 143 仓库 / 133 笔记（log 94 / knowledge 38 / **idea 0** / **manual 仅 1**）/ 45 wiki 页（approved 27 / rejected 18 = **40% 拒绝率**）/ 55 边 / **compile_jobs 全history 仅 3 次共 15 条笔记** / **handoff 笔记精确计数 = 1**（审计当日补到 2）。上游没东西喂给下游，是 M6/M7 全部无产出的根因
 
+#### 前端审计（2026-10-26）—— 已修 + 遗留
+
+> 范围：`web/src` 全量自查（渲染与消毒链、i18n、异步与状态、HTML 注入面）。上一轮派出的「审计前端风险」子 agent **中途断线**（`net::ERR_CONNECTION_CLOSED`），只留下一条 markdown `$` bug（已随 v2.15.0 发布）；本轮不再铺开子 agent，改为逐条核实到调用点。
+> **审计纪律**：每条疑似缺陷都核实到「调用点 + 后端保证」再落笔，因此避免了 3 个误报——① `useNoteDraft` 草稿串台已有调用方 `key` 护栏；② 3 个数组端点（`getRepoCommits` / `getProjectCommits` / `listAICallAudit`）后端保证非 nil；③ `search:xxx` 是 i18next 的 **namespace 语法**，不是缺失 key。
+
+**已修（本次）**
+
+- [x] **7 个 i18n key 在中英两份 locale 里都不存在** —— `home.thinking` / `home.sourceGraph` / `home.sourceSemantic` / `home.sourceFact` / `home.sourceFts` / `project.linkSuggestions` / `project.applyWikilink`。英文界面这 7 处硬编码着「思考中」「图谱」「向量」「事实」「全文」「双链建议:」。两份 locale 已补齐；7 个调用点的 `defaultValue` 一并去掉（让 key 缺失变成「响亮失败」而不是静默中文）；`project.applyWikilink` 改用 i18next 插值（`{{slug}}`）而非字符串拼接
+- [x] **英文 locale 里的中文残留** —— `settings.audit.rulesPlaceholder`（AI 审查规则的示例正则）中英共用中文示例（`身份证` / `客户手机号`），英文界面照抄。已改为英文示例（`SSN` / `Customer phone` / `-----BEGIN`）
+- [x] **源码里写死的界面中文（8 处可见 + 4 处全角标点）** —— locale 检查看不见的第二条路径：文案压根没走 i18next，直接写在 JSX 里。实测**除 `defaultValue` 外**还有 17 处硬编码中文，其中 13 处会显示在英文界面、4 处是有意为之（语言名「中文」×2、识别中文错误文案的正则、markdown 里的 CJK 括号正则）。已修的可见项：AI 助手的两个空标题兜底（`知识库对话记录` / `知识库 Q&A`）、召回来源 tooltip（`召回来源:`）、全局错误边界的 `应用加载出错` / `重试`、更新下载的时长格式（`45秒` / `1分23秒` / `2小时5分`）、项目下拉的全角括号、知识库页的全角括号、项目概览的全角冒号、扫描根的全角分号。新增 11 组双语词条；`formatDuration` 改为纯函数收 `t`（与本文件 `titleFor(t, state)`、`utils/apiError.ts` 的 `describeApiError(t, err)` 同一范式），`main.tsx` 的类组件错误边界改用 `i18n.t`。**顺带修掉一个双括号缺陷**：`project.current` 的值本身就带括号，调用点又包了一层，中英文都是 `（（当前））` —— 现改为 `project.currentProject`（`{{name}}（当前）` / `{{name}} (current)`）
+- [x] **i18n key 覆盖 CI 门**（= 原 1.6，已在上面标记完成）—— 新增 `scripts/check-i18n-keys.mjs` + CI `i18n-keys` job（纯 node、零依赖，与 `docs-mirror` / `i18n-interpolation` 同形）。**七条断言**：① 静态引用的每个 key 在每个 locale 都存在；② 各 locale 的 base key 集合一致（拦「只加一边」的漂移）；③ 用了复数变体必须有 base key；④ 英文 locale 的值里不残留中文；⑤ **源码里（注释与 `defaultValue` 之外）不残留硬编码中文**；⑥ 模板字面量 key 的静态前缀在每个 locale 都对应非空键族；⑦ **`dangerouslySetInnerHTML` 里不得直接塞 `t(...)`**。**七类检查都做过负例验证**（删 key / 删复数 base / locale 混中文 / 删 namespace 文件 / 源码塞中文 / 把翻译文本塞回 innerHTML，均能报红）。**已知盲区**：动态 key（9 处 `t(variable)`）无法静态求值，只做「键族存在性」检查；调用点上约 207 处 `defaultValue` 保留为既有写法（key 存在时永远读不到）；门里 CJK 区间的端点**用码位写死**而不是字面量区间——字面量区间被工具链归一化过一次（`豈` 落在 U+8C48 而非 U+F900），区间从 U+F900-FAFF 变成 U+8C48-FAFF，连 emoji 都被判成中文
+- [x] **F1 i18n 词条被当 HTML 注入** —— `PluginsTab.tsx` / `ActionsTab.tsx` 用 `dangerouslySetInnerHTML` 塞 `t('settings.pluginDesc')` / `t('settings.importClaudeDesc')`。当前值是静态翻译串（仅含 `<code>`），**不可利用**；但把「翻译内容」当 HTML 注入，一旦词条里混入用户可控文本就是漏洞。新增 `web/src/components/CodeText.tsx`：只认 `<code>` / `</code>` 两个固定标签，其余一律当纯文本渲染，**产出的 DOM 与原先的 innerHTML 完全一致**（样式选择器 `.settings-section > .section-desc code` 照旧命中）。门里加了第 ⑦ 条断言防回潮
+- [x] **F2 搜索页的 URL→state 只在挂载时初始化** —— 站内深链跳转（而非首次进入）会静默失效，并被 state→URL 的 effect 反写覆盖：**URL 显示的是新词，搜出来的是旧词的结果**，失败得很安静。改为「URL 变了才同步回输入框」。**关键坑**：react-router 的 `navigate` 走 transition（低优先级），在它生效前会先渲染一次旧 URL——早先的版本在渲染期直接比对 URL，于是打字打到一半被旧值清空。现在同步放进 `useEffect`（依赖是 `urlQuery`，只在 URL **真的变了**时才跑），并用「我们最后写进 URL 的值」区分外部改动与自己那次尚未生效的写入
+- [x] **F3 `useNoteDraft` 的跨项目安全依赖调用方** —— 原先靠 `ProjectDetail.tsx:372` 的 `key={notes-${id}}` 兜底，hook 自身不自保。改为状态带 projectId + 按派生失效（学 `useTopics.ts` 的写法）：切项目时按新项目重载草稿，且**永远只写当前项目那个槽**。调用方的 `key` 保留（它还负责重置编辑器的其它状态），hook 这层是第二道防线。新增 `useNoteDraft.test.ts`（6 例），含「旧草稿绝不落进新项目的槽」的瞬时写入断言
+- [x] **F4 `useScanPolling` 后端持续不可用时每 2s 无限轮询** —— 改为自调度 `setTimeout`（慢请求不再堆叠轮询）+ 连续失败指数退避（2s → 4s → 8s …，上限 30s），一次成功即复位；新扫描开始时退避计数归零。新增 2 例退避测试
+- [x] **已核实无问题**（免重复查）：markdown 消毒链闭合（marked → DOMPurify → callout 各自消毒 → hljs → KaTeX 段末再 sanitize 一次）；远程 release notes 渲染有消毒；图标动态 name 是封闭集合；`useApiData` 竞态防护到位（序列号守卫 + 卸载失效 + inflight 去重 + TTL 缓存）；`useTopics` 派生失效写法正确；`NoteSection` / `TodoSection` 序列守卫 + 错误态（失败不伪装成空态）；`useNoteMutations` 乐观更新回滚语义正确；其余 9 处 `dangerouslySetInnerHTML` 都过了 DOMPurify 或 `renderMarkdown`
+
+**遗留**
+
+- 暂无。下一批候选见 P0 计划的 1.1（已批准 wiki 页可见化，**先落 ADR**）/ 1.3（快照完整性校验 + 异盘出口）/ 1.5（MCP `repotory_ask` 接证据问答）。
+
 #### Sprint 3 —— 一致性常态维护
 
-- [ ] **3.1 版本/schema 漂移纳入 CI**：`TODO.md`（已修）、`SECURITY.md:8-9`（支持版本写 1.5.x，产品 2.14.0）、`SECURITY.md:42`（说「每周扫描」而 `dependabot.yml` 是 monthly）、~~`AGENTS.md:9`（说 27 份 ADR）~~（**已随 ADR-0031 落码改为 31 份，但下次加 ADR 还会再漂——系统性修复仍未做**）、`ci.yml:75-76`（说 18/10 个测试文件，实为 136/34）——或让 `scripts/bump-version.sh` 覆盖，或加 CI 检查
+- [ ] **3.1 版本/schema 漂移纳入 CI**：`TODO.md`（已修，本次同步到 2.15.0）、~~`SECURITY.md:8-9`（支持版本写 1.5.x）~~（**已随 v2.15.0 发布改为 2.15.x**）、`SECURITY.md:42`（说「每周扫描」而 `dependabot.yml` 是 monthly）、~~`AGENTS.md:9`（说 27 份 ADR）~~（**已随 ADR-0031 落码改为 31 份，但下次加 ADR 还会再漂——系统性修复仍未做**）、`ci.yml:75-76`（说 18 个测试文件——**已改成不写死数字**，免得再漂；实为 Go 144 个 / 前端 36 个）——或让 `scripts/bump-version.sh` 覆盖，或加 CI 检查
 - [ ] **3.2 仓库瘦身**：`git ls-files outputs` = 241 个文件 / 18.4 MB（截图与设计 HTML）；`.gitignore` 漏了 `v21-rehearse/`（含 4.2MB 真库副本，仅靠 `*.db` 通配侥幸排除）
 - [ ] **3.3 `dsh-plugin-repotory` 加锁文件 + CI 构建门**：无 `package-lock.json`，依赖 `"@deepseek-ai/dsh-tools": "*"`，无任何 CI job 构建它；`Dockerfile` 入库但无构建无发布
 - [ ] **3.4 清死代码**：`Service.roDB`（`internal/service/service.go:29`）被存下来但全项目无任何读取点，三个入口全传 nil——读代码的人会以为存在只读副本分流
