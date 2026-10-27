@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-10-27
+
+### 修复
+
+- **英文界面有 7 处硬编码中文：i18n key 在中英两份 locale 里都不存在（2026-10-26）**：前端审计发现 `home.thinking` / `home.sourceGraph` / `home.sourceSemantic` / `home.sourceFact` / `home.sourceFts` / `project.linkSuggestions` / `project.applyWikilink` 这 7 个 key **从未被写进任何 locale 文件**。i18next 取不到词条时返回 key 本身（不抛错），而调用点又写了中文 `defaultValue` 兜底，于是英文界面安静地显示着「思考中」「图谱」「向量」「事实」「全文」「双链建议:」——界面看起来是「翻译得不完整」，不是「坏了」，于是没人会去查。两份 locale 已补齐这 7 个词条；调用点的 `defaultValue` 一并去掉，让 key 缺失变成响亮失败而不是静默回退成中文；`project.applyWikilink` 改用 i18next 插值（`{{slug}}`）而非字符串拼接。另修 `settings.audit.rulesPlaceholder`——AI 审查规则的示例正则中英共用中文示例（`身份证` / `客户手机号`），英文界面照抄，已改为英文示例（`SSN` / `Customer phone` / `-----BEGIN`）。
+- **英文界面还有 13 处界面文案压根没走 i18next（2026-10-27）**：上一条是「词条不存在」，这一条是「压根没有词条」——文案直接写死在 JSX 里，locale 检查看不见。逐处核实后修掉：AI 助手的两个空标题兜底（`知识库对话记录` / `知识库 Q&A`）、召回来源 tooltip（`召回来源:`）、全局错误边界（`应用加载出错` / `重试`）、更新下载的时长格式（`45秒` / `1分23秒` / `2小时5分`）、以及三处全角标点（项目下拉、知识库页、项目概览、扫描根的 `（ ）` `：` `；`）。新增 11 组双语词条；`formatDuration` 改为纯函数收 `t`（与本文件 `titleFor(t, state)` 同一范式），`main.tsx` 的类组件错误边界改用 `i18n.t`。**顺带修掉一个双括号缺陷**：`project.current` 的值本身就带括号、调用点又包了一层，中英文都是 `（（当前））`。
+- **把翻译文本当 HTML 注入（2026-10-27）**：设置页两条描述用 `dangerouslySetInnerHTML` 塞 `t(...)` 的返回值。当前值是静态翻译串（仅含 `<code>`），**不可利用**；但「词条」一旦混入用户可控文本就是注入点，而词条是数据，不该有执行权。新增 `CodeText` 组件：只认 `<code>` / `</code>` 两个固定标签，其余一律当纯文本渲染，产出的 DOM 与原先的 innerHTML 完全一致。
+- **搜索页的深链在站内跳转时静默失效（2026-10-27）**：`?q=` 只在挂载那一刻被读一次，站内跳到 `/search?q=xxx` 时输入框仍是上一次的旧内容，并被 state→URL 的 effect 反写覆盖——**URL 显示的是新词，搜出来的是旧词的结果**，失败得很安静。改为「URL 变了才同步回输入框」。（实现上有个坑：react-router 的 `navigate` 走 transition，在它生效前会先渲染一次旧 URL，早先的版本在渲染期直接比对 URL，于是打字打到一半被旧值清空。）
+- **笔记草稿可能落进别的项目（2026-10-27）**：`useNoteDraft` 的跨项目安全原先靠调用方 `ProjectDetail.tsx` 的 `key={notes-${id}}` 兜底，hook 自身不自保——换个调用方就会把上个项目的草稿写进新项目的 localStorage 槽。改为状态带 projectId + 按派生失效，**永远只写当前项目那个槽**；调用方的 `key` 保留（它还负责重置编辑器的其它状态）。
+- **后端不可用时每 2 秒无限轮询（2026-10-27）**：扫描状态轮询在后端持续不可用时只随卸载停止。改为自调度（慢请求不再堆叠轮询）+ 连续失败指数退避（2s → 4s → 8s …，上限 30s），一次成功即复位。
+
+### 变更
+
+- **i18n key 覆盖 CI 门（2026-10-26）**：新增 `scripts/check-i18n-keys.mjs` 与 CI `i18n-keys` job（纯 node、零依赖，与 `docs-mirror` / `i18n-interpolation` 同形）。i18next 的词条缺失是**静默失败**——tsc、eslint、单元测试全都看不出来（locale 是纯数据，vitest 根本不读它），上面那 7 个孤儿 key 就是这么活下来的。守卫断言七件事：代码里静态引用到的每个 key 在每个 locale 都存在；各 locale 的 base key 集合一致（拦「只加一边」的漂移）；用了复数变体（`_other` 等）必须同时有 base key；英文 locale 的值里不残留中文；**源码里（注释与 `defaultValue` 之外）不残留硬编码中文**；模板字面量 key 的静态前缀在每个 locale 都对应非空键族；**`dangerouslySetInnerHTML` 里不得直接塞 `t(...)`**。七类检查均以负例验证过（删 key / 删复数 base / locale 混中文 / 删 namespace 文件 / 源码塞中文 / 把翻译文本塞回 innerHTML，均能报红）。**已知盲区**：动态 key（9 处 `t(variable)`）无法静态求值，只做「键族存在性」检查。
+
 ## [2.15.0] - 2026-10-26
 
 ### 新增
@@ -453,7 +468,9 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.16.0...HEAD
+[2.16.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.15.0...v2.16.0
+[2.15.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.1...v2.14.0
 [2.13.1]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.12.3...v2.13.0
