@@ -7,6 +7,7 @@ import type {
   AICallLogEntry,
   AIAuditStatus,
   AppConfig,
+  BackupCopyTargetReport,
   CompileJob,
   DailyStat,
   Evidence,
@@ -680,6 +681,22 @@ export function exportMemoryJSON(limit: number): Promise<string> {
 /** RunBackupNow writes today's local snapshot immediately (ADR-0025 L1). */
 export function runBackupNow(): Promise<string> {
   return call<string>({ method: 'RunBackupNow' })
+}
+
+/**
+ * CheckBackupCopyTarget inspects a candidate off-disk backup directory
+ * (ADR-0025 L3).
+ *
+ * An empty path means "the target that is configured right now". The report
+ * says whether the directory exists, whether a copy could be written there,
+ * and — the question a path cannot answer by looking at it — whether the
+ * target really is on another disk.
+ */
+export function checkBackupCopyTarget(path: string): Promise<BackupCopyTargetReport> {
+  return call<BackupCopyTargetReport>({
+    method: 'CheckBackupCopyTarget',
+    args: [path],
+  }).then(d => d ?? { path: '', exists: false, writable: false, same_device: false, device_known: false, code: '', blocking: false })
 }
 
 // --- Plugins -------------------------------------------------------------------------------

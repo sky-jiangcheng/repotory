@@ -706,3 +706,56 @@ export interface DownloadState {
   /** Whether the digest matched the one the release published. */
   checksum_verified: boolean
 }
+
+/**
+ * Why a candidate off-disk backup directory is (not) usable (ADR-0025 L3).
+ *
+ * The reason travels as a CODE rather than a sentence: the backend does not
+ * know the user's language, and a Chinese sentence in the payload would put
+ * Chinese into the English UI. The settings page maps each code to its own
+ * translation.
+ */
+export type BackupCopyTargetCode =
+  /** The target works. SameDevice may still be true (see the advice below). */
+  | ''
+  /** No off-disk target is configured — the feature is off, which is its default. */
+  | 'not_configured'
+  /** A relative path would resolve against the process working directory. */
+  | 'relative_path'
+  /** The path exists but is a file, not a directory. */
+  | 'not_a_directory'
+  /** The directory exists and cannot be written to. */
+  | 'unwritable'
+  /** No existing parent directory could be found. */
+  | 'no_ancestor'
+  /** The nearest existing parent cannot be written to, so it could never be created. */
+  | 'ancestor_unwritable'
+  /** The path could not be inspected at all. */
+  | 'stat_failed'
+  /** The target sits on the same disk as the live database. */
+  | 'same_device'
+
+/**
+ * What the backend can tell about a candidate off-disk backup directory.
+ *
+ * The fields exist so the UI can say something specific instead of a generic
+ * "invalid path": a directory that does not exist yet, a directory the user
+ * cannot write to, and a directory that turns out to sit on the same disk as
+ * the live database are three different problems with three different fixes.
+ */
+export interface BackupCopyTargetReport {
+  /** The inspected path (empty when nothing is configured). */
+  path: string
+  /** The directory already exists. */
+  exists: boolean
+  /** A copy could be written here (or the directory could be created). */
+  writable: boolean
+  /** The target is on the same disk as the live database. */
+  same_device: boolean
+  /** The platform could determine the device ids at all (false on Windows). */
+  device_known: boolean
+  /** The machine-readable reason, if any. */
+  code: BackupCopyTargetCode
+  /** The copy CANNOT work (a relative path, an unwritable directory). */
+  blocking: boolean
+}

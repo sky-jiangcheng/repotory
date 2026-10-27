@@ -36,3 +36,51 @@
 .remoteGrid label span {
   color: var(--text-tertiary);
 }
+
+/* The off-disk copy block (ADR-0025 L3). It is a separate layer from the
+   remote push above it, so it gets its own heading instead of being folded
+   into the same grid. */
+.copyBlock {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.copyTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.copyLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.copyLabel span {
+  color: var(--text-tertiary);
+}
+
+/* The verdict on a candidate directory. Three states, three meanings: it
+   works, it works but is not what it looks like (same disk), or it cannot
+   work at all. */
+.copyStatusOk {
+  margin: 0;
+  font-size: 13px;
+  color: var(--success);
+}
+
+.copyStatusWarn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+.copyStatusError {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}

@@ -1,0 +1,149 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+
+// Partial mock: override the backend-calling endpoints, keep the rest real.
+vi.mock('../../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/client')>()
+  return {
+    ...actual,
+    triggerScan: vi.fn(),
+    importClaudeMemory: vi.fn(),
+    runBackupNow: vi.fn(),
+    updateConfig: vi.fn(),
+    checkBackupCopyTarget: vi.fn(),
+  }
+})
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? key,
+  }),
+}))
+
+import { checkBackupCopyTarget, updateConfig } from '../../api/client'
+import ActionsTab from './ActionsTab'
+
+const baseConfig: Record<string, string> = {}
+
+function renderTab(config: Record<string, string> = baseConfig) {
+  // The tab renders a react-router <Link>, so it needs a router in scope.
+  return render(
+    <MemoryRouter>
+      <ActionsTab initialConfig={config} showMessage={() => {}} />
+    </MemoryRouter>,
+  )
+}
+
+// The off-disk copy (ADR-0025 L3). The point of these tests is the two
+// things the user cannot get from the path itself: that a verdict is shown
+// in the user's language, and that a masked secret is never written back.
+describe('ActionsTab off-disk copy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('checks the directory the user typed', async () => {
+    vi.mocked(checkBackupCopyTarget).mockResolvedValue({
+      path: '/Volumes/Backup/repotory',
+      exists: true,
+      writable: true,
+      same_device: false,
+      device_known: true,
+      code: '',
+      blocking: false,
+    })
+    renderTab()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'settings.backupCopyPath' }), {
+      target: { value: '/Volumes/Backup/repotory' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupCopyCheck' }))
+
+    await waitFor(() => expect(checkBackupCopyTarget).toHaveBeenCalledWith('/Volumes/Backup/repotory'))
+    // A usable target says so — in the user's language, not in the
+    // backend's.
+    expect(await screen.findByText('settings.backupCopyOk')).toBeTruthy()
+  })
+
+  it('shows the same-disk advice instead of a generic message', async () => {
+    vi.mocked(checkBackupCopyTarget).mockResolvedValue({
+      path: '/data/backups',
+      exists: true,
+      writable: true,
+      same_device: true,
+      device_known: true,
+      code: 'same_device',
+      blocking: false,
+    })
+    renderTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupCopyCheck' }))
+
+    expect(await screen.findByText('settings.backupCopySameDevice')).toBeTruthy()
+  })
+
+  it('shows the blocking reason for a target that cannot work', async () => {
+    vi.mocked(checkBackupCopyTarget).mockResolvedValue({
+      path: 'backups/offdisk',
+      exists: false,
+      writable: false,
+      same_device: false,
+      device_known: true,
+      code: 'relative_path',
+      blocking: true,
+    })
+    renderTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupCopyCheck' }))
+
+    expect(await screen.findByText('settings.backupCopyRelativePath')).toBeTruthy()
+  })
+
+  it('saves the directory through the config write path', async () => {
+    vi.mocked(updateConfig).mockResolvedValue({ success: true })
+    renderTab()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'settings.backupCopyPath' }), {
+      target: { value: '  /Volumes/Backup/repotory  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupCopySave' }))
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith('backup_copy_dir', '/Volumes/Backup/repotory'),
+    )
+  })
+})
+
+describe('ActionsTab remote secret', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('does not write a masked secret back over the real credential', async () => {
+    vi.mocked(updateConfig).mockResolvedValue({ success: true })
+    // The backend returns a configured secret masked; saving the form must
+    // not replace the credential with the mask.
+    renderTab({ backup_remote_enabled: '1', backup_remote_secret_key: '********' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupRemoteSave' }))
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalled())
+    const written = vi.mocked(updateConfig).mock.calls.map((c) => c[0])
+    expect(written).not.toContain('backup_remote_secret_key')
+  })
+
+  it('writes a secret the user actually typed', async () => {
+    vi.mocked(updateConfig).mockResolvedValue({ success: true })
+    renderTab({ backup_remote_enabled: '1', backup_remote_secret_key: '********' })
+
+    const secretInput = screen.getByLabelText('settings.backupRemoteSecretKey')
+    fireEvent.change(secretInput, { target: { value: 'new-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backupRemoteSave' }))
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith('backup_remote_secret_key', 'new-secret'),
+    )
+  })
+})

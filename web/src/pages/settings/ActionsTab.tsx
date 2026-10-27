@@ -1,16 +1,39 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { triggerScan, importClaudeMemory, runBackupNow, updateConfig } from '../../api/client'
+import { triggerScan, importClaudeMemory, runBackupNow, updateConfig, checkBackupCopyTarget } from '../../api/client'
+import type { BackupCopyTargetCode, BackupCopyTargetReport } from '../../api/types'
 import { useScanPolling } from '../../hooks/useScanPolling'
 import CodeText from '../../components/CodeText'
 import s from './ActionsTab.module.css'
 
 interface Props {
   // Full config map from the settings page: the remote-backup (ADR-0025 L2)
-  // form seeds its inputs from the backup_remote_* keys.
+  // form seeds its inputs from the backup_remote_* keys, and the off-disk
+  // copy (ADR-0025 L3) seeds its input from backup_copy_dir.
   initialConfig: Record<string, string>
   showMessage: (msg: string) => void
+}
+
+// The placeholder the backend returns for a configured secret. Writing it
+// back would replace the real credential with eight asterisks, so an
+// untouched masked field is skipped when saving — the same rule the AI tab
+// already follows for the API keys.
+const SECRET_MASK = '********'
+
+// The backend reports WHY a candidate directory is (not) usable as a machine
+// -readable code, because it does not know the user's language. The sentence
+// is the frontend's job.
+const COPY_CODE_KEYS: Record<BackupCopyTargetCode, string> = {
+  '': 'settings.backupCopyOk',
+  not_configured: 'settings.backupCopyNotConfigured',
+  relative_path: 'settings.backupCopyRelativePath',
+  not_a_directory: 'settings.backupCopyNotADirectory',
+  unwritable: 'settings.backupCopyUnwritable',
+  no_ancestor: 'settings.backupCopyNoAncestor',
+  ancestor_unwritable: 'settings.backupCopyAncestorUnwritable',
+  stat_failed: 'settings.backupCopyStatFailed',
+  same_device: 'settings.backupCopySameDevice',
 }
 
 export default function ActionsTab({ initialConfig, showMessage }: Props) {
@@ -35,6 +58,14 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
     secretKey: initialConfig.backup_remote_secret_key ?? '',
   })
   const [savingRemote, setSavingRemote] = useState(false)
+  // Off-disk copy (ADR-0025 L3): a second copy of the daily snapshot on a
+  // directory the user picks — an external drive, a NAS mount, a synced
+  // folder. Empty = off, and nothing is probed or written until they fill it
+  // in.
+  const [copyDir, setCopyDir] = useState(initialConfig.backup_copy_dir ?? '')
+  const [copyReport, setCopyReport] = useState<BackupCopyTargetReport | null>(null)
+  const [checkingCopy, setCheckingCopy] = useState(false)
+  const [savingCopy, setSavingCopy] = useState(false)
 
   const handleRescan = async () => {
     try {
@@ -85,10 +116,61 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
       backup_remote_bucket: remote.bucket.trim(),
       backup_remote_prefix: remote.prefix.trim(),
       backup_remote_access_key: remote.accessKey.trim(),
-      backup_remote_secret_key: remote.secretKey,
+    }
+    // A configured secret comes back masked. Writing the mask back would
+    // destroy the credential the user never touched, so an untouched masked
+    // field is simply not written.
+    const secret = remote.secretKey.trim()
+    if (secret && secret !== SECRET_MASK) {
+      kv.backup_remote_secret_key = secret
     }
     void persistRemote(kv, t('settings.backupRemoteSaved'))
   }
+
+  // Checking the target answers the one question a path cannot: is it really
+  // on another disk? A backup directory one folder away looks exactly like
+  // one on an external drive, and it is not one.
+  const handleCopyCheck = async () => {
+    setCheckingCopy(true)
+    try {
+      setCopyReport(await checkBackupCopyTarget(copyDir.trim()))
+    } catch (e: unknown) {
+      showMessage(t('settings.saveFailedMsg', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setCheckingCopy(false)
+    }
+  }
+
+  const handleCopySave = async () => {
+    setSavingCopy(true)
+    try {
+      await updateConfig('backup_copy_dir', copyDir.trim())
+      // The verdict belongs to the path that was checked, so it is dropped
+      // rather than left standing next to a directory that just changed.
+      setCopyReport(null)
+      showMessage(t('settings.backupCopySaved'))
+    } catch (e: unknown) {
+      showMessage(t('settings.saveFailedMsg', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setSavingCopy(false)
+    }
+  }
+
+  const copyStatus = copyReport ? (
+    <p
+      className={
+        copyReport.blocking
+          ? s.copyStatusError
+          : copyReport.code === 'same_device'
+            ? s.copyStatusWarn
+            : s.copyStatusOk
+      }
+      role="status"
+    >
+      {t(COPY_CODE_KEYS[copyReport.code])}
+      {copyReport.code === '' && !copyReport.exists && ` ${t('settings.backupCopyWillCreate')}`}
+    </p>
+  ) : null
 
   const handleImport = async () => {
     setImporting(true)
@@ -192,6 +274,40 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
             </div>
           </div>
         )}
+
+        {/* The off-disk exit (ADR-0025 L3). It sits below the remote form on
+            purpose: it needs no account and no credentials, but it only
+            protects against a disk failing — which is the accident this
+            feature was born from. */}
+        <div className={s.copyBlock}>
+          <h3 className={s.copyTitle}>{t('settings.backupCopyTitle')}</h3>
+          <p className="section-desc">{t('settings.backupCopyHint')}</p>
+          <label className={s.copyLabel}>
+            <span>{t('settings.backupCopyPath')}</span>
+            <input
+              className="form-input"
+              value={copyDir}
+              onChange={(e) => {
+                setCopyDir(e.target.value)
+                setCopyReport(null)
+              }}
+              placeholder={t('settings.backupCopyPlaceholder')}
+            />
+          </label>
+          <div className={s.actionRow}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleCopyCheck}
+              disabled={checkingCopy || savingCopy}
+            >
+              {checkingCopy ? t('settings.backupCopyChecking') : t('settings.backupCopyCheck')}
+            </button>
+            <button className="btn btn-primary" onClick={handleCopySave} disabled={savingCopy || checkingCopy}>
+              {savingCopy ? t('settings.saving') : t('settings.backupCopySave')}
+            </button>
+          </div>
+          {copyStatus}
+        </div>
       </section>
 
       <section className="settings-group">

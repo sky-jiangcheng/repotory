@@ -147,10 +147,17 @@ var stringConfigKeys = map[string]bool{
 // secretConfigKeys are never returned in plaintext by GetConfig — a set value
 // is masked so the frontend learns "configured" without seeing the credential.
 // The backend still reads the real value via db.GetConfig directly.
+//
+// backup_remote_secret_key belongs here for the same reason ai_chat_api_key
+// does: it is a credential for an outbound service. The settings form treats
+// the mask as "unchanged" and skips writing it back (the same rule the AI tab
+// already follows), so masking costs the user nothing and keeps the secret out
+// of the payload the frontend receives.
 var secretConfigKeys = map[string]bool{
-	"embedding_api_key":    true,
-	"vector_store_api_key": true,
-	"ai_chat_api_key":      true,
+	"embedding_api_key":        true,
+	"vector_store_api_key":     true,
+	"ai_chat_api_key":          true,
+	"backup_remote_secret_key": true,
 }
 
 // secretMask replaces a configured secret in responses sent to the frontend.
