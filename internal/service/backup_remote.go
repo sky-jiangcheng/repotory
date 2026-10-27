@@ -43,6 +43,12 @@ import (
 // same as the L1 keys in backup.go: config.go's allow-list literal is left
 // untouched (the write guard misreads credential-shaped literals there), and
 // these keys are exactly that shape.
+//
+// Five of the six carry free text (endpoint URL, bucket, prefix, two keys), so
+// they also register as string keys — without that, UpdateConfig demands a
+// number and the settings form cannot save ANY of them. That gap shipped
+// silently: the form was live since L2 landed, and every field in it failed
+// with "config value must be a number" the moment a user pressed Save.
 func init() {
 	allowedConfigKeys["backup_remote_enabled"] = true
 	allowedConfigKeys["backup_remote_endpoint"] = true
@@ -50,6 +56,12 @@ func init() {
 	allowedConfigKeys["backup_remote_prefix"] = true
 	allowedConfigKeys["backup_remote_access_key"] = true
 	allowedConfigKeys["backup_remote_secret_key"] = true
+
+	stringConfigKeys["backup_remote_endpoint"] = true
+	stringConfigKeys["backup_remote_bucket"] = true
+	stringConfigKeys["backup_remote_prefix"] = true
+	stringConfigKeys["backup_remote_access_key"] = true
+	stringConfigKeys["backup_remote_secret_key"] = true
 }
 
 // remoteUploadTimeout bounds one upload. A snapshot is a few MB today and

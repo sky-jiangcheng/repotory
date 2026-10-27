@@ -178,3 +178,39 @@ func TestRemoteBackupObjectKeyPrefix(t *testing.T) {
 		}
 	}
 }
+
+// The settings form saves through UpdateConfig, not through a direct write to
+// the config table — and the write guard demanded a NUMBER from every key
+// that was not on the string-key list. The five free-text fields of the
+// remote form were therefore unsaveable: the form shipped, and every field
+// in it failed with "config value must be a number" the moment a user
+// pressed Save.
+//
+// The other tests in this file write the config table directly, which is
+// exactly why they never saw the bug. This one goes through the door the UI
+// uses.
+func TestRemoteBackupTextFieldsAreSettableThroughUpdateConfig(t *testing.T) {
+	s := newBackupTestService(t)
+	for k, v := range map[string]string{
+		"backup_remote_enabled":    "1",
+		"backup_remote_endpoint":   "https://s3.example.com",
+		"backup_remote_bucket":     "my-bucket",
+		"backup_remote_prefix":     "backups",
+		"backup_remote_access_key": "ak",
+		"backup_remote_secret_key": "sk",
+	} {
+		if err := s.UpdateConfig(k, v); err != nil {
+			t.Fatalf("%s not settable: %v", k, err)
+		}
+	}
+	st, reason := s.remoteBackupSettings()
+	if reason != "" {
+		t.Fatalf("settings unreadable after saving them: %s", reason)
+	}
+	if st.Endpoint != "s3.example.com" || st.Bucket != "my-bucket" || st.Prefix != "backups" {
+		t.Fatalf("saved settings = %+v", st)
+	}
+	if st.AccessKey != "ak" || st.SecretKey != "sk" {
+		t.Fatalf("credentials did not round-trip: %+v", st)
+	}
+}
