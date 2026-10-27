@@ -128,7 +128,7 @@ function Modal({ snapshot, onMinimize, onCancel, onOpen, onDismiss }: ModalProps
           </span>
           <span className={s.meta}>
             {state.remaining_seconds >= 0
-              ? t('settings.updates.downloadRemaining', { time: formatDuration(state.remaining_seconds) })
+              ? t('settings.updates.downloadRemaining', { time: formatDuration(t, state.remaining_seconds) })
               : t('settings.updates.downloadRemainingUnknown')}
           </span>
         </div>
@@ -257,13 +257,23 @@ export function formatBytes(bytes: number): string {
   return `${rounded} ${units[i]}`
 }
 
-/** A duration in seconds as "1分23秒" / "45秒" / "2小时5分". */
-export function formatDuration(seconds: number): string {
+/** A duration in seconds as "1分23秒" / "45秒" / "2小时5分".
+ *
+ *  The unit wording is locale data, not a hardcoded literal: the same string is
+ *  interpolated into `settings.updates.downloadRemaining`, so a hardcoded "秒"
+ *  would put Chinese into the English UI. `t` comes first, matching the
+ *  `titleFor(t, state)` shape in this file. */
+export function formatDuration(t: (k: string, o?: Record<string, unknown>) => string, seconds: number): string {
   if (seconds < 0) return '—'
-  if (seconds < 60) return `${Math.ceil(seconds)}秒`
+  if (seconds < 60) {
+    const n = Math.ceil(seconds)
+    return t('common.durationSeconds', { n, defaultValue: `${n}秒` })
+  }
   const minutes = Math.floor(seconds / 60)
   const rest = Math.ceil(seconds % 60)
-  if (minutes < 60) return `${minutes}分${rest}秒`
+  if (minutes < 60) {
+    return t('common.durationMinutes', { m: minutes, s: rest, defaultValue: `${minutes}分${rest}秒` })
+  }
   const hours = Math.floor(minutes / 60)
-  return `${hours}小时${minutes % 60}分`
+  return t('common.durationHours', { h: hours, m: minutes % 60, defaultValue: `${hours}小时${minutes % 60}分` })
 }

@@ -129,7 +129,7 @@ function KnowledgePage() {
       {hits !== null ? (
         <div className="knowledge-section">
           <div className="section-header">
-            <h2>{t('knowledge.searchResults')} ({hits.length}) {askMode && <span className={s.hitProject}>（{t('knowledge.localSearch')}）</span>}</h2>
+            <h2>{t('knowledge.searchResults')} ({hits.length}) {askMode && <span className={s.hitProject}>{t('knowledge.localSearchBadge')}</span>}</h2>
           </div>
           {hits.length === 0 ? (
             <p className="empty-hint">{t('knowledge.noResults')}</p>

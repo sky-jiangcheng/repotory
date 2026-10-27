@@ -157,13 +157,19 @@ describe('formatBytes', () => {
 })
 
 describe('formatDuration', () => {
+  // The unit wording is locale data; the defaultValue carries the Chinese form
+  // so this suite keeps asserting the Chinese rendering, while the app reads
+  // `common.duration*` from the active locale.
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    (opts?.defaultValue as string | undefined) ?? key
+
   it('renders seconds, minutes and hours', () => {
-    expect(formatDuration(45)).toBe('45秒')
-    expect(formatDuration(83)).toBe('1分23秒')
-    expect(formatDuration(7500)).toBe('2小时5分')
+    expect(formatDuration(t, 45)).toBe('45秒')
+    expect(formatDuration(t, 83)).toBe('1分23秒')
+    expect(formatDuration(t, 7500)).toBe('2小时5分')
   })
 
   it('marks an unknown ETA', () => {
-    expect(formatDuration(-1)).toBe('—')
+    expect(formatDuration(t, -1)).toBe('—')
   })
 })

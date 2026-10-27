@@ -63,7 +63,15 @@
     "todayCardTooltip": "今日开发动态：显示今日新增代码行数和涉及的仓库数量",
     "projectCount": "{{count}} 个项目",
     "projectCountWithRepos": "{{count}} 个项目 · {{withRepos}} 个含仓库",
-    "projectCardsTruncated": "仅显示 {{shown}} / {{total}} 个重点项目"
+    "projectCardsTruncated": "仅显示 {{shown}} / {{total}} 个重点项目",
+    "thinking": "思考中",
+    "sourceGraph": "图谱",
+    "sourceSemantic": "向量",
+    "sourceFact": "事实",
+    "sourceFts": "全文",
+    "conversationTitle": "知识库对话记录",
+    "qaTitle": "知识库 Q&A",
+    "recallSource": "召回来源：{{source}}"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -131,6 +139,7 @@
     "searchHint": "回车查看全部，清空返回列表",
     "searchResults": "搜索结果",
     "localSearch": "本地 · FTS5",
+    "localSearchBadge": "（本地 · FTS5）",
     "noResults": "未找到匹配内容",
     "recent": "最近编辑",
     "all": "全部",
@@ -196,6 +205,7 @@
     "removed": "扫描目录已移除，重新扫描后生效",
     "noRoots": "暂无扫描目录，请添加",
     "rejectedRoots": "以下目录未被接受：{{msg}}",
+    "rejectedRootsSeparator": "；",
     "rootRejectReason": {
       "empty": "路径为空",
       "relative": "必须是绝对路径",
@@ -523,7 +533,7 @@
     "restoreVersion": "恢复到此版本",
     "move": "移动",
     "moveTo": "移动到",
-    "current": "（当前）",
+    "currentProject": "{{name}}（当前）",
     "autoGroup": "自动分组",
     "manualGroup": "手动分组",
     "levelUp": "合并到上级目录（提升分组级别）",
@@ -581,6 +591,7 @@
     "scope": "范围",
     "overviewEmpty": "等待首次挖掘",
     "overviewEmptyHint": "打开详情即自动提取，稍后刷新即可",
+    "overviewEmptyFull": "{{main}}：{{hint}}",
     "notFoundTitle": "项目不存在",
     "notFoundDesc": "该项目可能已被重新扫描移除，或链接中的 ID 有误。",
     "saveFailed": "保存失败",
@@ -623,10 +634,16 @@
     "topicCreateFailed": "新建主题失败",
     "topicRenameFailed": "重命名主题失败",
     "topicDeleteFailed": "删除主题失败",
-    "topicSetFailed": "设置主题失败"
+    "topicSetFailed": "设置主题失败",
+    "linkSuggestions": "双链建议:",
+    "applyWikilink": "转为 [[{{slug}}]] 链接"
   },
   "common": {
     "unknownError": "未知错误",
+    "appLoadError": "应用加载出错",
+    "durationSeconds": "{{n}}秒",
+    "durationMinutes": "{{m}}分{{s}}秒",
+    "durationHours": "{{h}}小时{{m}}分",
     "loading": "加载中...",
     "success": "成功",
     "failed": "失败",

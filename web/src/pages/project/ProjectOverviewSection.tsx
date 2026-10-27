@@ -38,7 +38,7 @@ export default function ProjectOverviewSection({ overview }: Props) {
           <h2>{t('project.overview')}</h2>
           <span className={s.cacheHint}>{overview.cached ? t('project.fromCache') : t('project.realtimeMining')}</span>
         </div>
-        <p className="empty-hint">{t('project.overviewEmpty')}：{t('project.overviewEmptyHint')}</p>
+        <p className="empty-hint">{t('project.overviewEmptyFull', { main: t('project.overviewEmpty'), hint: t('project.overviewEmptyHint') })}</p>
       </div>
     )
   }

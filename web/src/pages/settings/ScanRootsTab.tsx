@@ -52,7 +52,7 @@ export default function ScanRootsTab({ data, onChange, showMessage }: Props) {
     if (!rejected || rejected.length === 0) return false
     const detail = rejected
       .map((r) => `${r.path} — ${t(`settings.rootRejectReason.${r.reason}`, { defaultValue: r.reason })}`)
-      .join('；')
+      .join(t('settings.rejectedRootsSeparator'))
     showMessage(t('settings.rejectedRoots', { msg: detail }))
     return true
   }

@@ -137,7 +137,7 @@ export default function NoteEditor({
           >
             {projects.map(p => (
               <option key={p.id} value={p.id}>
-                {p.id === currentProjectId ? `${p.name}（${t('project.current')}）` : p.name}
+                {p.id === currentProjectId ? t('project.currentProject', { name: p.name }) : p.name}
               </option>
             ))}
           </select>
@@ -169,7 +169,7 @@ export default function NoteEditor({
       {suggestions.length > 0 && (
         <div className={s.suggestionsBar}>
           <span className={s.suggestionsLabel}>
-            {t('project.linkSuggestions', { defaultValue: '双链建议:' })}
+            {t('project.linkSuggestions')}
           </span>
           {suggestions.map(sug => (
             <button
@@ -177,9 +177,7 @@ export default function NoteEditor({
               type="button"
               className={s.suggestionPill}
               onClick={() => applySuggestion(sug)}
-              title={t('project.applyWikilink', {
-                defaultValue: `转为 [[${sug.slug}]] 链接`,
-              })}
+              title={t('project.applyWikilink', { slug: sug.slug })}
             >
               + [[{sug.matched}]]
             </button>

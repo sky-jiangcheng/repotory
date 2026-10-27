@@ -367,7 +367,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
     }
 
     try {
-      const titleLine = msg.content.split('\n')[0].replace(/[#*`_]/g, '').trim().slice(0, 60) || '知识库对话记录'
+      const titleLine = msg.content.split('\n')[0].replace(/[#*`_]/g, '').trim().slice(0, 60) || t('home.conversationTitle')
       await createNoteWithMeta(targetPid, msg.content, {
         title: titleLine,
         kind: 'knowledge',
@@ -397,7 +397,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
 
     try {
       const citedRefs = (msg.evidence.items || []).map(it => it.ref)
-      const titleLine = msg.content.split('\n')[0].replace(/[#*`_]/g, '').trim().slice(0, 40) || '知识库 Q&A'
+      const titleLine = msg.content.split('\n')[0].replace(/[#*`_]/g, '').trim().slice(0, 40) || t('home.qaTitle')
       const pageId = await fileAnswerAsPage(targetPid, titleLine, msg.content, msg.evidence, citedRefs)
       onToast({
         kind: 'success',
@@ -548,7 +548,7 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
                         <span className={s.typingDot} />
                         {askElapsed > 0 && (
                           <span className={s.typingElapsed}>
-                            {t('home.thinking', { defaultValue: '思考中' })} · {askElapsed}s
+                            {t('home.thinking')} · {askElapsed}s
                           </span>
                         )}
                       </div>
@@ -640,14 +640,14 @@ export default function HomeKnowledgeAssistant({ projects, onToast, onGoToSettin
                                       : t('dashboard.noteType', { defaultValue: '知识笔记' })}
                                 </span>
                                 {item.source_path && (
-                                  <span className={s.sourceBadge} title={`召回来源: ${item.source_path}`}>
+                                  <span className={s.sourceBadge} title={t('home.recallSource', { source: item.source_path })}>
                                     {item.source_path === 'graph'
-                                      ? t('home.sourceGraph', { defaultValue: '图谱' })
+                                      ? t('home.sourceGraph')
                                       : item.source_path === 'semantic'
-                                      ? t('home.sourceSemantic', { defaultValue: '向量' })
+                                      ? t('home.sourceSemantic')
                                       : item.source_path === 'fact'
-                                      ? t('home.sourceFact', { defaultValue: '事实' })
-                                      : t('home.sourceFts', { defaultValue: '全文' })}
+                                      ? t('home.sourceFact')
+                                      : t('home.sourceFts')}
                                   </span>
                                 )}
                                 {item.project_name && (
