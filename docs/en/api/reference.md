@@ -177,8 +177,9 @@ Neither move changes a page's status or content, and neither touches `updated_at
 | Method | Description |
 |------|------|
 | `GetConfig()` | `{config: map, scan_roots: []}` |
-| `UpdateConfig(key, value)` | allowed keys: `daily_code_standard` / `scan_depth` / `git_author` / `auto_import` (numeric keys are validated as numbers); update-check keys `update_check_enabled` (0/1) / `update_proxy` (free-text proxy address) |
+| `UpdateConfig(key, value)` | allowed keys: `daily_code_standard` / `scan_depth` / `git_author` / `auto_import` (numeric keys are validated as numbers); update-check keys `update_check_enabled` (0/1) / `update_proxy` (free-text proxy address); backup keys `backup_enabled` (0/1) / `backup_retain` (integer) / `backup_copy_dir` (free-text absolute path, the off-disk copy directory) / `backup_remote_enabled` (0/1) / `backup_remote_endpoint` / `backup_remote_bucket` / `backup_remote_prefix` / `backup_remote_access_key` / `backup_remote_secret_key` (free text; `backup_remote_secret_key` is returned masked as `********` by `GetConfig`) |
 | `UpdateScanRoots(roots[])` | atomically replace the scan root list |
+| `CheckBackupCopyTarget(path)` | inspects a candidate off-disk copy directory (ADR-0025 L3) and returns `{path, exists, writable, same_device, device_known, code, blocking}`. An empty `path` means "the target that is configured right now". `code` is a machine-readable reason (`not_configured` / `relative_path` / `not_a_directory` / `unwritable` / `no_ancestor` / `ancestor_unwritable` / `stat_failed` / `same_device`; empty = usable) — the sentence is rendered by the frontend in the user's language. `blocking` separates "a copy could never land there" from "the copy works but sits on the same disk as the live database (advice only)". On Windows `device_known` is always false: that platform cannot determine a volume serial number reliably, and "cannot tell" must not be reported as "a different disk" |
 
 ## Version updates
 

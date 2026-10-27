@@ -55,6 +55,19 @@ An optional off-site copy: configure an S3-compatible object store under **Setti
 
 Config keys (settings page or `UpdateConfig`): `backup_remote_enabled` (switch), `backup_remote_endpoint`, `backup_remote_bucket`, `backup_remote_prefix` (optional), `backup_remote_access_key`, `backup_remote_secret_key`.
 
+### Off-disk copy (L3, off by default)
+
+The second copy for people who only have one disk: fill in a directory (an external drive, a NAS mount, an existing synced folder all work) and every daily local snapshot is copied there automatically. Leave it empty = completely off (no directory created, no file written, nothing probed).
+
+Two things worth knowing:
+
+- **The copy is verified before it counts.** A copy you cannot restore is worse than no copy — it lets you believe "I have a backup". So a copy that fails the check is never published under that name.
+- **It tells you whether the directory is on the same disk as the live database.** A backup on the same disk as the database is just another copy of the thing that failed, and you cannot see it by looking at the path: "a backup folder one folder away" looks exactly like "a backup folder on an external drive". Press "Check directory" in the settings to see the verdict. Same disk is an **advice, not a refusal** — the copy is still made, because you may want a copy that protects against accidental deletion.
+
+Write discipline: the target directory is **yours**, so rotation only deletes files whose whole name matches `repotory-YYYY-MM-DD.db` (a file that merely looks like ours, `repotory-notes.db`, is never touched), the copy is 0600, and it is published by an atomic rename from a temp file.
+
+Config key: `backup_copy_dir` (absolute path, empty = off).
+
 ### Docker deployment (headless, NAS/homelab)
 
 The repository root ships a `Dockerfile` and `docker-compose.yml`: a single container running `repotory-server` (serving the frontend from the same origin), with the data volume mounted at `/data`. The data directory is located inside the volume via `XDG_CONFIG_HOME=/data` (`/data/repotory/repotory.db`), so snapshots land in `/data/repotory/backups/` — include that directory in your host's backup plan as well. The remote push is enabled inside the container through the same `backup_remote_*` config keys.

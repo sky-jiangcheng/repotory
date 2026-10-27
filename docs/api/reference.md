@@ -177,8 +177,9 @@ cd .. && go build -o repotory-server ./cmd/server
 | 方法 | 说明 |
 |------|------|
 | `GetConfig()` | `{config: map, scan_roots: []}` |
-| `UpdateConfig(key, value)` | 允许键：`daily_code_standard` / `scan_depth` / `git_author` / `auto_import`（数值键校验数字）；更新检查相关键 `update_check_enabled`（0/1）/ `update_proxy`（自由文本代理地址） |
+| `UpdateConfig(key, value)` | 允许键：`daily_code_standard` / `scan_depth` / `git_author` / `auto_import`（数值键校验数字）；更新检查相关键 `update_check_enabled`（0/1）/ `update_proxy`（自由文本代理地址）；备份相关键 `backup_enabled`（0/1）/ `backup_retain`（整数）/ `backup_copy_dir`（自由文本绝对路径，异盘副本目录）/ `backup_remote_enabled`（0/1）/ `backup_remote_endpoint` / `backup_remote_bucket` / `backup_remote_prefix` / `backup_remote_access_key` / `backup_remote_secret_key`（自由文本；`backup_remote_secret_key` 在 `GetConfig` 里以 `********` 脱敏返回） |
 | `UpdateScanRoots(roots[])` | 原子替换扫描根列表 |
+| `CheckBackupCopyTarget(path)` | 检查候选异盘副本目录（ADR-0025 L3），返回 `{path, exists, writable, same_device, device_known, code, blocking}`。`path` 为空串 = 检查当前已配置的目录。`code` 为机器可读原因（`not_configured` / `relative_path` / `not_a_directory` / `unwritable` / `no_ancestor` / `ancestor_unwritable` / `stat_failed` / `same_device`，空串 = 可用），文案由前端按语言渲染；`blocking` 区分「副本根本写不进去」与「能写但和活库同盘（只是提醒）」。Windows 上 `device_known` 恒为 false——该平台无法可靠判定卷号，宁可说「不知道」也不误报「异盘」 |
 
 ## 版本更新
 
