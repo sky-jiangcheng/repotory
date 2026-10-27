@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor, fireEvent, within } from '@testing-library/react'
-import { renderReady } from '../test/renderReady'
+import { useEffect } from 'react'
+import { screen, waitFor, fireEvent, within, render, act } from '@testing-library/react'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
+import { renderReady, settle } from '../test/renderReady'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -29,6 +31,14 @@ import { invalidateCache } from '../hooks/useApiData'
 const mockSearch = vi.mocked(searchAll)
 const mockGetProjects = vi.mocked(getProjects)
 const mockListAllTags = vi.mocked(listAllTags)
+
+// A router handle for the in-app navigation case: the deep link has to work
+// while the page is already mounted, not only on a cold entry.
+function NavHandle({ navRef }: { navRef: { current: ((to: string) => void) | null } }) {
+  const navigate = useNavigate()
+  useEffect(() => { navRef.current = navigate }, [navigate, navRef])
+  return null
+}
 
 const project = (over: Partial<Project>): Project => ({
   id: 1,
@@ -134,6 +144,26 @@ describe('Search page (ADR-0024 top-level global search)', () => {
     await renderSearch('/search?q=登录')
     expect(await screen.findByText('登录排查笔记')).toBeTruthy()
     expect(mockSearch).toHaveBeenCalledWith('登录')
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('登录')
+  })
+
+  // A deep link that arrives while the page is already mounted used to be
+  // ignored: the query was read once at mount, so the input kept the old
+  // value and the effect below wrote that old value back to the URL — the
+  // link looked applied and searched for something else.
+  it('adopts an in-app ?q= deep link instead of keeping the old query', async () => {
+    const navRef: { current: ((to: string) => void) | null } = { current: null }
+    render(
+      <MemoryRouter initialEntries={['/search']}>
+        <NavHandle navRef={navRef} />
+        <Search />
+      </MemoryRouter>,
+    )
+    await settle()
+
+    act(() => { navRef.current?.('/search?q=登录') })
+
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('登录'), { timeout: 2000 })
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('登录')
   })
 

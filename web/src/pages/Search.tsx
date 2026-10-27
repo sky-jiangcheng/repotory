@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -27,9 +27,27 @@ import s from './Search.module.css'
 export default function Search() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
-  // ?q= is the single deep-link entry; afterwards state owns the input and
-  // mirrors back to the URL (replace — typing must not spam history).
-  const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
+  // ?q= 是唯一的深链入口，而 URL 是**外部事实**：站内跳转、浏览器前进后退都会
+  // 改它。输入框是本地事实，两边要能对齐。
+  //
+  // 之前只在挂载时读一次 ?q=：站内跳到 /search?q=xxx 时输入框仍是上一次的
+  // 内容，深链静默失效，紧接着又被下面的 effect 反写成旧值——深链入口形同
+  // 虚设，而且失败得很安静（URL 显示的是新词，搜出来的是旧词的结果）。
+  const urlQuery = searchParams.get('q') ?? ''
+  const [query, setQuery] = useState(urlQuery)
+  // 我们最后写进 URL 的值：用来区分「外部改了 URL」和「我们自己刚写的那一次
+  // 还没生效」。react-router 的 navigate 走 transition（低优先级），在它生效
+  // 之前从 URL 读到的还是旧值——那次旧值不是外部改动。
+  const written = useRef(urlQuery)
+
+  // 外部改动（站内深链 / 浏览器前进后退）→ 以 URL 为准重置输入框。
+  //
+  // 依赖是 urlQuery：只有 URL **真的变了**才会跑这个 effect。react-router
+  // 的 transition 会先渲染一次旧 URL，那次渲染不会触发它——所以打字打到一半
+  // 不会被旧值清空（早先的版本正是在渲染期直接比对 URL，因此踩了这个坑）。
+  useEffect(() => {
+    if (urlQuery !== written.current) setQuery(urlQuery)
+  }, [urlQuery, setQuery])
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searched, setSearched] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -44,6 +62,9 @@ export default function Search() {
   // is referentially stable in react-router, so the sync cannot loop.
   useEffect(() => {
     const q = query.trim()
+    // 记下我们写进 URL 的值：上面的同步 effect 据此判断「URL 变成别的值」
+    // 是不是外部改动。
+    written.current = q
     setSearchParams(q ? { q } : {}, { replace: true })
     if (!q) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
