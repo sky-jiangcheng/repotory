@@ -4,6 +4,7 @@ import {
   getKnowledgeSources, getKnowledgeSyncStatus, triggerKnowledgeImport, previewKnowledgeImport, captureClaudeHandoff,
   updateConfig, type SourceStatus, type ImportPreview,
 } from '../../api/client'
+import CodeText from '../../components/CodeText'
 
 // Imported as `css`, not the usual `s`: this file maps sources.map((s) => ...), which
 // would shadow the module object inside the callback.
@@ -147,7 +148,7 @@ export default function PluginsTab({ initialAutoImport, initialClaudeCapture, in
 
   return (
     <div className="settings-section">
-      <p className="section-desc" dangerouslySetInnerHTML={{ __html: t('settings.pluginDesc') }} />
+      <p className="section-desc"><CodeText text={t('settings.pluginDesc')} /></p>
 
       {/* --- Knowledge import --- */}
       <section className="settings-group">

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { triggerScan, importClaudeMemory, runBackupNow, updateConfig } from '../../api/client'
 import { useScanPolling } from '../../hooks/useScanPolling'
+import CodeText from '../../components/CodeText'
 import s from './ActionsTab.module.css'
 
 interface Props {
@@ -195,7 +196,7 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
 
       <section className="settings-group">
         <h2 className="settings-group-title">{t('settings.importClaudeTitle')}</h2>
-        <p className="section-desc" dangerouslySetInnerHTML={{ __html: t('settings.importClaudeDesc') }} />
+        <p className="section-desc"><CodeText text={t('settings.importClaudeDesc')} /></p>
         <div className={s.actionRow}>
           <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
             {importing ? t('settings.importing') : t('settings.importClaudeAction')}
