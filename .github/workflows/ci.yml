@@ -72,8 +72,13 @@ jobs:
       - name: Build all packages
         run: go build ./...
 
-      # Full test suite: 18 test files across service/db/knowledge/scanner/
-      # diff/httpapi/...
+      # Full test suite: every Go test file across service/db/knowledge/
+      # scanner/diff/httpapi/...
+      #
+      # No file count here on purpose: a hardcoded number went stale within
+      # weeks and had to be corrected by hand, which is exactly the drift
+      # TODO.md 3.1 tracks. The suite is "all of them" — there is no subset
+      # to keep in sync.
       #
       # `-race` is on because the service layer fans out goroutines during scans
       # and knowledge indexing; without it a data race that only shows up under CI
@@ -229,6 +234,31 @@ jobs:
 
       - name: Check interpolation syntax
         run: node scripts/check-i18n-interpolation.mjs
+
+  # A missing translation is invisible to tsc, eslint and every unit test: i18next
+  # returns the key itself, so the UI shows "home.thinking" — or, worse, the call
+  # site's `defaultValue` (usually Chinese) quietly takes over and the English
+  # interface looks half-translated rather than broken. The 2026-10-25 frontend
+  # audit found 7 keys missing from BOTH locales exactly that way. The check is
+  # mechanical now: every statically referenced key must exist in every locale, the
+  # locales must not drift apart, a plural variant needs its base key, and the
+  # English locale may not keep Chinese text. Same shape as i18n-interpolation:
+  # pure node, zero deps.
+  i18n-keys:
+    name: Locale key coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+
+      - name: Check key coverage
+        run: node scripts/check-i18n-keys.mjs
 
   # The WorkBuddy skill package ships in the release, so three of its failure
   # modes would reach users without any other job noticing: a malformed
