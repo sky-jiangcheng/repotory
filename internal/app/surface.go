@@ -159,10 +159,11 @@ var bindingSurfaces = map[string]BindingSurface{
 	"OpenDownloadedUpdate": {SurfaceDesktopOnly, "", "hands the downloaded bundle to the OS installer; an agent must not launch installers on the user's machine"},
 
 	// ---- exports -------------------------------------------------------------
-	"GenerateLLMsTxt":      {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
-	"ExportNoteAsMarkdown": {SurfaceDesktopOnly, "", "writes to a path chosen in a native save dialog; an agent should not pick where user files land"},
-	"ExportMemoryJSON":     {SurfaceDesktopOnly, "", "file save; OMP export is provisional (ADR-0011)"},
-	"RunBackupNow":         {SurfaceDesktopOnly, "", "writes a local snapshot file; the hourly ticker already covers the cadence (ADR-0025 L1)"},
+	"GenerateLLMsTxt":       {SurfaceDesktopOnly, "", "the /api/ai_context REST twin serves agents and the dsh plugin; the binding feeds the UI preview"},
+	"ExportNoteAsMarkdown":  {SurfaceDesktopOnly, "", "writes to a path chosen in a native save dialog; an agent should not pick where user files land"},
+	"ExportMemoryJSON":      {SurfaceDesktopOnly, "", "file save; OMP export is provisional (ADR-0011)"},
+	"RunBackupNow":          {SurfaceDesktopOnly, "", "writes a local snapshot file; the hourly ticker already covers the cadence (ADR-0025 L1)"},
+	"CheckBackupCopyTarget": {SurfaceDesktopOnly, "", "inspects a candidate off-disk backup directory before the user points the product at it; it reveals where the user's data lives, so an agent has no business asking (ADR-0025 L3)"},
 
 	// ---- knowledge sources / memory -----------------------------------------
 	"GetKnowledgeSources":        {SurfaceDesktopOnly, "", "plugins settings tab"},

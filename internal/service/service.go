@@ -36,6 +36,12 @@ type Service struct {
 	// only by tests so they never write into the real user data directory.
 	backupDir string
 
+	// liveDbPath overrides the path of the live database file, used to decide
+	// whether an off-disk backup target really sits on another disk
+	// (ADR-0025 L3). Empty at runtime — the platform data dir is used — and
+	// set only by tests, for the same reason as backupDir.
+	liveDbPath string
+
 	// auditSurface names the surface this process serves ("mcp", "http",
 	// "desktop"), written once at startup by each entry point and read when an
 	// AI call is audited (ADR-0030). Each binary IS one surface, so it is

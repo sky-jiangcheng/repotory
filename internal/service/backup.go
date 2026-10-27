@@ -94,6 +94,11 @@ func (s *Service) RunBackupNow() (string, error) {
 		return "", err
 	}
 	log.Printf("database snapshot ready: %s", path)
+	// ADR-0025 L3: copy the snapshot off the data disk, when the user named a
+	// directory for it. Same contract as the remote push below — the local
+	// snapshot is the promise this function makes; the copy is opportunistic
+	// and logged.
+	s.copyBackupOffDisk(path)
 	// ADR-0025 L2: push the fresh snapshot when the remote opt-in is fully
 	// configured. Never fails the caller — the local snapshot is the promise
 	// this function makes; the push is opportunistic and logged.

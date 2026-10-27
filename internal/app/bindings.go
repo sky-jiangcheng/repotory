@@ -376,6 +376,23 @@ func (a *App) ExportMemoryJSON(limit int64) string { return a.svc.ExportMemoryJS
 // path; this binding exists for a settings-page button and scripted runs.
 func (a *App) RunBackupNow() (string, error) { return a.svc.RunBackupNow() }
 
+// CheckBackupCopyTarget inspects a candidate off-disk backup directory
+// (ADR-0025 L3) and reports whether a copy could land there.
+//
+// The point of the binding is the one question a path cannot answer by
+// looking at it: is the directory really on ANOTHER disk? A backup next to
+// the database looks exactly like a backup on an external drive, and it is
+// not one — the disk fails and both copies go with it.
+//
+// An empty path means "the target that is configured right now", so the
+// settings page can show the state of what it already knows about.
+//
+// The report carries a machine-readable code, not a sentence: the UI renders
+// it in the user's language.
+func (a *App) CheckBackupCopyTarget(path string) (service.BackupCopyTargetReport, error) {
+	return a.svc.CheckBackupCopyTarget(path)
+}
+
 // --- Plugins / knowledge sources ----------------------------------------------
 
 // GetKnowledgeSources returns registered knowledge importers with their state.
