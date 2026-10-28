@@ -68,6 +68,40 @@ Write discipline: the target directory is **yours**, so rotation only deletes fi
 
 Config key: `backup_copy_dir` (absolute path, empty = off).
 
+### Restore drill (one command)
+
+A backup only means something once it has actually been restored. A backup nobody has ever restored is a hypothesis, not a backup — and the hypothesis that breaks first is the boring one: the server starts, but the FTS index is empty, or the data dir resolution quietly points at the live database instead of the copy.
+
+`scripts/verify-restore.sh` turns the restore drill into one command:
+
+```bash
+bash scripts/verify-restore.sh                                   # the newest snapshot
+bash scripts/verify-restore.sh /path/to/repotory-2026-10-28.db    # a specific one
+bash scripts/verify-restore.sh --query "登录"                     # a specific search term
+```
+
+What it does: it **copies** the snapshot into a temp directory, starts a headless server there with an isolated `HOME`, and asks it four questions — does `/health` answer, how many notes are left, how many approved pages are left, and does a full-text search for a term taken from the snapshot itself hit anything — and finally re-reads the snapshot's sha256 to prove the drill never wrote to it. The verdict is one of two lines:
+
+```text
+== Repotory restore drill ==
+snapshot : .../backups/repotory-2026-10-28.db
+sha256   : bf7de398462612c2179e61249c2f2a4fbd3d3872bd688be746084dfeabc781b4
+integrity: ok (sqlite quick_check)
+health : ok (version 2.18.0)
+notes  : 136
+pages  : 27 approved page(s)
+search : 'ADR-0005' -> 3 hit(s)
+OK    the snapshot is byte-identical before and after the drill
+PASS  this snapshot can bring the knowledge back
+```
+
+A few deliberate choices:
+
+- **It uses a server built from the current checkout by default** (when Go is installed) rather than whichever binary happens to be installed — otherwise a stale version condemns a perfectly good snapshot, which is the classic way a good backup gets wrongly declared dead. Pass `--server PATH` to pin a specific binary.
+- **An empty index = FAIL.** When the FTS5 index drifts from the content table, search **silently returns less**: the library still looks there, but things are missing. A snapshot in that state has to fail rather than keep posing as a backup.
+- **Read-only throughout.** The live database is never opened; the snapshot is only copied and hashed, never opened in place, and both the integrity check and the search run against the copy inside the isolated `HOME`.
+- **A broken snapshot is out immediately.** If the copy fails `quick_check` the drill fails there and then, instead of spending a build on a server that was never going to come up.
+
 ### Docker deployment (headless, NAS/homelab)
 
 The repository root ships a `Dockerfile` and `docker-compose.yml`: a single container running `repotory-server` (serving the frontend from the same origin), with the data volume mounted at `/data`. The data directory is located inside the volume via `XDG_CONFIG_HOME=/data` (`/data/repotory/repotory.db`), so snapshots land in `/data/repotory/backups/` — include that directory in your host's backup plan as well. The remote push is enabled inside the container through the same `backup_remote_*` config keys.

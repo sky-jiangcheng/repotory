@@ -68,6 +68,40 @@ flowchart TB
 
 配置键：`backup_copy_dir`（绝对路径，空 = 关闭）。
 
+### 恢复演练（一条命令）
+
+备份的意义只有在「真的能恢复」时才成立。一份从没被恢复过的备份是个假设，不是备份——而最先崩掉的假设恰恰是最无聊的那个：服务起得来，但 FTS 索引是空的，或者数据目录悄悄指向了活库而不是副本。
+
+`scripts/verify-restore.sh` 把恢复演练变成一条命令：
+
+```bash
+bash scripts/verify-restore.sh                                   # 验最新的那份快照
+bash scripts/verify-restore.sh /path/to/repotory-2026-10-28.db    # 验指定的那份
+bash scripts/verify-restore.sh --query "登录"                     # 指定检索词
+```
+
+它做的事：把快照**复制**到临时目录，在隔离的 `HOME` 里起一个无头 server，然后问它四个问题——`/health` 答不答、笔记还剩多少、已批准的页面还剩多少、拿快照自己的标题去检索能不能命中——最后再比一次快照的 sha256，证明演练全程没写过它。结论只有两句：
+
+```text
+== Repotory restore drill ==
+snapshot : .../backups/repotory-2026-10-28.db
+sha256   : bf7de398462612c2179e61249c2f2a4fbd3d3872bd688be746084dfeabc781b4
+integrity: ok (sqlite quick_check)
+health : ok (version 2.18.0)
+notes  : 136
+pages  : 27 approved page(s)
+search : 'ADR-0005' -> 3 hit(s)
+OK    the snapshot is byte-identical before and after the drill
+PASS  this snapshot can bring the knowledge back
+```
+
+几个刻意的选择：
+
+- **默认用当前工作区编译出的 server**（机器上有 Go 时），而不是装着的那个二进制——否则一个旧版本会把一份完好的快照判成坏的，那正是「好备份被冤死」的典型路径。`--server PATH` 可以指定别的二进制。
+- **索引空掉 = FAIL**。FTS5 索引与内容表失配时，检索会**静默少返回结果**：库看起来还在，东西却少了。这类「看起来能用」的快照必须判失败，而不是让它继续冒充备份。
+- **全程只读**。活库一次都不打开；快照只被复制与哈希，从不原地打开，校验与检索都发生在隔离 `HOME` 里的那份副本上。
+- **坏快照立刻出局**。副本的 `quick_check` 没过就直接失败，不会浪费一次编译去起一个注定起不来的服务。
+
 ### Docker 部署（headless，NAS/homelab）
 
 仓库根提供 `Dockerfile` 与 `docker-compose.yml`：单容器跑 `repotory-server`（同源托管前端），数据卷挂在 `/data`。数据目录由 `XDG_CONFIG_HOME=/data` 定位到卷内（`/data/repotory/repotory.db`），备份快照自然落在 `/data/repotory/backups/`——把该目录再纳入宿主机的备份计划即可。远端推送在容器内同样通过 `backup_remote_*` 配置键启用。
