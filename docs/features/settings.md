@@ -46,6 +46,7 @@ order: 5
 
 - **立即重新扫描所有项目**：触发全量扫描（与仪表盘按钮等价）
 - **导入 Claude 记忆**：手动触发一次导入，完成后可跳转知识库查看
+- **接入 AI 客户端**：选一个项目 + 勾选客户端（Claude Code / Cursor / VS Code / Windsurf），点一次「接入」即写好 MCP 注册，可选装 SessionEnd hook，并可顺带触发一次扫描——装完直接开客户端就能用。详见 [AI 集成](ai-integration.md#桌面端一键接入不用开终端)
 
 ## 更新
 

@@ -215,6 +215,21 @@ cd .. && go build -o repotory-server ./cmd/server
 | `ImportClaudeMemory()` | Claude 记忆一键导入 |
 | `Health()` | `{status, version}` |
 
+## AI 客户端接入（desktop-only）
+
+把 Repotory 接进 Claude Code / Cursor / VS Code / Windsurf 的 MCP 客户端。**没有 MCP 对应面**：这两个绑定往用户的项目目录里写文件，是「装机器」的动作，不是 agent 的动作。
+
+| 方法 | 说明 |
+|------|------|
+| `ListAgentClients()` | 可接入的客户端名列表（`claude` / `cursor` / `vscode` / `windsurf`）。界面按这个列表渲染选项，不在前端硬编码 |
+| `SetupAgentClients(projectID, clients[], withHook)` | 往目标项目目录写 MCP 注册（`.mcp.json` / `.cursor/mcp.json` / `.vscode/mcp.json`；**Windsurf 例外**，它的配置是用户级的 `~/.codeium/windsurf/mcp_config.json`），可选装 Claude Code 的 SessionEnd hook。返回 `{code, blocking, binary, files[], hook?, hook_settings?, warnings[]}` |
+
+`code` 是机器可读原因（空串 = 成功）：`no_client` / `bad_client` / `project_not_found` / `virtual_project` / `auto_grouped_project` / `missing_directory` / `binary_missing`；文案由前端按语言渲染，`blocking` 区分「做不了」与「做得了但有话说」——这是全仓一致的规矩：后端不返回写死的句子。
+
+几处刻意的拒绝：默认项目（`repotory://memory/default`）与扫描期的自动归组容器不是能接客户端的目录；一个客户端都不勾会被拒绝（而不是「都写一遍」）；目标目录不存在会报目录缺失，而不是凭空造一个。
+
+它与终端那条 `repotory-init` 路径是**同一套协议的两份实现**（Go 的 `internal/agentinit` 与 node 的 `scripts/repotory-init/index.mjs`），两份实现写出的文件被同一份 fixture 钉住。见 [AI 集成](../features/ai-integration.md#桌面端一键接入不用开终端)。
+
 ## 事件（Wails → 前端）
 
 | 事件 | 载荷 |

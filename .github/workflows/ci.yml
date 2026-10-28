@@ -288,6 +288,32 @@ jobs:
       - name: Check skill package
         run: node scripts/check-skill-package.mjs
 
+  # The desktop app and the CLI both wire Repotory's MCP server into the
+  # user's AI clients, and they are two implementations of ONE wire format:
+  # the desktop app is a self-contained binary with no node, the CLI is a node
+  # script. Two implementations of one format drift silently — the button says
+  # "registered", the CLI says "registered", and Claude Code sees nothing —
+  # so both sides are pinned to one golden fixture
+  # (internal/agentinit/testdata/contract.json). This job runs the node side;
+  # the Go side is pinned by TestContractFixture in internal/agentinit.
+  agent-init-contract:
+    name: AI client wiring contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+
+      # Runs the wiring script inside a temp directory; the user's real client
+      # configuration is never touched.
+      - name: Check the wiring script against the shared contract fixture
+        run: node scripts/check-agent-init-contract.mjs
+
   # --------------------------------------------------------------- Web ----
   web-test:
     name: Web typecheck, test & build

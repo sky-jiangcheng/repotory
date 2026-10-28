@@ -788,3 +788,62 @@ export interface BackupCopyTargetReport {
   /** The copy CANNOT work (a relative path, an unwritable directory). */
   blocking: boolean
 }
+
+/**
+ * The machine-readable reason a client registration was refused.
+ *
+ * The backend does not know the user's language, so a refusal travels as a
+ * code and the UI turns it into a sentence (see ActionsTab). Empty means the
+ * registration ran.
+ */
+export type AgentSetupCode =
+  | ''
+  /** No client was selected — deliberately not "register all of them". */
+  | 'no_client'
+  /** One of the requested client names does not exist. */
+  | 'bad_client'
+  /** No project carries that id. */
+  | 'project_not_found'
+  /** The synthetic "未分类" project has no directory to write into. */
+  | 'virtual_project'
+  /** The project is a scan-time container (is_auto_grouped). */
+  | 'auto_grouped_project'
+  /** The project's root path is not a directory on disk. */
+  | 'missing_directory'
+  /** repotory-mcp is not installed on this machine. */
+  | 'binary_missing'
+
+/** What happened to one file the registration touched. */
+export interface AgentFileResult {
+  /** The client the file belongs to ('claude', 'cursor', 'vscode', 'windsurf'). */
+  client: string
+  /** The absolute path of the file. */
+  path: string
+  /** 'created' | 'updated' | 'unchanged' | 'failed'. */
+  status: 'created' | 'updated' | 'unchanged' | 'failed'
+  /** The detail a status cannot carry: the backup path, or the failure reason. */
+  note?: string
+}
+
+/**
+ * What one registration attempt did, or why it did not.
+ *
+ * A refusal is a code, not an error: "that project is a container" is an
+ * answer the UI can render, and it must not look like a crash.
+ */
+export interface AgentSetupReport {
+  /** The machine-readable reason the setup was refused; empty when it ran. */
+  code: AgentSetupCode
+  /** Nothing was written. */
+  blocking: boolean
+  /** The repotory-mcp path that was registered. */
+  binary: string
+  /** One entry per client config file. */
+  files: AgentFileResult[]
+  /** The installed SessionEnd hook script, when the hook was asked for. */
+  hook?: AgentFileResult
+  /** The .claude/settings.json entry pointing at the hook. */
+  hook_settings?: AgentFileResult
+  /** Per-file failures; a half-succeeded registration is reported, not hidden. */
+  warnings?: string[]
+}

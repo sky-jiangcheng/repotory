@@ -13,6 +13,9 @@ vi.mock('../../api/client', async (importOriginal) => {
     runBackupNow: vi.fn(),
     updateConfig: vi.fn(),
     checkBackupCopyTarget: vi.fn(),
+    listAgentClients: vi.fn().mockResolvedValue([]),
+    setupAgentClients: vi.fn(),
+    getProjects: vi.fn().mockResolvedValue([]),
   }
 })
 
@@ -22,7 +25,9 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-import { checkBackupCopyTarget, updateConfig } from '../../api/client'
+import { checkBackupCopyTarget, updateConfig, listAgentClients, setupAgentClients, getProjects } from '../../api/client'
+import type { Project } from '../../api/types'
+import { invalidateCache } from '../../hooks/useApiData'
 import ActionsTab from './ActionsTab'
 
 const baseConfig: Record<string, string> = {}
@@ -145,5 +150,110 @@ describe('ActionsTab remote secret', () => {
     await waitFor(() =>
       expect(updateConfig).toHaveBeenCalledWith('backup_remote_secret_key', 'new-secret'),
     )
+  })
+})
+
+// The one-click AI client wiring. What matters here is that the button
+// asks for the user's own choices (which project, which clients) and that a
+// refusal from the backend reaches the user in their own language.
+describe('ActionsTab AI client wiring', () => {
+  const project = (over: Partial<Project>): Project => ({
+    id: 1,
+    name: 'demo',
+    root_path: '/code/demo',
+    level_override: 0,
+    is_auto_grouped: false,
+    is_starred: false,
+    created_at: '2026-10-01',
+    project_kind: 'scanned',
+    repo_count: 1,
+    total_added: 0,
+    total_deleted: 0,
+    my_added: 0,
+    my_deleted: 0,
+    my_files: 0,
+    my_added_7d: 0,
+    is_workday: true,
+    below_standard: false,
+    ...over,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // The project list is shared through the module-level cache in
+    // useApiData, and an earlier test in this file mounted the tab with an
+    // empty list. Drop it so this block sees its own projects.
+    invalidateCache('projects:all')
+    vi.mocked(listAgentClients).mockResolvedValue(['claude', 'cursor'])
+    vi.mocked(getProjects).mockResolvedValue([
+      project({ id: 1, name: 'demo' }),
+      project({ id: 2, name: 'home-container', is_auto_grouped: true }),
+      project({ id: 3, name: 'uncategorized', root_path: 'repotory://memory/default', project_kind: 'default' }),
+    ])
+    vi.mocked(setupAgentClients).mockResolvedValue({
+      code: '',
+      blocking: false,
+      binary: '/usr/local/bin/repotory-mcp',
+      files: [{ client: 'claude', path: '/code/demo/.mcp.json', status: 'created' }],
+    })
+  })
+
+  it('offers the clients the backend supports, not a hardcoded list', async () => {
+    renderTab()
+
+    expect(await screen.findByRole('checkbox', { name: 'settings.agentClientClaude' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'settings.agentClientCursor' })).toBeTruthy()
+    expect(screen.queryByRole('checkbox', { name: 'settings.agentClientWindsurf' })).toBeNull()
+  })
+
+  it('offers only the projects that can receive client configuration', async () => {
+    renderTab()
+
+    expect(await screen.findByRole('option', { name: 'demo' })).toBeTruthy()
+    // A scan-time container and the synthetic bucket are refused by the
+    // backend, so offering them would be offering a dead end.
+    expect(screen.queryByRole('option', { name: 'home-container' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'uncategorized' })).toBeNull()
+  })
+
+  it('connects the picked project and clients', async () => {
+    renderTab()
+
+    const picker = await screen.findByRole('combobox')
+    fireEvent.change(picker, { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+
+    await waitFor(() =>
+      expect(setupAgentClients).toHaveBeenCalledWith(1, ['claude'], true),
+    )
+  })
+
+  it('shows the refusal in the user language, not the backend code', async () => {
+    vi.mocked(setupAgentClients).mockResolvedValue({
+      code: 'auto_grouped_project',
+      blocking: true,
+      binary: '',
+      files: [],
+    })
+    renderTab()
+
+    const picker = await screen.findByRole('combobox')
+    fireEvent.change(picker, { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+
+    expect(await screen.findByText('settings.agentSetupAutoGroupedProject')).toBeTruthy()
+  })
+
+  it('lists the files it wrote', async () => {
+    renderTab()
+
+    const picker = await screen.findByRole('combobox')
+    fireEvent.change(picker, { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+
+    expect(await screen.findByText('/code/demo/.mcp.json')).toBeTruthy()
   })
 })

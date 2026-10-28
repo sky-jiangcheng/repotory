@@ -11,7 +11,12 @@ import os from "node:os";
 
 const SERVER_NAME = "repotory";
 const BINARY_NAME = process.platform === "win32" ? "repotory-mcp.exe" : "repotory-mcp";
-const HOOK_SCRIPT_REL = path.join(".claude", "hooks", "repotory-handoff.sh");
+const HOOK_SCRIPT_REL = ".claude/hooks/repotory-handoff.sh";
+// Forward slashes on every platform, deliberately: this path is written into a
+// shell command string, and path.join would produce backslashes on Windows —
+// the one place where this script and the Go twin (internal/agentinit) could
+// disagree about the same file. The two are pinned to one fixture by
+// scripts/check-agent-init-contract.mjs.
 const BACKUP_SUFFIX = ".repotory-init.bak";
 
 const RELEASES_URL = "https://github.com/sky-jiangcheng/repotory/releases";

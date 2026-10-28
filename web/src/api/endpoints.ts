@@ -6,6 +6,7 @@ import { call, isDesktopRuntime } from './transport'
 import type {
   AICallLogEntry,
   AIAuditStatus,
+  AgentSetupReport,
   AppConfig,
   BackupCopyTargetReport,
   CompileJob,
@@ -699,6 +700,38 @@ export function checkBackupCopyTarget(path: string): Promise<BackupCopyTargetRep
     method: 'CheckBackupCopyTarget',
     args: [path],
   }).then(d => d ?? { path: '', exists: false, writable: false, same_device: false, device_known: false, code: '', blocking: false })
+}
+
+// --- AI client wiring -------------------------------------------------------------------------
+// The desktop twin of the CLI's `repotory-init`: it writes the MCP server
+// entry into the AI clients the user picks, so "click once and the agent
+// sees the memory" is one click instead of a wiki page of JSON.
+
+/**
+ * The AI clients this build can register the MCP server with.
+ *
+ * The UI asks instead of hardcoding the list: a client the backend cannot
+ * register must not be offered as a checkbox.
+ */
+export function listAgentClients(): Promise<string[]> {
+  return call<string[]>({ method: 'ListAgentClients' }).then(d => d ?? [])
+}
+
+/**
+ * Register the MCP server with the picked clients for one project.
+ *
+ * A refusal comes back as a code in the report (never as a thrown error):
+ * "that project is a container" is an answer the UI renders, not a crash.
+ */
+export function setupAgentClients(
+  projectId: number,
+  clients: string[],
+  withHook: boolean,
+): Promise<AgentSetupReport> {
+  return call<AgentSetupReport>({
+    method: 'SetupAgentClients',
+    args: [projectId, clients, withHook],
+  }).then(d => d ?? { code: '', blocking: false, binary: '', files: [] })
 }
 
 // --- Plugins -------------------------------------------------------------------------------

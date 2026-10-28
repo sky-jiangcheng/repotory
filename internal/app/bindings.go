@@ -394,6 +394,31 @@ func (a *App) CheckBackupCopyTarget(path string) (service.BackupCopyTargetReport
 	return a.svc.CheckBackupCopyTarget(path)
 }
 
+// --- AI client wiring ----------------------------------------------------------
+
+// ListAgentClients returns the AI clients this build can register the MCP
+// server with (claude, cursor, vscode, windsurf).
+//
+// The UI asks instead of hardcoding the list: a client the backend cannot
+// register must not be offered as a checkbox, and a client the backend gains
+// later must appear without a frontend release.
+func (a *App) ListAgentClients() []string { return service.AgentClientNames() }
+
+// SetupAgentClients registers Repotory's MCP server with the AI clients the
+// user picked, for one project, and optionally installs the Claude Code
+// SessionEnd hook that writes the handoff note when a session ends.
+//
+// This is the desktop twin of the CLI's `repotory-init`: same files, same
+// bytes (the two are pinned to one golden fixture by
+// scripts/check-agent-init-contract.mjs).
+//
+// The report carries a machine-readable code, not a sentence: the UI renders
+// it in the user's language. A refusal — a container project, a missing
+// directory, a client that does not exist — is a code, not an error.
+func (a *App) SetupAgentClients(projectID int64, clients []string, withHook bool) (service.AgentSetupReport, error) {
+	return a.svc.SetupAgentClients(projectID, clients, withHook)
+}
+
 // --- Plugins / knowledge sources ----------------------------------------------
 
 // GetKnowledgeSources returns registered knowledge importers with their state.

@@ -165,6 +165,16 @@ var bindingSurfaces = map[string]BindingSurface{
 	"RunBackupNow":          {SurfaceDesktopOnly, "", "writes a local snapshot file; the hourly ticker already covers the cadence (ADR-0025 L1)"},
 	"CheckBackupCopyTarget": {SurfaceDesktopOnly, "", "inspects a candidate off-disk backup directory before the user points the product at it; it reveals where the user's data lives, so an agent has no business asking (ADR-0025 L3)"},
 
+	// ---- AI client wiring -----------------------------------------------------
+	// Writing MCP config files into the user's project directory, and the
+	// Claude Code SessionEnd hook, are setup acts on the user's machine: they
+	// edit configuration the user owns and can be pointed at another project.
+	// An agent doing that to itself is not a capability any MCP tool should
+	// offer, so these stay desktop-only (the CLI's repotory-init is the
+	// terminal twin of the same work).
+	"ListAgentClients":  {SurfaceDesktopOnly, "", "the client list behind the settings picker; it exists so the UI cannot offer a client the backend would reject"},
+	"SetupAgentClients": {SurfaceDesktopOnly, "", "writes MCP config files and a SessionEnd hook into the user's project directory; that is a setup act on the user's machine, and an agent performing it would edit configuration the user owns without being asked (the CLI's repotory-init is the terminal twin)"},
+
 	// ---- knowledge sources / memory -----------------------------------------
 	"GetKnowledgeSources":        {SurfaceDesktopOnly, "", "plugins settings tab"},
 	"GetKnowledgeSyncStatus":     {SurfaceDesktopOnly, "", "periodic-sync status row in the plugins settings tab"},

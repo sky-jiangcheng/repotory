@@ -215,6 +215,21 @@ Desktop-only: headless and MCP users update through their own deployment channel
 | `ImportClaudeMemory()` | one-click Claude memory import |
 | `Health()` | `{status, version}` |
 
+## AI client wiring (desktop-only)
+
+Connects Repotory to the MCP clients of Claude Code / Cursor / VS Code / Windsurf. **No MCP counterpart**: these two bindings write files into the user's project directory — that is a "set up the machine" action, not an agent action.
+
+| Method | Description |
+|------|------|
+| `ListAgentClients()` | the list of connectable client names (`claude` / `cursor` / `vscode` / `windsurf`). The interface renders its options from this list instead of hardcoding them |
+| `SetupAgentClients(projectID, clients[], withHook)` | writes the MCP registration into the target project directory (`.mcp.json` / `.cursor/mcp.json` / `.vscode/mcp.json`; **Windsurf is the exception** — its config is the user-level `~/.codeium/windsurf/mcp_config.json`) and optionally installs the Claude Code SessionEnd hook. Returns `{code, blocking, binary, files[], hook?, hook_settings?, warnings[]}` |
+
+`code` is a machine-readable reason (empty string = success): `no_client` / `bad_client` / `project_not_found` / `virtual_project` / `auto_grouped_project` / `missing_directory` / `binary_missing`; the wording is rendered by the frontend in your language, and `blocking` separates "cannot be done" from "done, with something to say" — the rule across the whole repository: the backend never returns a hardcoded sentence.
+
+A few deliberate refusals: the default project (`repotory://memory/default`) and the scan-time auto-grouped container are not directories you can connect a client to; ticking no client at all is refused (rather than "writing to all four"); a missing target directory is reported as missing rather than created on the fly.
+
+It and the terminal `repotory-init` path are **two implementations of one protocol** (the Go `internal/agentinit` and the node `scripts/repotory-init/index.mjs`), and the files both produce are pinned to one fixture. See [AI Integration](../features/ai-integration.md#desktop-one-click-connect-no-terminal).
+
 ## Events (Wails → frontend)
 
 | Event | Payload |

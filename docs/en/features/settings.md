@@ -46,6 +46,7 @@ For plugin development, see the [Plugin Handbook](../plugins/overview.md).
 
 - **Rescan all projects now**: triggers a full scan (equivalent to the dashboard button)
 - **Import Claude memory**: triggers one import manually; once it finishes, jump to the knowledge base to review
+- **Connect AI clients**: pick a project and tick the clients (Claude Code / Cursor / VS Code / Windsurf) — one press of "Connect" writes the MCP registration, optionally installs the SessionEnd hook, and can kick off a scan, so the client works right after you open it. See [AI Integration](ai-integration.md#desktop-one-click-connect-no-terminal)
 
 ## Updates
 

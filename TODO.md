@@ -11,6 +11,7 @@
 - **M7 lane 2 生产管线已激活（2026-10-22）**：`semantic_search=1` + LM Studio 端点（`text-embedding-nomic-embed-text-v1.5`，dim=768）+ 双向量重建落库（笔记 133 / approved 页 27，经运行中 headless server 的 `/api/rpc` 完成，激活前 live 已文件备份 `repotory.db.backup-20261022-093904`）。live 直评证据门 **k=2/5/10/20 delta +0.114 / +0.159 / +0.205 / +0.205**（ndcg 全正，与晋升 v4 逐点一致，graph perfect 13/22、零回退）——生产口径由 FTS-only +0.023 升级为全管线。
 - **真库事故（2026-10-14）已完全恢复并归档**：恢复过程、48 条笔记重导找回与 TM/快照双点验证见归档 [outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md](outputs/process-logs/2026-10-14-事故恢复与备份验证归档.md)。内置每日本地快照（ADR-0025 L1）与 S3 远端推送（L2）均已落码。
 - **已批准知识页对人可见了（ADR-0032 / ADR-0033，2026-10-28 落码）**：`/wiki` 浏览面 + `/wiki/:id` 详情路由（**只列 approved**，进主导航），MCP 孪生 `repotory_wiki_search` / `repotory_wiki_read`（**MCP 工具数 16 → 18**），VS Code / JetBrains 两个 IDE 分发面都消费。**MCP 的 `repotory_ask` 已接上证据问答**——与桌面端同一个 `AskAIWithEvidence`，答案带 `Sources:` 清单。顺带修掉一个共享层检索缺口：**带标点的中文问句**原先零命中（`expandForFTS` 判 CJK 时把标点算作非 CJK），现按标点切段后逐段判。**两份 ADR 已于 2026-10-28 经用户批准晋升 Accepted。**
+- **桌面端「接入 AI 客户端」已落地（2026-10-28）**：设置 → 操作 → 接入 AI 客户端（Go 侧新包 `internal/agentinit`，与终端 `scripts/repotory-init/index.mjs` 共用同一份 golden fixture，CI `agent-init-contract` job 兜底；后端只回 `code`，文案由前端按语言渲染）。
 
 ---
 
@@ -77,7 +78,7 @@
 
 **遗留**
 
-- 暂无。下一批候选见 P0 计划的 4.1 / 4.3（桌面端一键接入 AI 客户端、一键恢复演练）。
+- 暂无。下一批候选见 P0 计划的 4.3（一键恢复演练）。
 
 #### Sprint 3 —— 一致性常态维护
 
@@ -92,7 +93,7 @@
 > 来源：一份外部产品/架构评审，把 Repotory 定位为「AI 编码 Agent 的本地记忆层」。评审肯定的四处——记忆跨 Agent、人工闸门、薄客户端、分发链路完整、Tier 模型的克制——不构成待办；下面是它提出的**风险与动作**里，经仓库现状逐条核实后**仍然成立**的部分。
 > **前提复核结论**（评审说错或已过时的，不写成待办，免得白干）：① 「必须先装 App、再跑 `node scripts/repotory-init`、再 rescan」——**VS Code 扩展早已做成一键**（`Repotory: Register MCP Server`，静默跑 `repotory-init --with-hook`，不弹终端），缺的是**桌面端**那一半（见 4.1）；② 「ADR 建议配中文」——ADR **已经是中英双份**（`docs/adr/` + `docs/en/adr/`，CI `docs-mirror` 硬门），真缺口只在 `blog/`（见 4.5）；③ 「13 个工具签名」——实际是 **16 个**（`TestToolsRegistered` 钉死清单）；④ 「换个名字」——品牌是**冻结标识**（AGENTS「范围冻结」：绑定用户数据迁移史），动作在定位不在改名（见 4.4）。
 
-- [ ] **4.1 桌面端「一键接入 AI 客户端」：把首次连接摩擦降到一次点击** —— 现状是**两半断开**：桌面 App 的 GUI 流程（播种 → 扫描 → 笔记）**完全不提 AI 客户端**，而 Agent 侧的接线只写在 README 的一句 `node scripts/repotory-init/index.mjs --with-hook`（读入门文档 `docs/getting-started.md` 才看得到一半）。同一个产品的两个安装面，上手成本差一个数量级。做法：设置页加「接入 AI 客户端」按钮，复用 `ide/vscode/repotory-init/index.mjs` 的实现（或把它提为共享包），一键写 `.mcp.json` / `.cursor` / `.vscode` + 装 SessionEnd hook + 触发首次 `repotory_scan`（现在桌面端首次扫描还得人点仪表盘的「重新扫描」）。**验收**：干净机器装桌面 App → 点一次按钮 → Claude Code / Cursor 里 `repotory_context` 直接返回内容，无需手动 rescan。**不违反 ADR-0009**：`repotory-init` 是 run-once 接线动作、只写向 Agent 侧，这条只是给它一个 GUI 入口
+- [x] **4.1 桌面端「一键接入 AI 客户端」：把首次连接摩擦降到一次点击** —— ✅ **已落码**。① **两份实现、一套协议**：桌面端按钮走 Go 的 `internal/agentinit`（新包），终端 / VS Code 扩展走 node 的 `scripts/repotory-init/index.mjs`；两份实现写出的文件被**同一份 fixture**（`internal/agentinit/testdata/contract.json`）钉住——`go test ./internal/agentinit` 验 Go 侧、`node scripts/check-agent-init-contract.mjs` 验脚本侧，且该脚本**两份副本都验**（事实源 `scripts/repotory-init/index.mjs`，VSIX 里那份由 `ide/vscode/scripts/sync-init.mjs` 生成），并已进 CI（`agent-init-contract` job）。② **后端只回机器可读原因**：`SetupAgentClients` 返回 `code`（`no_client` / `bad_client` / `project_not_found` / `virtual_project` / `auto_grouped_project` / `missing_directory` / `binary_missing`）+ `blocking`，文案由前端按语言渲染——与 `CheckBackupCopyTarget` 同一套规矩，后端不返回写死的句子。③ **几处刻意的拒绝**：默认项目（`repotory://memory/default`）与扫描期自动归组容器不接（界面里根本不出现在项目下拉里）；空选择被拒（不是「都写一遍」——`agentinit.Register` 会把空列表当「四个全写」，那会往 `~/.codeium` 里塞配置）；未知客户端名被拒；目录缺失报缺失，不凭空造目录。④ **设置页新 section**「接入 AI 客户端」：项目下拉 + 客户端多选 + SessionEnd hook 开关 + 「接入后触发扫描」开关 + 接入后逐文件列出「已写 / 未变 / 失败」。⑤ **二进制探测**按「显式路径 → `REPOTORY_MCP_BIN` → PATH → **与当前可执行文件同目录**（正常桌面安装就是这样）→ 包管理器常见目录」找，找不到就说「二进制不在」并给安装指引，不写空路径配置。⑥ 回归：service 9 例 + 前端 5 例。**顺带修掉一个真漂移**：`scripts/repotory-init/index.mjs` 与 `ide/vscode/repotory-init/index.mjs` 两份副本此前已不一致——hook 路径用 `path.join` 拼，在 Windows 上是反斜杠，而 Go 侧写的是正斜杠（同一份文件、两个拼法）。改在**事实源**上，另一份由 `sync-init.mjs` 重新生成；契约检查改成两份副本都跑，哪份漂了都会红。**已知代价**：按钮只接线，不替你装客户端本身；Windsurf 的配置是用户级的（`~/.codeium/windsurf/mcp_config.json`），与所选项目无关
 - [ ] **4.2 「本地 Agent 的默认记忆层」落成可复现的配方** —— 评审主张把 Repotory 当成 Ollama/llama.cpp 这类**完全离线**的本地 Agent 的默认记忆层，形成「不出网也能闭环」的用法。**技术前提仓库已满足**：MCP server 是 stdio 进程，与用哪个模型无关——任何能说 MCP 的本地 agent 都能接。缺的是①可复制的接线配方（本地 agent 侧怎么配 MCP）②**一次真机验证记录**（离线模型 + MCP + 跨会话命中 handoff）——现状是「技术上成立，但没人验过」。做法：写一页最小配方 + 实测一次并把结果记进手册。**不新建架构**
 - [ ] **4.3 恢复演练可复现化（一键 restore 校验）** —— 评审担心「库坏了怎么救」推高信任成本。备份侧已补齐 L1/L2/L3 三层（1.3 刚落码），但**「拿到一份快照 → 验它真能起来 → 换回去」这条路没有一键入口**：ADR-0025 晋升条件 1 的真机恢复演练是**手工**做的（沙箱 HOME + headless server 起副本），每次都要人重走一遍，没有脚本、无法复查。做法：新增 `scripts/verify-restore.sh`——对指定快照副本起隔离 HOME 的 headless server，跑 /health + 笔记/页面计数 + 一次 FTS 检索，输出可复现报告。**验收**：一条命令给出「这份快照能不能救我」的结论。**纪律**：全程只读 live，绝不写库
 - [ ] **4.4 定位与边界写进第一屏（品牌冻结，但定位要硬）** —— 评审指出 `repotory` 这个名字在搜索/记忆度上吃亏。**品牌是冻结标识**（AGENTS「范围冻结」，绑定用户数据迁移史），所以动作在**定位**不在改名：① README 首屏、文档站首页、VS Code 扩展描述、两个 Marketplace 描述各说各话——统一成一句「AI 编码 Agent 的本地记忆层 / memory layer for coding agents」，让没见过产品的人读完首屏能复述；② 顺带把**边界**说清楚：这是**单用户本地库**，跨设备/多人协作不在范围内（范围冻结 ADR-0006）——手册现在只讲「备份怎么做」，没讲「什么不在范围内」，用户问「能不能团队共享一个库」时文档答不上来。**验收**：README 首屏一句定位 + 手册「数据与备份」补一段边界与替代路径（L3 异盘副本 + L2 远端推送各持一份）

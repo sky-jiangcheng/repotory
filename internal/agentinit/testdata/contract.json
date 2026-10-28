@@ -1,0 +1,41 @@
+{
+  ".claude/hooks/repotory-handoff.sh": "#!/bin/sh\n# Repotory SessionEnd hook: write the handoff note when a session ends.\n# Installed by repotory-init. Delete this file and the matching\n# .claude/settings.json entry to uninstall.\ncommand -v claude \u003e/dev/null 2\u003e\u00261 || exit 0\ncd \"${CLAUDE_PROJECT_DIR:-$(dirname \"$0\")/../..}\" || exit 0\n[ -f .mcp.json ] || exit 0\nclaude -p --mcp-config .mcp.json \\\n  'This session ended. Call repotory_handoff for the current project: a concise summary plus next_steps. If the project cannot be resolved, call repotory_context once first. Do nothing else.' \\\n  \u003e/dev/null 2\u003e\u00261 || true\n",
+  ".claude/settings.json": {
+    "hooks": {
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/repotory-handoff.sh",
+              "type": "command"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  ".cursor/mcp.json": {
+    "mcpServers": {
+      "repotory": {
+        "args": [],
+        "command": "\u003cBIN\u003e"
+      }
+    }
+  },
+  ".mcp.json": {
+    "mcpServers": {
+      "repotory": {
+        "args": [],
+        "command": "\u003cBIN\u003e"
+      }
+    }
+  },
+  ".vscode/mcp.json": {
+    "servers": {
+      "repotory": {
+        "args": [],
+        "command": "\u003cBIN\u003e"
+      }
+    }
+  }
+}

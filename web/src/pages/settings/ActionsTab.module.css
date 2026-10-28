@@ -84,3 +84,92 @@
   font-size: 13px;
   color: var(--danger);
 }
+
+/* The AI client wiring block. It is a form with a picker, a set of clients
+   and two switches, so it needs its own grid rather than the action row the
+   one-button groups use. */
+.agentBlock {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.agentLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.agentLabel span {
+  color: var(--text-tertiary);
+}
+
+.agentClients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.agentClients legend {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.agentCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.agentResult {
+  display: grid;
+  gap: 8px;
+}
+
+.agentFiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.agentFiles li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agentFileStatus {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.agentFiles code {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.agentFileNote {
+  color: var(--text-tertiary);
+}
+
+.agentStatusOk {
+  margin: 0;
+  font-size: 13px;
+  color: var(--success);
+}
+
+.agentStatusError {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}

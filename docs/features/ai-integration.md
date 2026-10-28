@@ -174,7 +174,33 @@ repository 层（1、2）压过 project 层（3、4），因为命中 repository
 
 这条解析是**服务端**的，MCP 工具与 VS Code 扩展共用同一实现：`repotory_context` / `repotory_handoff` / `repotory_notes_search` 新增可选 `path`，扩展通过只读绑定 `ResolveWorkspacePath` 拿到归属显示，因此不会在 TypeScript 里重新实现一遍匹配器。注意 `repotory_context` 里 `path` 能解析到项目时**优先于** `project_id`/`project_name`，而 `repotory_handoff` 里 `project_id` 优先、`path` 仅在其缺失时兜底。（`repotory_context` 的 MCP 工具描述仍把 `project_id` 写成「preferred」，但实际是能解析的 `path` 取胜——描述与行为存在已知出入。）
 
-### 一键注册（repotory-init，推荐）
+### 桌面端一键接入（不用开终端）
+
+装了桌面 App 的人不必去终端跑脚本：**设置 → 操作 → 接入 AI 客户端**（见[设置](settings.md)）里选一个项目、勾选要接的客户端、点一次「接入」，桌面端就会写好 `.mcp.json` / `.cursor/mcp.json` / `.vscode/mcp.json`，可选装上 Claude Code 的 SessionEnd hook，并顺手触发一次扫描。装完直接开 Claude Code，`repotory_context` 就有内容可返回，不用再手动 rescan。
+
+（Windsurf 是个例外：它的 MCP 配置是**用户级**的，落在 `~/.codeium/windsurf/mcp_config.json`，与项目无关。其余三个客户端的配置写在**项目目录**里，跟着仓库走。）
+
+注册进去的 `repotory-mcp` 二进制按这个顺序找：显式路径 → `REPOTORY_MCP_BIN` 环境变量 → `PATH` → **与当前可执行文件同目录**（桌面安装包里它就躺在 `repotory` 旁边，所以正常安装一次就能找到）→ 包管理器常见目录。找不到时按钮会明确说「二进制不在」并给出安装指引，而不是写进一个指向空路径的配置。
+
+它与下面那条终端路径是**同一套协议的两份实现**：
+
+| 实现 | 形态 | 谁在用 |
+|------|------|--------|
+| `internal/agentinit` | Go，桌面二进制自带 | 桌面端那个按钮 |
+| `scripts/repotory-init/index.mjs` | node 脚本，零依赖 | 终端与 VS Code 扩展 |
+
+两份实现写出的文件被**同一份 fixture**（`internal/agentinit/testdata/contract.json`）钉住：`go test ./internal/agentinit` 验 Go 那一侧，`node scripts/check-agent-init-contract.mjs` 验脚本那一侧（并且**两份脚本副本都验**——事实源是 `scripts/repotory-init/index.mjs`，VSIX 里带的那份由 `ide/vscode/scripts/sync-init.mjs` 生成）。只改一边，另一边立刻红：这种漂移从两边看都是「已注册」，而 Claude Code 什么也没收到。
+
+有几件事按钮**不会**替你做（都明确拒绝，而不是猜）：
+
+- **不写默认项目与自动归组容器**：默认项目（`repotory://memory/default`）和扫描期的兜底容器不是能接 AI 客户端的目录，界面上它们根本不出现在项目下拉里；
+- **不接受空选择**：一个客户端都不勾会被拒绝，而不是「都写一遍」；
+- **不认未知客户端名**；
+- **目录不存在就报目录缺失**，而不是凭空造一个目录。
+
+按钮返回的是**机器可读原因**（`code`），文案由界面按你的语言渲染——后端不返回写死的人话句子，这是全仓一致的规矩（见 `CheckBackupCopyTarget`）。
+
+### 终端一键注册（repotory-init）
 
 [ADR-0009](../adr/0009-ide-presence.md) 的第一步：一条命令完成二进制探测与客户端注册，幂等可重复执行：
 
@@ -182,7 +208,7 @@ repository 层（1、2）压过 project 层（3、4），因为命中 repository
 node scripts/repotory-init/index.mjs --with-hook
 ```
 
-**在任意项目里都能跑**：VS Code 扩展的 `Repotory: Register MCP Server` 命令用的是随扩展打包的那份 `repotory-init`（事实源仍在 `scripts/repotory-init/index.mjs`，由 `compile` 拷入 VSIX，CI 用 `git diff --exit-code` 钉住两者一致），所以不必先克隆本仓库；执行时也不弹终端——扩展在宿主进程内静默跑完安装器（仅 `ENOENT`/`EACCES` 时才回退到 `node`）。上面的裸命令则需要你在本仓库目录内执行。
+**在任意项目里都能跑**：VS Code 扩展的 `Repotory: Register MCP Server` 命令用的是随扩展打包的那份 `repotory-init`（事实源仍是 `scripts/repotory-init/index.mjs`，由 `compile` 拷入 VSIX，CI 用 `git diff --exit-code` 钉住两者一致），所以不必先克隆本仓库；执行时也不弹终端——扩展在宿主进程内静默跑完安装器（仅 `ENOENT`/`EACCES` 时才回退到 `node`）。上面的裸命令则需要你在本仓库目录内执行。
 
 - 自动探测 `repotory-mcp`（`--bin` 可显式指定），向 Claude Code（`.mcp.json`）、Cursor（`.cursor/mcp.json`）、VS Code（`.vscode/mcp.json`）、Windsurf 写入注册（配置只落在对应客户端目录已存在的地方），JetBrains 打印手动指引
 - `--with-hook` 同时安装下方的 SessionEnd hook（脚本 + `settings.json` 合并，改前备份）

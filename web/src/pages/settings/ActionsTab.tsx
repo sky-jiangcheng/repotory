@@ -1,8 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { triggerScan, importClaudeMemory, runBackupNow, updateConfig, checkBackupCopyTarget } from '../../api/client'
-import type { BackupCopyTargetCode, BackupCopyTargetReport } from '../../api/types'
+import {
+  triggerScan,
+  importClaudeMemory,
+  runBackupNow,
+  updateConfig,
+  checkBackupCopyTarget,
+  listAgentClients,
+  setupAgentClients,
+  getProjects,
+} from '../../api/client'
+import type {
+  AgentFileResult,
+  AgentSetupCode,
+  AgentSetupReport,
+  BackupCopyTargetCode,
+  BackupCopyTargetReport,
+  Project,
+} from '../../api/types'
+import { useApiData } from '../../hooks/useApiData'
 import { useScanPolling } from '../../hooks/useScanPolling'
 import CodeText from '../../components/CodeText'
 import s from './ActionsTab.module.css'
@@ -36,6 +53,26 @@ const COPY_CODE_KEYS: Record<BackupCopyTargetCode, string> = {
   same_device: 'settings.backupCopySameDevice',
 }
 
+// The same rule for the client registration: the backend says WHY in a
+// machine-readable code, because it does not know the user's language.
+const AGENT_CODE_KEYS: Record<AgentSetupCode, string> = {
+  '': 'settings.agentSetupOk',
+  no_client: 'settings.agentSetupNoClient',
+  bad_client: 'settings.agentSetupBadClient',
+  project_not_found: 'settings.agentSetupProjectNotFound',
+  virtual_project: 'settings.agentSetupVirtualProject',
+  auto_grouped_project: 'settings.agentSetupAutoGroupedProject',
+  missing_directory: 'settings.agentSetupMissingDirectory',
+  binary_missing: 'settings.agentSetupBinaryMissing',
+}
+
+const AGENT_STATUS_KEYS: Record<AgentFileResult['status'], string> = {
+  created: 'settings.agentStatusCreated',
+  updated: 'settings.agentStatusUpdated',
+  unchanged: 'settings.agentStatusUnchanged',
+  failed: 'settings.agentStatusFailed',
+}
+
 export default function ActionsTab({ initialConfig, showMessage }: Props) {
   const { t } = useTranslation()
   // TriggerScan only STARTS the scan — it returns a task id immediately while
@@ -66,6 +103,59 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
   const [copyReport, setCopyReport] = useState<BackupCopyTargetReport | null>(null)
   const [checkingCopy, setCheckingCopy] = useState(false)
   const [savingCopy, setSavingCopy] = useState(false)
+
+  // --- AI client wiring ------------------------------------------------------
+  // The clients come from the backend, so one it cannot register is never
+  // offered as a checkbox. The projects come from the shared list every page
+  // already loads, minus the rows that cannot receive client configuration (a
+  // scan-time container, and the synthetic "未分类" bucket — the backend
+  // refuses both, so offering them would be offering a dead end).
+  const [agentClients, setAgentClients] = useState<string[]>([])
+  const [pickedClients, setPickedClients] = useState<string[]>([])
+  const [targetProject, setTargetProject] = useState('')
+  const [withHook, setWithHook] = useState(true)
+  const [scanAfter, setScanAfter] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [agentReport, setAgentReport] = useState<AgentSetupReport | null>(null)
+  const { data: projectList } = useApiData<Project[]>(
+    () => getProjects(undefined, false),
+    [],
+    { cacheKey: 'projects:all' },
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    listAgentClients()
+      .then((cs) => {
+        if (!cancelled) setAgentClients(cs)
+      })
+      .catch(() => {
+        // The backend is not reachable (headless mode not started yet); the
+        // section stays empty and the button stays disabled.
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const connectableProjects = useMemo(
+    () => (projectList ?? []).filter(p => !p.is_auto_grouped && p.project_kind !== 'default'),
+    [projectList],
+  )
+
+  const toggleClient = (name: string) => {
+    setPickedClients(prev =>
+      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name],
+    )
+  }
+
+  const clientLabel = (name: string): string => {
+    switch (name) {
+      case 'claude': return t('settings.agentClientClaude')
+      case 'cursor': return t('settings.agentClientCursor')
+      case 'vscode': return t('settings.agentClientVSCode')
+      case 'windsurf': return t('settings.agentClientWindsurf')
+      default: return name
+    }
+  }
 
   const handleRescan = async () => {
     try {
@@ -181,6 +271,29 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
       showMessage(t('settings.importFailed', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
     } finally {
       setImporting(false)
+    }
+  }
+
+  // Registering the MCP server is the whole point of the button: after it,
+  // the agent sees the memory. The scan is optional — a project the user
+  // never scanned has nothing in the knowledge base yet, and the agent
+  // would find an empty one.
+  const handleConnect = async () => {
+    if (!targetProject || pickedClients.length === 0) return
+    setConnecting(true)
+    try {
+      const report = await setupAgentClients(Number(targetProject), pickedClients, withHook)
+      setAgentReport(report)
+      if (report.code) return
+      if (scanAfter) {
+        await triggerScan()
+        startScanPolling(t('common.scanning', { defaultValue: 'Scanning…' }))
+        showMessage(t('settings.agentSetupScanStarted'))
+      }
+    } catch (e: unknown) {
+      showMessage(t('settings.saveFailedMsg', { msg: e instanceof Error ? e.message : t('common.unknownError') }))
+    } finally {
+      setConnecting(false)
     }
   }
 
@@ -307,6 +420,102 @@ export default function ActionsTab({ initialConfig, showMessage }: Props) {
             </button>
           </div>
           {copyStatus}
+        </div>
+      </section>
+
+      {/* The one-click AI client wiring. It writes into the user's own
+          machine — MCP config files in the project directory they picked, and
+          optionally the Claude Code SessionEnd hook — so the project and the
+          clients are the user's choice, never defaults. */}
+      <section className="settings-group">
+        <h2 className="settings-group-title">{t('settings.agentClientsTitle')}</h2>
+        <p className="section-desc">{t('settings.agentClientsDesc')}</p>
+        <div className={s.agentBlock}>
+          <label className={s.agentLabel}>
+            <span>{t('settings.agentClientsProject')}</span>
+            <select
+              className="form-input"
+              value={targetProject}
+              onChange={(e) => {
+                setTargetProject(e.target.value)
+                setAgentReport(null)
+              }}
+            >
+              <option value="">{t('settings.agentClientsPickProject')}</option>
+              {connectableProjects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          <fieldset className={s.agentClients}>
+            <legend>{t('settings.agentClientsPick')}</legend>
+            {agentClients.map(c => (
+              <label key={c} className={s.agentCheck}>
+                <input
+                  type="checkbox"
+                  checked={pickedClients.includes(c)}
+                  onChange={() => toggleClient(c)}
+                />
+                <span>{clientLabel(c)}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className={s.agentCheck}>
+            <input
+              type="checkbox"
+              checked={withHook}
+              onChange={(e) => setWithHook(e.target.checked)}
+            />
+            <span>{t('settings.agentClientsHook')}</span>
+          </label>
+          <label className={s.agentCheck}>
+            <input
+              type="checkbox"
+              checked={scanAfter}
+              onChange={(e) => setScanAfter(e.target.checked)}
+            />
+            <span>{t('settings.agentClientsScanAfter')}</span>
+          </label>
+          <div className={s.actionRow}>
+            <button
+              className="btn btn-primary"
+              onClick={handleConnect}
+              disabled={connecting || !targetProject || pickedClients.length === 0}
+            >
+              {connecting ? t('settings.agentClientsConnecting') : t('settings.agentClientsConnect')}
+            </button>
+          </div>
+          {agentReport && (
+            <div className={s.agentResult}>
+              <p className={agentReport.blocking ? s.agentStatusError : s.agentStatusOk} role="status">
+                {t(AGENT_CODE_KEYS[agentReport.code])}
+              </p>
+              <ul className={s.agentFiles}>
+                {agentReport.files.map((f, i) => (
+                  <li key={`${f.path}-${i}`} className={f.status === 'failed' ? s.agentStatusError : undefined}>
+                    <span className={s.agentFileStatus}>{t(AGENT_STATUS_KEYS[f.status])}</span>
+                    <code>{f.path}</code>
+                    {f.note && <span className={s.agentFileNote}>{f.note}</span>}
+                  </li>
+                ))}
+                {agentReport.hook && (
+                  <li>
+                    <span className={s.agentFileStatus}>{t(AGENT_STATUS_KEYS[agentReport.hook.status])}</span>
+                    <code>{agentReport.hook.path}</code>
+                  </li>
+                )}
+                {agentReport.hook_settings && (
+                  <li>
+                    <span className={s.agentFileStatus}>{t(AGENT_STATUS_KEYS[agentReport.hook_settings.status])}</span>
+                    <code>{agentReport.hook_settings.path}</code>
+                  </li>
+                )}
+              </ul>
+              {(agentReport.warnings ?? []).map((w, i) => (
+                <p key={i} className={s.agentStatusError} role="status">{w}</p>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
