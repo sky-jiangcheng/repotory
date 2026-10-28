@@ -36,6 +36,7 @@ func main() {
 
 	mcpServer := server.NewMCPServer("repotory-mcp", version.Version)
 	registerTools(mcpServer, svc)
+	registerAskTool(mcpServer, svc)
 	registerWikiTools(mcpServer, svc)
 	registerContextTools(mcpServer, svc)
 	registerScanTool(mcpServer, svc)
@@ -193,33 +194,6 @@ func registerTools(mcpServer *server.MCPServer, svc *service.Service) {
 			return makeTextResult(fmt.Sprintf("project not found: %v", err)), nil
 		}
 		return makeJSONResult("project_stats", summary)
-	})
-
-	mcpServer.AddTool(mcp.Tool{
-		Name:        "repotory_ask",
-		Description: "Ask a question against the local knowledge base (notes + todos search)",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]any{
-				"query": map[string]any{
-					"type":        "string",
-					"description": "Question or search query",
-				},
-			},
-		},
-	}, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		query, _ := req.GetArguments()["query"].(string)
-		if query == "" {
-			return makeTextResult("query is required"), nil
-		}
-		if len(query) > maxArgQueryLen {
-			return makeTextResult(fmt.Sprintf("query too long: %d bytes (max %d)", len(query), maxArgQueryLen)), nil
-		}
-		hits := svc.SearchAll(query)
-		if len(hits) == 0 {
-			return makeTextResult("No results found for: " + query), nil
-		}
-		return makeTextResult(strings.Join(service.FormatSearchAnswer(hits, 5), "\n---\n")), nil
 	})
 
 	mcpServer.AddTool(mcp.Tool{

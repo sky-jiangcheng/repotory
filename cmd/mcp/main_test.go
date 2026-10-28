@@ -45,6 +45,7 @@ func newTestServer(t *testing.T) *testServer {
 	svc := service.New(database, "tester", nil)
 	s := server.NewMCPServer("repotory-mcp", "test")
 	registerTools(s, svc)
+	registerAskTool(s, svc)
 	registerWikiTools(s, svc)
 	registerContextTools(s, svc)
 	registerScanTool(s, svc)

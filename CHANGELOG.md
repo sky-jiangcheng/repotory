@@ -9,6 +9,7 @@
 ### 新增
 
 - **已批准的知识页终于对人可见了（ADR-0032，2026-10-28）**：库里那 27 张**人已经批准过**的知识页此前对人**完全不可见**——`web/src` 只有审核页两处渲染页正文，路由表与主导航都没有 wiki 条目。闸门（ADR-0015）只定义了「可以被引用」，没定义「可以被读」，于是形成一个闭环：人花力气批准 → 页进检索 → 页只作为 LLM 的脚料被消耗 → 人自己永远读不到它（27 张里只有 6 张 `access_count > 0`，因为只有 6 张被 AI 取证碰到过）。现新增 `/wiki` 浏览面 + `/wiki/:id` 详情路由（**只列已批准页**，进主导航），检索复用 `db.SearchWikiPages` 既有语义（approved-only + bm25 + CJK 松弛）并把作用域过滤**下推到 SQL**（项目页 + 全局页，与取证路径同语义；下推而非 Go 侧过滤，否则别的项目的页会先占掉 limit）。**只读**——编辑已批准页属 ADR-0021 的修订流，另议。**人浏览不写 `access_count`**：该列的语义是「被答案用过」，混入「被人读过」会让一个信号一义两用，未来若有排序/衰减策略依赖它，两种含义会被当成一种。代价是浏览不产生强化。MCP 孪生 `repotory_wiki_search` / `repotory_wiki_read`（读一张已过闸的页是纯读，闸门在写侧），VS Code 与 JetBrains 两个 IDE 分发面都消费（薄客户端纪律：只调绑定，不复制检索逻辑）。回归：db 7 例 + service 5 例 + 前端 13 例 + `go test ./...` 全绿；live 实测 `BrowseWikiPages(0, 200)` = 27 页，与库里 approved 数一致；**浏览器实测**：主导航有「知识页」入口、列表渲染 27 张、作用域下拉选 CBiPay 后收窄到 6 张且 URL 同步 `?project=25`、带问号的中文问句命中 1 张、`/wiki/45` 详情页渲染正文与来源笔记与 6 条出链、控制台无报错。实测：`SearchWikiPages(0, "时态图是什么？为什么需要它？")` 从 0 条变成命中 ADR-0021 那页。
+- **MCP 的 `repotory_ask` 终于是个问答工具了（ADR-0033，2026-10-28）**：它此前做的是 `SearchAll` + 格式化前 5 条命中——FTS grep，不是问答；工具自己的描述就写着「notes + todos search」。而桌面端早就有 `AskAIWithEvidence`（取证 + 出处编号 P1/N3 + 审计留痕）。同一个产品、同一份库，桌面端给带出处的答案，MCP 给标题列表。现在 MCP 走**同一个函数**——同一套取证、同一套提示装配、同一份预算（`DefaultEvidenceBudget`：12 项 / 4000 字符 / 3 秒），差别只有传输与渲染。两条边界写进了工具描述与实现：**没配 AI 端点 → 关键词回退，且必须标注「这不是答案」**（叫 `ask` 的工具返回未标注的 grep 输出，等于在替 agent 编造结论）；**配了但调用失败 → 报错，不回退**（「没配端点」与「端点挂了」是两件事，混成同一段输出，agent 就永远学不会本环境能不能问）——为此加了哨兵 `service.ErrAIChatNotConfigured`（错误文案一字未改）。答案固定带 `Sources:` 清单，否则模型引用的 `[P2]` 对读者毫无意义。**输出契约变了是有意的**：散文答案 + Sources 取代 `[type] title` 文本块；回退路径保留旧形状，故未配端点的客户端解析形状不变。实测：`repotory_ask` 对同一问题给出 **12 条出处的证据答案**，MCP 与桌面端一致。
 
 ### 修复
 
@@ -17,8 +18,8 @@
 
 ### 变更
 
-- **ADR 索引与 `AGENTS.md` 的 ADR 份数**：新增 ADR-0032（已批准知识页可见化），中英双份；`AGENTS.md` 的「31 份架构决策」改为 32 份。**该 ADR 已于 2026-10-28 经用户批准晋升 Accepted**（ADR 状态由用户定，落码当天只写到 Proposed）。
-- **MCP 工具数 16 → 18**：新增 `repotory_wiki_search` / `repotory_wiki_read`；`TestToolsRegistered` 钉死清单，工具数漂移即测试红。`skill/repotory/` 下的 agent 文档同步（改为按 `tools/list` 实测响应写成 18 个，并补上两个 wiki 工具）。
+- **ADR 索引与 `AGENTS.md` 的 ADR 份数**：新增 ADR-0032（已批准知识页可见化）与 ADR-0033（MCP `repotory_ask` 接上证据问答），中英双份；`AGENTS.md` 的「31 份架构决策」改为 33 份。**两份 ADR 已于 2026-10-28 经用户批准晋升 Accepted**（ADR 状态由用户定，落码当天只写到 Proposed）。
+- **MCP 工具数 16 → 18**：新增 `repotory_wiki_search` / `repotory_wiki_read`；`TestToolsRegistered` 钉死清单，工具数漂移即测试红。`skill/repotory/` 下的 agent 文档同步（原写着「14 个工具」，改为按 `tools/list` 实测响应写成 18 个，并补上 `repotory_ask` 的新输出契约与两个 wiki 工具）。
 
 ## [2.18.0] - 2026-10-28
 

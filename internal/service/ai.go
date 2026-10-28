@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -72,6 +73,13 @@ type aiChatConfig struct {
 	apiKey  string
 }
 
+// ErrAIChatNotConfigured marks the one AI failure a caller can do something
+// about: no endpoint, no model. It is a sentinel rather than a string match so
+// the agent-facing surface can tell "the user never set an endpoint up" from
+// "the endpoint is configured but the call failed" — the first wants a
+// different answer, the second wants an error.
+var ErrAIChatNotConfigured = errors.New("AI chat is not configured")
+
 func (s *Service) aiChatConfig() (aiChatConfig, error) {
 	base, err := db.GetConfig(s.db, "ai_chat_base_url")
 	if err != nil && err != sql.ErrNoRows {
@@ -81,7 +89,7 @@ func (s *Service) aiChatConfig() (aiChatConfig, error) {
 	key, _ := db.GetConfig(s.db, "ai_chat_api_key")
 	base = strings.TrimSpace(base)
 	if base == "" || strings.TrimSpace(model) == "" {
-		return aiChatConfig{}, fmt.Errorf("AI chat is not configured — set the endpoint and model in Settings → AI")
+		return aiChatConfig{}, fmt.Errorf("%w — set the endpoint and model in Settings → AI", ErrAIChatNotConfigured)
 	}
 	return aiChatConfig{
 		baseURL: strings.TrimRight(base, "/"),

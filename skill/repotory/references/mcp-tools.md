@@ -6,7 +6,7 @@
 repotory_agent_score()
 repotory_ai_audit(limit: number)
 repotory_ai_review_rules()
-repotory_ask(query: string)
+repotory_ask(query*: string, project_id: number, path: string)
 repotory_context(path: string, project_id: number, project_name: string)
 repotory_handoff(agent: string, changes: array, decisions: array, gotchas: array,
                  next_steps: array, path: string, project_id: number, summary*: string,
@@ -74,12 +74,16 @@ repotory_wiki_search(query: string, project_id: number, path: string, limit: num
 
 ## 读工具
 
-### `repotory_ask(query)`
+### `repotory_ask(query*, project_id?, path?)`
 
-自然语言提问，返回 top-5 排序结果（笔记 + 待办）。
+自然语言提问，返回**带出处的答案**：答案正文 + `Sources:` 清单（每行给 ref / 类型 / 标题 / id / slug / 所属项目）。
 
-- 语义检索**默认关闭**，需用户在桌面端 设置 → AI 自配端点；未开时退化为词法匹配
-- 想要精确命中用 `notes_search`；想要项目全景用 `context`
+- 答案与桌面端问答面板**同一个函数产出**（`service.AskAIWithEvidence`）—— 同样的取证、同样的出处编号、同样的预算，两边不会各答各话。
+- 模型回答里的 `[P2]` 指向 `Sources` 清单里的那一行。
+- **未配 AI 端点时**返回关键词匹配列表，且开头明写「this is a keyword match list, NOT an answer」——那不是答案，别当结论用。
+- **配了端点但调用失败时返回 `error: …`**，不是回退：「没配端点」和「端点挂了」是两件事。
+- `project_id` 优先；`path` 由服务端用与 `repotory_context` 同一个匹配器解析；都不给 = 跨项目问答。
+- 想要精确命中用 `notes_search`；想要项目全景用 `context`；想要已批准的**知识页**用 `wiki_search`。
 
 ### `repotory_wiki_search(query?, project_id?, path?, limit?)`
 
@@ -206,7 +210,7 @@ MCP 工具在 HTTP 桥上的对应关系不是同名 —— RPC 走的是桌面 
 | `repotory_context` | `GetProjectOverview(projectID)` |
 | `repotory_projects_list` | `GetProjects()` |
 | `repotory_projects_stats` | `GetProjectStats(id)` |
-| `repotory_ask` | `AskAI(projectID, question)` —— **需要 projectID**；另有 `AskAIWithEvidence(projectID, question)` 带证据、`LayeredProjectContext(...)` 分层上下文 |
+| `repotory_ask` | `AskAIWithEvidence(projectID, question)` —— 与桌面端问答面板**同一个绑定**；`LayeredProjectContext(...)` 是分层上下文 |
 | `repotory_wiki_search` | `SearchWikiPages(projectID, query, limit)` |
 | `repotory_wiki_read` | `GetWikiPage(pageID)` |
 | `repotory_notes_create` | `CreateNoteWithMeta(projectID, title, content, tags, kind, source)` —— 带元数据用这个；`CreateNote(projectID, title, content)` 是精简版 |
