@@ -323,6 +323,42 @@ func TestEscapeFTSOR_CJKRunBecomesTrigrams(t *testing.T) {
 	}
 }
 
+// A punctuated Chinese question must still reach the trigram index.
+//
+// The question mark is not a CJK rune, so the whole term used to fail the CJK
+// test and be emitted as a single phrase — a run no page contains. The
+// relaxation then had one term to OR, declined, and the answer to a question
+// the library could plainly answer was "no knowledge matched".
+func TestEscapeFTSOR_PunctuatedCJKQuestionExpandsPerSegment(t *testing.T) {
+	got := escapeFTSOR("时态图是什么？为什么需要它？")
+	want := `"时态图" OR "态图是" OR "图是什" OR "是什么" OR "为什么" OR "什么需" OR "么需要" OR "需要它"`
+	if got != want {
+		t.Errorf("escapeFTSOR(punctuated CJK) = %q, want %q", got, want)
+	}
+}
+
+// The punctuation itself is dropped, and a segment that is not CJK keeps its old
+// shape — the mixed-script rule ("do not guess at the boundary") is unchanged.
+// The double quote stays inside its segment: FTS5 uses it as the phrase
+// delimiter and the callers escape it by doubling.
+func TestExpandForFTS_PunctuationSplitsButDoesNotGuessScripts(t *testing.T) {
+	got := expandForFTS("FastAPI登录？")
+	want := []string{"FastAPI登录"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("expandForFTS = %v, want %v", got, want)
+	}
+	// The CJK segment expanded into trigrams; the mixed one did not.
+	got = expandForFTS("时态图？")
+	want = []string{"时态图"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("expandForFTS = %v, want %v", got, want)
+	}
+	// A term that is only punctuation has no segment to keep.
+	if got := expandForFTS("？？"); len(got) != 1 {
+		t.Errorf("expandForFTS(punctuation only) = %v", got)
+	}
+}
+
 func TestIsCJKRun(t *testing.T) {
 	cases := map[string]bool{
 		"中英文切换":     true,
@@ -363,6 +399,30 @@ func TestSearchNotes_LongCJKQuestionFindsNote(t *testing.T) {
 	}
 	if hits[0].Title != "国际化" {
 		t.Errorf("expected '国际化' ranked first, got %s", hits[0].Title)
+	}
+}
+
+// The same reachability, one character class further: a question that ends in
+// punctuation. "？" is not a CJK rune, so the whole term used to be emitted as
+// one unmatchable phrase and the answer was "nothing matched".
+func TestSearchNotes_PunctuatedCJKQuestionFindsNote(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	pid := createTestProject(t, db, "punctuated-cjk-project")
+
+	if _, err := CreateNoteEx(db, pid, "时态图", "时态图机制在 wiki_pages 旁记录每次审批的变更", "", "other", "manual"); err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := SearchNotes(db, "时态图是什么？")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("a punctuated Chinese question returned no hits")
+	}
+	if hits[0].Title != "时态图" {
+		t.Errorf("expected '时态图' ranked first, got %s", hits[0].Title)
 	}
 }
 

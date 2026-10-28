@@ -348,20 +348,65 @@ func escapeFTSOR(query string) string {
 // granularity trigram indexing stores — so these phrases match exactly when the
 // character sequence occurs, and nothing coarser or finer.
 //
-// Runs shorter than 3 runes are returned unchanged so the caller's length check
-// discards them; emitting 1- and 2-rune windows would only add phrases that can
-// never match.
+// Segments shorter than 3 runes are returned unchanged: emitting 1- and 2-rune
+// windows would only add phrases the trigram tokenizer can never match.
+//
+// A term is cut at punctuation first. A Chinese question is mostly punctuation
+// ("时态图是什么？为什么需要它？"), and punctuation is not CJK — so the whole
+// term failed the CJK test and was emitted as ONE phrase, a run no page
+// contains. The relaxation then had a single term to OR and gave up, and the
+// answer to a question the library could plainly answer was "no knowledge
+// matched". Each punctuation-free segment is judged on its own now: the CJK
+// parts expand into trigrams, the rest keeps the old shape.
 func expandForFTS(term string) []string {
-	runes := []rune(term)
-	if !isCJKRun(runes) {
+	segments := splitOnPunctuation(term)
+	out := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		runes := []rune(seg)
+		if !isCJKRun(runes) || len(runes) < 3 {
+			out = append(out, seg)
+			continue
+		}
+		for i := 0; i+3 <= len(runes); i++ {
+			out = append(out, string(runes[i:i+3]))
+		}
+	}
+	if len(out) == 0 {
 		return []string{term}
 	}
-	if len(runes) < 3 {
-		return []string{term}
+	return out
+}
+
+// splitOnPunctuation cuts a term at punctuation and drops the punctuation
+// itself.
+//
+// Punctuation separates words, so keeping it inside a segment only ever makes
+// that segment unmatchable. It is dropped rather than indexed: no page stores
+// "什么？" without the question mark, so a segment that still contains one
+// matches nothing.
+//
+// The double quote is NOT a separator: FTS5 uses it as the phrase delimiter and
+// the callers escape it by doubling, so splitting there would change what the
+// escaping means.
+//
+// Symbols are not separators either: "+" in "C++" is part of the word, and
+// splitting it off would leave a fragment that matches everything else in the
+// corpus.
+func splitOnPunctuation(term string) []string {
+	var out []string
+	var cur []rune
+	for _, r := range term {
+		if unicode.IsPunct(r) && r != '"' {
+			if len(cur) > 0 {
+				out = append(out, string(cur))
+				cur = nil
+			}
+			continue
+		}
+		cur = append(cur, r)
 	}
-	out := make([]string, 0, len(runes)-2)
-	for i := 0; i+3 <= len(runes); i++ {
-		out = append(out, string(runes[i:i+3]))
+	if len(cur) > 0 {
+		out = append(out, string(cur))
 	}
 	return out
 }
