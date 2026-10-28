@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-10-28
+
+### 修复
+
+- **IDEA 插件：连不上服务时，那句提示和按钮画在了同一处（2026-10-28）**：工具窗底部的状态栏是一个 `BorderLayout`，提示文案放 WEST、六个动作按钮放 EAST。BorderLayout 把**首选宽度**给了 WEST——而「Cannot reach http://127.0.0.1:18765 — Connection refused — or start the local service.」这句比整个工具窗还宽，于是 EAST 被布局到**负坐标**，按钮直接压在文字上（实测：360px 宽时按钮面板 x = -308）。文案与按钮本就争同一条横向空间，长文案必输。改为**文案独占一行（NORTH，全宽，自动换行）、按钮行另起一行（SOUTH）**：状态位从不可换行的 `JLabel` 换成可换行、随内容长高、随面板宽度重排的 `JTextArea`。端口没有错，提示也没错——错的是排版。
+- **VS Code 插件：活动栏图标是一个白色正方形（2026-10-28）**：母图 `build/icon.svg` 是「奶油卡 + 深色 R」的印刷卡，整块不透明。VS Code 的活动栏容器图标走**遮罩渲染**：取 SVG 的 alpha 通道，用主题图标前景色重绘——整块不透明的卡在遮罩下退化成一个实心方块，R 与底同色、一起消失（把线上那份文件丢进 CSS mask 即可复现出用户截图里的白方块）。修复方式不是「再调一次颜色」，而是**承认这个槽位是遮罩槽位**：新增**字形域**——同一字母切成单色、透明底的版本（方框 + R），遮罩下的 alpha 形状就是标记本身。
+
+### 变更
+
+- **VS Code 插件：侧边栏顶部的三个动作按钮不再挤成一行（2026-10-28）**：三个命令（Search Knowledge / Open Desktop App / Setup & Diagnostics）注册在 `view/title` 且**没有图标**，VS Code 只能把它们渲染成**文字按钮**；三个长标题加上快捷键提示（⌃⌘R S）远超侧边栏宽度，于是换行、互相压字。改为每个命令配一枚 16×16 单色图标（light/dark 两份，VS Code 命令图标支持按主题取路径），标题栏变成三个图标按钮（悬停有完整标题与快捷键），**一行放得下**。顺带修掉视图标题的重复：容器标题已是 "Repotory"，视图再叫 "Repotory: Knowledge Search" 就拼成了 "Repotory: Repotory: Knowledge Search"——视图改名为 "Knowledge Search"。
+- **图标 CI 门从「摆设」变成真门（2026-10-28）**：同步门此前先跑生成器再跑 `--check`——生成器会把**已提交的**产物覆盖掉，于是 `--check` 拿生成器跟它自己比，**什么都抓不到**（手改一个派生文件，CI 照样绿）。改为先跑 `--check --tracked-only`（只查已提交产物，对 SSOT 校验），再生成、再全量 `--check`（gitignored 的中间产物才需要先生成）。另加一条断言：**遮罩槽位不许出现实心块**——字形域产物的油墨覆盖率必须 < 75%（一张实心卡是 100%），门会直接报 `opaque slab`。两条都做过负例验证（提交物陈旧 → 报红；把生成器改回实心卡 → 报红）。
+- **品牌图标规则从双域扩到三域**：CONTRIBUTING「品牌图标双域规则」→「三域规则」，补齐字形域（遮罩槽位、透明底、小尺寸重新配重）与新的 CI 顺序；AGENTS.md 同步。
+
 ## [2.17.0] - 2026-10-28
 
 ### 新增
@@ -486,7 +499,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.17.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.18.0...HEAD
+[2.18.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.14.0...v2.15.0
