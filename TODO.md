@@ -5,7 +5,7 @@
 
 ## 现状速查（新会话从这里开始）
 
-- 品牌 **Repotory**（原 RepoNest），版本 **v2.15.0**（2026-10-26），SSOT 在 `wails.json`。
+- 品牌 **Repotory**（原 RepoNest），版本 **v2.17.0**（2026-10-28），SSOT 在 `wails.json`。**定位：AI 编码 Agent 的本地记忆层**——记忆存在本地 SQLite 里，不在任何一家 Agent 的私有记忆里，所以「Claude Code 写的交接，Cursor 明天能读到」；这句话是对外第一屏的统一口径（收口动作见 Sprint 4.4）。
 - schema **v28**（v28：ADR-0030 AI 调用审计 `ai_call_log` 底座；v27：ADR-0028 主题层 `note_topics`；v26：wiki 页访问强化信号 `access_count` / `last_accessed_at` 底座，随 v2.9.0 发布；ADR-0023 笔记归属 `project_kind` 已随 v2.3.0 发布；`page_embeddings` 页面向量空间 + `page_embed_dirty` 增量队列，ADR-0018 lane 2 已落码；`evidencePages` 图感知取证 `wiki_graph_search` 已随 lane 2 晋升开启（2026-10-21））；ADR-0018 lane 1 与 lane 2 均 **Accepted**（lane 1 真库演练 PASS，产物 `v21-rehearse/`；lane 2 于 2026-10-21 过条件 10 三门，实现定型与负结果见 ADR 晋升记录）。
 - 近期大项均已落地：插件脚本运行时（yaegi）已移除（C11-B）、全局 CSS Modules 迁移收口（全局 1,227 行）、D25 首屏经 **ADR-0024** 演进为**首页工作台**——记忆环条 + 知识库智能助手（`web/src/pages/home/HomeKnowledgeAssistant.tsx`）+ 重点项目速览 / 今日动态（`web/src/pages/Home.tsx`），全局搜索独立为 `/search` 顶级页（空闲态含热门项目 top6 / 热门标签 top12 推荐，`web/src/pages/Search.tsx`）。⚠ **`/dashboard` 从未重定向**：仪表盘是独立顶级页、主导航「仪表盘」与「搜索」两项并存，首页只给「进入完整仪表盘」直达链接——ADR-0024 决策 1 的「单栏融合 + 重定向」措辞已于 2026-10-23 按落码修订。
 - **M7 lane 2 生产管线已激活（2026-10-22）**：`semantic_search=1` + LM Studio 端点（`text-embedding-nomic-embed-text-v1.5`，dim=768）+ 双向量重建落库（笔记 133 / approved 页 27，经运行中 headless server 的 `/api/rpc` 完成，激活前 live 已文件备份 `repotory.db.backup-20261022-093904`）。live 直评证据门 **k=2/5/10/20 delta +0.114 / +0.159 / +0.205 / +0.205**（ndcg 全正，与晋升 v4 逐点一致，graph perfect 13/22、零回退）——生产口径由 FTS-only +0.023 升级为全管线。
@@ -42,7 +42,7 @@
 
 #### Sprint 2 —— 转向核心闭环
 
-- [ ] **2.1 handoff 闭环可用性优先于新功能**：live 库 handoff 笔记精确计数 = **1**（2026-10-26 审计当日补到 2），而它才是跨 agent 差异化所在。先补零配置试用路径（ADR-0010 已 Accepted-in-principle、默认关）。**验收**：连续 2 周 ≥ 5 条 handoff，且 `repotory_context` 首条命中 handoff
+- [ ] **2.1 handoff 闭环可用性优先于新功能**：live 库 handoff 笔记精确计数 = **1**（2026-10-26 审计当日补到 2），而它才是跨 agent 差异化所在。先补零配置试用路径（ADR-0010 已 Accepted-in-principle、默认关；桌面端那一半见 4.1）。**验收**：连续 2 周 ≥ 5 条 handoff，且 `repotory_context` 首条命中 handoff。**再补一条度量口径**（外部评审 2026-10-28 的判断：产品有没有 PMF 的硬指标就是「能不能跨会话记住上周的 gotcha」）：抽 N 条历史 handoff，问「当时记的是什么」，量 `repotory_context` 首位命中率——现在只有「首条命中」这个定性说法，缺可复跑的量化口径
 - [ ] **2.2 停止扩 wiki / 图谱层**：27 approved / 18 rejected（**拒绝率 40%**）、page_links 55、compile_jobs 历史仅 3 次共 15 条笔记、证据门测的是 22 案例覆盖 27 页的玩具语料——在 approved 页可见化前，每加一行都是加深一个没人看的抽屉。产出率转向「知识类笔记 → 交接」
 - [ ] **2.3 `ai_call_log` 做成 UI**：现有数据 0 行（ADR-0030 默认全关）。叠加 ADR-0012「语义检索默认关 = 显式隐私授权」，已有一套完整的「本机私有 + 可审计」叙事，但目前只存在于 ADR 里
 - [ ] **2.4 CI 补齐**：Go 测试矩阵扩到 macos/windows（v2.14.0 红灯的直接成因是测试写死 `darwin/arm64`）；加 `go vet` job；加 `govulncheck`
@@ -80,11 +80,23 @@
 
 #### Sprint 3 —— 一致性常态维护
 
-- [ ] **3.1 版本/schema 漂移纳入 CI**：`TODO.md`（已修，本次同步到 2.15.0）、~~`SECURITY.md:8-9`（支持版本写 1.5.x）~~（**已随 v2.15.0 发布改为 2.15.x**）、`SECURITY.md:42`（说「每周扫描」而 `dependabot.yml` 是 monthly）、~~`AGENTS.md:9`（说 27 份 ADR）~~（**已随 ADR-0031 落码改为 31 份，但下次加 ADR 还会再漂——系统性修复仍未做**）、`ci.yml:75-76`（说 18 个测试文件——**已改成不写死数字**，免得再漂；实为 Go 144 个 / 前端 36 个）——或让 `scripts/bump-version.sh` 覆盖，或加 CI 检查
+- [ ] **3.1 版本/schema 漂移纳入 CI**：`TODO.md`（本轮已同步到 2.17.0——**但上次同步是 2.15.0，两轮就漂回来了，证明逐次手改不成立**）、~~`SECURITY.md:8-9`（支持版本写 1.5.x）~~（**已随 v2.15.0 发布改为 2.15.x**）、`SECURITY.md:42`（说「每周扫描」而 `dependabot.yml` 是 monthly）、~~`AGENTS.md:9`（说 27 份 ADR）~~（**已随 ADR-0031 落码改为 31 份，但下次加 ADR 还会再漂——系统性修复仍未做**）、`ci.yml:75-76`（说 18 个测试文件——**已改成不写死数字**，免得再漂；实为 Go 144 个 / 前端 36 个）——或让 `scripts/bump-version.sh` 覆盖，或加 CI 检查
 - [ ] **3.2 仓库瘦身**：`git ls-files outputs` = 241 个文件 / 18.4 MB（截图与设计 HTML）；`.gitignore` 漏了 `v21-rehearse/`（含 4.2MB 真库副本，仅靠 `*.db` 通配侥幸排除）
 - [ ] **3.3 `dsh-plugin-repotory` 加锁文件 + CI 构建门**：无 `package-lock.json`，依赖 `"@deepseek-ai/dsh-tools": "*"`，无任何 CI job 构建它；`Dockerfile` 入库但无构建无发布
 - [ ] **3.4 清死代码**：`Service.roDB`（`internal/service/service.go:29`）被存下来但全项目无任何读取点，三个入口全传 nil——读代码的人会以为存在只读副本分流
 - [ ] **3.5 `release.yml` 权限收窄**到 job 级：工作流级 `contents: write` 让只读 build 矩阵也持写 token，且在持写环境里跑 `npm install sharp` + `go install ...@v2.13.0`（`ci.yml:26-29` 反倒做对了 `contents: read`）
+
+#### Sprint 4 —— 出圈：首次连接、信任与定位（2026-10-28 外部评审产出）
+
+> 来源：一份外部产品/架构评审，把 Repotory 定位为「AI 编码 Agent 的本地记忆层」。评审肯定的四处——记忆跨 Agent、人工闸门、薄客户端、分发链路完整、Tier 模型的克制——不构成待办；下面是它提出的**风险与动作**里，经仓库现状逐条核实后**仍然成立**的部分。
+> **前提复核结论**（评审说错或已过时的，不写成待办，免得白干）：① 「必须先装 App、再跑 `node scripts/repotory-init`、再 rescan」——**VS Code 扩展早已做成一键**（`Repotory: Register MCP Server`，静默跑 `repotory-init --with-hook`，不弹终端），缺的是**桌面端**那一半（见 4.1）；② 「ADR 建议配中文」——ADR **已经是中英双份**（`docs/adr/` + `docs/en/adr/`，CI `docs-mirror` 硬门），真缺口只在 `blog/`（见 4.5）；③ 「13 个工具签名」——实际是 **16 个**（`TestToolsRegistered` 钉死清单）；④ 「换个名字」——品牌是**冻结标识**（AGENTS「范围冻结」：绑定用户数据迁移史），动作在定位不在改名（见 4.4）。
+
+- [ ] **4.1 桌面端「一键接入 AI 客户端」：把首次连接摩擦降到一次点击** —— 现状是**两半断开**：桌面 App 的 GUI 流程（播种 → 扫描 → 笔记）**完全不提 AI 客户端**，而 Agent 侧的接线只写在 README 的一句 `node scripts/repotory-init/index.mjs --with-hook`（读入门文档 `docs/getting-started.md` 才看得到一半）。同一个产品的两个安装面，上手成本差一个数量级。做法：设置页加「接入 AI 客户端」按钮，复用 `ide/vscode/repotory-init/index.mjs` 的实现（或把它提为共享包），一键写 `.mcp.json` / `.cursor` / `.vscode` + 装 SessionEnd hook + 触发首次 `repotory_scan`（现在桌面端首次扫描还得人点仪表盘的「重新扫描」）。**验收**：干净机器装桌面 App → 点一次按钮 → Claude Code / Cursor 里 `repotory_context` 直接返回内容，无需手动 rescan。**不违反 ADR-0009**：`repotory-init` 是 run-once 接线动作、只写向 Agent 侧，这条只是给它一个 GUI 入口
+- [ ] **4.2 「本地 Agent 的默认记忆层」落成可复现的配方** —— 评审主张把 Repotory 当成 Ollama/llama.cpp 这类**完全离线**的本地 Agent 的默认记忆层，形成「不出网也能闭环」的用法。**技术前提仓库已满足**：MCP server 是 stdio 进程，与用哪个模型无关——任何能说 MCP 的本地 agent 都能接。缺的是①可复制的接线配方（本地 agent 侧怎么配 MCP）②**一次真机验证记录**（离线模型 + MCP + 跨会话命中 handoff）——现状是「技术上成立，但没人验过」。做法：写一页最小配方 + 实测一次并把结果记进手册。**不新建架构**
+- [ ] **4.3 恢复演练可复现化（一键 restore 校验）** —— 评审担心「库坏了怎么救」推高信任成本。备份侧已补齐 L1/L2/L3 三层（1.3 刚落码），但**「拿到一份快照 → 验它真能起来 → 换回去」这条路没有一键入口**：ADR-0025 晋升条件 1 的真机恢复演练是**手工**做的（沙箱 HOME + headless server 起副本），每次都要人重走一遍，没有脚本、无法复查。做法：新增 `scripts/verify-restore.sh`——对指定快照副本起隔离 HOME 的 headless server，跑 /health + 笔记/页面计数 + 一次 FTS 检索，输出可复现报告。**验收**：一条命令给出「这份快照能不能救我」的结论。**纪律**：全程只读 live，绝不写库
+- [ ] **4.4 定位与边界写进第一屏（品牌冻结，但定位要硬）** —— 评审指出 `repotory` 这个名字在搜索/记忆度上吃亏。**品牌是冻结标识**（AGENTS「范围冻结」，绑定用户数据迁移史），所以动作在**定位**不在改名：① README 首屏、文档站首页、VS Code 扩展描述、两个 Marketplace 描述各说各话——统一成一句「AI 编码 Agent 的本地记忆层 / memory layer for coding agents」，让没见过产品的人读完首屏能复述；② 顺带把**边界**说清楚：这是**单用户本地库**，跨设备/多人协作不在范围内（范围冻结 ADR-0006）——手册现在只讲「备份怎么做」，没讲「什么不在范围内」，用户问「能不能团队共享一个库」时文档答不上来。**验收**：README 首屏一句定位 + 手册「数据与备份」补一段边界与替代路径（L3 异盘副本 + L2 远端推送各持一份）
+- [ ] **4.5 `blog/` 的双语与品牌漂移** —— 评审说「README 英文为主、blog/ADR 也建议配中文，否则中文社区传播被挡」。复核后 README **已有** `README.zh-CN.md`、ADR **已是中英双份**，真缺口只有 `blog/`：目前仅一篇 `0009-ide-presence.html`（`lang="zh"`），**没有英文孪生**，且 `blog/` 不在镜像守卫范围内（守卫只认 `docs/**` 的 .md）。**另查出一处真漂移**：这篇交付物里仍写着旧品牌「RepoNest」（5 处，含 `<title>`）——品牌 v2.0.0 就改了，发布出去的杂志风文章没跟上。做法：改品牌名 + 补英文孪生，并把它纳入镜像守卫或写清例外理由（blog 是 HTML 交付物，守卫现只认 .md——要么守卫支持 .html，要么明确登记为例外）
+- [ ] **4.6 MCP 协议演进缓冲层** —— 评审担心上游 MCP 协议剧烈演进，一次 breaking change 打断所有客户端。现状：`cmd/mcp` 直接用上游 mcp-go 的当前协议，**没有任何版本协商或能力面声明**；16 个工具的签名（`TestToolsRegistered` 钉死清单）直接暴露给客户端，上游改一次字段名就是全体客户端一起断。做法：① server 初始化时声明 protocolVersion 与能力面，客户端能问出「这版支持什么」；② 工具签名的破坏性改动走「新增而非改签名 + 弃用期」，把破坏性变成可回滚的；③ 属架构决策，先落 ADR。**触发条件**：mcp-go 上游出现 breaking change、或本仓要改工具签名时再动工——**现在只记待办，不写代码**
 
 ### M7 Lane 2：页面向量空间 + 图感知取证（schema v23）→ [ADR-0018](docs/adr/0018-knowledge-graph-foundation.md) 第二半 —— **已晋升 Accepted（2026-10-21，条件 10 三门全过：密度 27 approved/55 边、delta +0.205 @k=10 且 k=2..20 全区间为正、22 案例零回退；`wiki_graph_search` 已开启；种子召回补全与被否形态见 ADR 晋升记录）**
 
