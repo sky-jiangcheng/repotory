@@ -2,7 +2,7 @@
   "name": "repotory-vscode",
   "displayName": "Repotory",
   "publisher": "sky-jiangcheng",
-  "version": "2.18.0",
+  "version": "2.19.0",
   "description": "Repotory inside your IDE: browse your local knowledge base in a T-shaped reader (thumbnails left, full note right), load session context, write session handoffs and search every note from the command palette, status bar and sidebar. One VSIX covers VS Code, Cursor and Windsurf.",
   "license": "MIT",
   "engines": {
