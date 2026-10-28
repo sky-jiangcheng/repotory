@@ -703,8 +703,43 @@ jobs:
             echo "::notice::Signing secrets not set — publishing unsigned (Marketplace accepts this)."
             unset CERTIFICATE_CHAIN PRIVATE_KEY PRIVATE_KEY_PASSWORD
           fi
+          UPLOAD_START="$(date +%s)"
           gradle publishPlugin --console=plain
-          echo "Published repotory-jetbrains to the JetBrains Marketplace."
+
+          # What "published" means, checked instead of claimed.
+          #
+          # `publishPlugin` succeeding means the upload was ACCEPTED — not that
+          # the version is listed. JetBrains moderates new versions, and a
+          # version awaiting approval does not appear in the public update
+          # list at all. The old unconditional echo said "Published" either
+          # way, so the log for a version stuck in the review queue looked
+          # exactly like the log for one that was listed within seconds
+          # (2.16.0 vs 2.15.0: same lines, opposite outcomes).
+          #
+          # Three states, three sentences:
+          #   - the version is in the public update list  -> listed, installable
+          #   - the plugin record carries an update that is waiting for review
+          #     AND the record was touched by THIS upload (an upload refreshes
+          #     the record's cdate) -> uploaded, waiting for JetBrains, not
+          #     installable yet; the zip on the GitHub Release is the artifact
+          #     to hand out meanwhile
+          #   - neither                                  -> the upload did not
+          #     land, which is worth knowing before anyone says "it's out"
+          #
+          # A warning, never a failure: the marketplace's review queue is not
+          # this repo's to control, and the release itself is already out.
+          VER="${GITHUB_REF_NAME#v}"
+          PLUGIN_ID=35396
+          UPDATES="$(curl -sS --max-time 30 "https://plugins.jetbrains.com/api/plugins/${PLUGIN_ID}/updates?size=50" || echo '[]')"
+          INFO="$(curl -sS --max-time 30 "https://plugins.jetbrains.com/api/plugins/${PLUGIN_ID}" || echo '{}')"
+          if printf '%s' "$UPDATES" | jq -e --arg v "$VER" '.[] | select(.version == $v)' >/dev/null 2>&1; then
+            echo "JetBrains Marketplace: ${VER} is listed and installable."
+          elif jq -e '.hasUnapprovedUpdate == true' >/dev/null 2>&1 <<<"$INFO" \
+               && [ "$(jq -r '.cdate // 0' <<<"$INFO")" -ge "$(( (UPLOAD_START - 300) * 1000 ))" ]; then
+            echo "::notice::JetBrains Marketplace: ${VER} was uploaded but is PENDING APPROVAL — it is not installable from the marketplace yet. The zip on the GitHub Release is the installable artifact until JetBrains reviews it."
+          else
+            echo "::warning::JetBrains Marketplace: ${VER} does not appear after publishPlugin — the upload may not have landed. The zip on the GitHub Release is still the installable artifact."
+          fi
 
   # After the release is published, the sha256 of every shipped asset is a
   # known fact. Homebrew and Scoop hard-fail on a missing/wrong digest, so the
