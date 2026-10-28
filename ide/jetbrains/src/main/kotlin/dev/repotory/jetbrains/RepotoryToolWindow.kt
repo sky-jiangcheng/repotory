@@ -18,7 +18,8 @@
 //   │ thumbnail list         │ first hit selected by    │
 //   │ (kind · title · excerpt)│ default, full body      │
 //   ├────────────────────────┴──────────────────────────┤
-//   │ status line · Edit · New · AI Tidy · Copy · Open … │
+//   │ status line (wraps, full width — its own row)     │
+//   │ Edit · New · AI Tidy · Copy · Open … (own row)     │
 //   └───────────────────────────────────────────────────┘
 //
 // The full body of a note is fetched on selection (GetNote over the same
@@ -63,6 +64,8 @@ import java.awt.Dimension
 import java.awt.Font
 import java.awt.GridLayout
 import java.awt.datatransfer.StringSelection
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
 import javax.swing.BorderFactory
@@ -73,11 +76,13 @@ import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JTextArea
 import javax.swing.JTextField
 import javax.swing.ListSelectionModel
 import javax.swing.Timer
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+import kotlin.math.ceil
 
 /** Trailing-edge debounce: the query runs 300 ms after the last keystroke. */
 private const val DEBOUNCE_MS = 300
@@ -109,13 +114,13 @@ class RepotoryPanel : JPanel(), Disposable {
     private val input = JTextField()
     private val list = JList(model)
     private val detail = JEditorPane()
-    private val status = JBLabel(" ")
+    private val status = StatusField()
     private val editButton = JButton("Edit")
     private val newButton = JButton("New note")
     private val organizeButton = JButton("AI Tidy")
     private val openButton = JButton("Open in Repotory")
     private val copyButton = JButton("Copy")
-    private val startButton = JButton("Start local service")
+    private val startButton = JButton("Start service")
     private var disposed = false
 
     /**
@@ -164,7 +169,7 @@ class RepotoryPanel : JPanel(), Disposable {
         val name = JLabel("Repotory")
         name.font = name.font.deriveFont(Font.BOLD, JBUI.scale(15f))
         name.foreground = BRAND_INK
-        val tagline = JLabel("Your local knowledge base — decisions, gotchas, next steps")
+        val tagline = ElidingLabel("Your local knowledge base — decisions, gotchas, next steps")
         tagline.font = tagline.font.deriveFont(JBUI.scale(11f))
         tagline.foreground = BRAND_INK_SOFT
         text.add(name)
@@ -244,7 +249,14 @@ class RepotoryPanel : JPanel(), Disposable {
     // ------------------------------------------------------------- status bar
 
     private fun statusBar(): JPanel {
-        val bar = JPanel(java.awt.BorderLayout(JBUI.scale(8), 0))
+        // Stacked, NOT side by side. The message used to sit in the WEST of a
+        // BorderLayout and the action buttons in the EAST: a long message
+        // ("Cannot reach http://127.0.0.1:18765 — Connection refused — or
+        // start the local service.") asked for more width than the whole
+        // tool window, so BorderLayout pushed the buttons into negative
+        // space and painted them straight over the text. One row for the
+        // message, one row for the buttons: they cannot overlap any more.
+        val bar = JPanel(java.awt.BorderLayout(0, JBUI.scale(4)))
         bar.border = JBUI.Borders.empty(6, 10)
 
         openButton.isEnabled = false
@@ -266,6 +278,7 @@ class RepotoryPanel : JPanel(), Disposable {
         // configured address. Starting a local server cannot fix a 4xx from a
         // live server, so the button stays out of the way otherwise.
         startButton.isVisible = false
+        startButton.toolTipText = "Start the local Repotory service"
         startButton.addActionListener { startLocalService() }
 
         val buttons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(6), 0))
@@ -276,9 +289,99 @@ class RepotoryPanel : JPanel(), Disposable {
         buttons.add(copyButton)
         buttons.add(openButton)
 
-        bar.add(status, java.awt.BorderLayout.WEST)
-        bar.add(buttons, java.awt.BorderLayout.EAST)
+        bar.add(status, java.awt.BorderLayout.NORTH)
+        bar.add(buttons, java.awt.BorderLayout.SOUTH)
         return bar
+    }
+
+    /**
+     * A label that shortens its text with an ellipsis instead of cutting it.
+     *
+     * The brand header puts the wordmark and the tagline in the middle of a
+     * BorderLayout, so the tagline gets whatever width is left after the
+     * mark and the "local-only" chip. In a narrow tool window that is not
+     * enough for the full sentence, and a plain JLabel simply draws past its
+     * own bounds — the words are chopped mid-word with no sign that
+     * something was cut. An ellipsis says "there is more" instead.
+     */
+    private class ElidingLabel(full: String) : JLabel() {
+        private var fullText: String = full
+
+        init {
+            text = full
+        }
+
+        override fun setSize(w: Int, h: Int) {
+            super.setSize(w, h)
+            elide()
+        }
+
+        private fun elide() {
+            if (width <= 0) return
+            val metrics = getFontMetrics(font)
+            if (metrics.stringWidth(fullText) <= width) {
+                if (text != fullText) text = fullText
+                return
+            }
+            var cut = fullText
+            while (cut.isNotEmpty() && metrics.stringWidth(cut + "…") > width) {
+                cut = cut.dropLast(1)
+            }
+            val elided = if (cut.isEmpty()) "…" else "$cut…"
+            if (text != elided) text = elided
+        }
+    }
+
+    /**
+     * The status line's text field.
+     *
+     * It was a JLabel: a label cannot wrap, so a long message was either
+     * clipped or — worse — claimed the whole width of a BorderLayout row
+     * and pushed the buttons off the panel. This field wraps instead, and
+     * it grows to fit the text it holds.
+     *
+     * JTextArea does not size itself to its content, so the row count is
+     * derived from the text and the current width, and recomputed whenever
+     * the panel is resized (a narrower tool window wraps into more lines).
+     */
+    private class StatusField : JTextArea() {
+        init {
+            isEditable = false
+            isOpaque = false
+            isFocusable = false
+            lineWrap = true
+            wrapStyleWord = true
+            border = JBUI.Borders.empty(0)
+            // The panel's other text is JLabel text; the default JTextArea
+            // font would be the editor font (monospace) and look foreign.
+            font = JBLabel().font
+            rows = 1
+            addComponentListener(object : ComponentAdapter() {
+                override fun componentResized(e: ComponentEvent) {
+                    fit()
+                }
+            })
+        }
+
+        override fun setText(t: String?) {
+            super.setText(t)
+            fit()
+        }
+
+        /** Rows the wrapped text needs at the width this field currently has. */
+        private fun fit() {
+            val needed = rowsFor(text)
+            if (needed != rows) rows = needed
+        }
+
+        private fun rowsFor(value: String): Int {
+            if (value.isBlank()) return 1
+            // ~6px per character at the label font. Before the first layout
+            // the width is still zero, so a scaled guess stands in.
+            val usable = if (width > 0) width else JBUI.scale(280)
+            val perLine = maxOf(16, usable / 6)
+            return ceil(value.length.toDouble() / perLine).toInt().coerceIn(1, 8)
+        }
     }
 
     // ------------------------------------------------------------- search
