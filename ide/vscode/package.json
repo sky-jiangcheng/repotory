@@ -28,7 +28,11 @@
       },
       {
         "command": "repotory.search",
-        "title": "Repotory: Search Knowledge"
+        "title": "Repotory: Search Knowledge",
+        "icon": {
+          "light": "media/icon-search-light.svg",
+          "dark": "media/icon-search-dark.svg"
+        }
       },
       {
         "command": "repotory.registerMcp",
@@ -36,7 +40,11 @@
       },
       {
         "command": "repotory.diagnose",
-        "title": "Repotory: Setup & Diagnostics"
+        "title": "Repotory: Setup & Diagnostics",
+        "icon": {
+          "light": "media/icon-setup-light.svg",
+          "dark": "media/icon-setup-dark.svg"
+        }
       },
       {
         "command": "repotory.setMcpPath",
@@ -44,7 +52,11 @@
       },
       {
         "command": "repotory.openDesktop",
-        "title": "Repotory: Open Desktop App"
+        "title": "Repotory: Open Desktop App",
+        "icon": {
+          "light": "media/icon-desktop-light.svg",
+          "dark": "media/icon-desktop-dark.svg"
+        }
       }
     ],
     "keybindings": [
@@ -102,7 +114,7 @@
       "repotory-explorer": [
         {
           "id": "repotory.notesSearch",
-          "name": "Repotory: Knowledge Search",
+          "name": "Knowledge Search",
           "type": "webview"
         }
       ]
