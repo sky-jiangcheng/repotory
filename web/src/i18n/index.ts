@@ -9,6 +9,15 @@ const detected = navigator.language.startsWith('zh') ? 'zh-CN' : 'en'
 const stored = localStorage.getItem('repotory-language')
 const lng = stored === 'zh-CN' || stored === 'en' ? stored : detected
 
+// The <html lang> attribute is the only thing that tells the browser — and a
+// screen reader, and any built-in translation heuristic — which language is
+// actually on screen. index.html ships lang="zh-CN", so without applying the
+// resolved language at start-up an English user who stored their preference
+// would reload into an English UI that still announces itself as Chinese.
+function applyDocumentLang(language: string) {
+  document.documentElement.lang = language === 'zh-CN' ? 'zh-CN' : 'en'
+}
+
 i18n
   .use(initReactI18next)
   .init({
@@ -24,10 +33,12 @@ i18n
     react: { useSuspense: false },
   })
 
+applyDocumentLang(lng)
+
 export function setLanguage(lng: string) {
   i18n.changeLanguage(lng)
   localStorage.setItem('repotory-language', lng)
-  document.documentElement.lang = lng === 'zh-CN' ? 'zh-CN' : 'en'
+  applyDocumentLang(lng)
   window.dispatchEvent(new Event('repotory-lang-change'))
 }
 
