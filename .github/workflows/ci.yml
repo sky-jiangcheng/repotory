@@ -162,6 +162,13 @@ jobs:
   # mark (or any derivative) without running scripts/generate-icons.mjs, so
   # a rebrand can never land half-applied. Pixel comparison with a small
   # allowance keeps it stable across sharp patch releases.
+  #
+  # ORDER MATTERS. The committed derivatives are checked FIRST, against the
+  # SSOT, before anything is generated: generating first would overwrite the
+  # committed files and the following --check would compare the generator
+  # with itself, catching nothing at all. The gitignored intermediates
+  # (build/icons/*, build/appicon.png) do not exist in a fresh checkout, so
+  # they are verified only after they have been generated.
   icon-check:
     name: Icon derivatives in sync
     runs-on: ubuntu-latest
@@ -178,17 +185,15 @@ jobs:
       - name: Install sharp
         run: npm install --no-save sharp
 
-      # build/icons/ and build/appicon.png are gitignored generated intermediates,
-      # so a fresh checkout has none of them. Render them first; otherwise --check
-      # reports them as "missing" on every run. The derivatives that ARE tracked
-      # in git (docs/web favicons, the VS Code icon) are still genuinely verified
-      # against the SSOT below, which is the point of this gate: it still catches
-      # somebody editing build/icon.svg or a tracked derivative without
-      # re-running the generator.
+      # The real gate: every COMMITTED derivative must match what the
+      # generator produces from build/icon.svg right now.
+      - name: Verify committed icon derivatives match build/icon.svg
+        run: node scripts/generate-icons.mjs --check --tracked-only
+
       - name: Generate icon intermediates
         run: node scripts/generate-icons.mjs
 
-      - name: Verify icon derivatives match build/icon.svg
+      - name: Verify all icon derivatives match build/icon.svg
         run: node scripts/generate-icons.mjs --check
 
   # ------------------------------------------------- Docs mirror ----
