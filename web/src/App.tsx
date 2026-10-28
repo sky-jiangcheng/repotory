@@ -27,6 +27,8 @@ const SearchPage = lazy(() => import('./pages/Search'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Knowledge = lazy(() => import('./pages/Knowledge'))
+const Wiki = lazy(() => import('./pages/Wiki'))
+const WikiDetail = lazy(() => import('./pages/wiki/WikiDetail'))
 const Review = lazy(() => import('./pages/Review'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
@@ -117,6 +119,11 @@ function NavBar() {
             </Link>
             <Link to="/knowledge" className={navClass(pathname === '/knowledge')}>
               {t('nav.knowledge')}
+            </Link>
+            {/* ADR-0032 decision 7: the approved pages enter the main
+                navigation. Knowledge that cannot be found is not knowledge. */}
+            <Link to="/wiki" className={navClass(pathname.startsWith('/wiki'))}>
+              {t('nav.wiki')}
             </Link>
             <Link to="/review" className={navClass(pathname === '/review')}>
               {t('nav.review')}
@@ -352,6 +359,11 @@ function RoutedApp() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/project/:id" element={<ProjectDetail />} />
           <Route path="/knowledge" element={<Knowledge />} />
+          {/* The approved knowledge layer, read by a person (ADR-0032). The
+              detail route is separate so a page has an address of its own:
+              /wiki/:id can be deep-linked and opened from the IDE plugins. */}
+          <Route path="/wiki" element={<Wiki />} />
+          <Route path="/wiki/:id" element={<WikiDetail />} />
           <Route path="/review" element={<Review />} />
           <Route path="/settings" element={<Settings />} />
           {/* Catch-all: without it an unmatched URL renders nothing at all —

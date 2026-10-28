@@ -1,0 +1,174 @@
+/* ============================================
+   /wiki/:id — one approved page, in full (ADR-0032).
+
+   Only classes exclusive to this page live here.
+   Shared and therefore global: .btn, .form-input,
+   .empty-*, .markdown-body, .skeleton.
+   ============================================ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  /* A document reads at a document measure: the body column stops at 820px
+     so a long paragraph does not run the full 1280px content width. */
+  max-width: 820px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  margin-bottom: 16px;
+  width: fit-content;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+/* The icon set has no left-arrow; the up-chevron rotated a quarter turn
+   points back, which is what the affordance means here. */
+.backIcon {
+  transform: rotate(-90deg);
+}
+
+.head {
+  margin-bottom: 20px;
+}
+
+.headMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.kindBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.kindBadge_concept {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.kindBadge_synthesis {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.kindBadge_entity {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.kindBadge_source {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* The scope badge says WHICH tier the page speaks from. A global page is
+   visible from every project (ADR-0031), so the label is what keeps that
+   from reading as a broken filter. */
+.scopeBadge {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+}
+
+.scopeBadgeGlobal {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.slug {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+  letter-spacing: -0.015em;
+}
+
+.footMeta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.body {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.section {
+  margin-top: 24px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip,
+.chipLink {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.chipLink:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .title {
+    font-size: 21px;
+  }
+
+  .body {
+    padding: 20px;
+  }
+}

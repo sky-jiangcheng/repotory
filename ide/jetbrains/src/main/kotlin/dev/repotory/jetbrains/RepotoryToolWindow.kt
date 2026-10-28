@@ -78,6 +78,7 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JTextArea
 import javax.swing.JTextField
+import javax.swing.JToggleButton
 import javax.swing.ListSelectionModel
 import javax.swing.Timer
 import javax.swing.event.DocumentEvent
@@ -99,6 +100,19 @@ private val BRAND_INK_FAINT = Color(0x6A, 0x6A, 0x6A)
 /** Kind badge colours, paired light/dark so they follow the IDE theme. */
 private val BADGE_NOTE = JBColor(Color(0x1D, 0x4E, 0xD8), Color(0x60, 0xA5, 0xFA))
 private val BADGE_TODO = JBColor(Color(0x8B, 0x6F, 0x3A), Color(0xD9, 0xB7, 0x73))
+private val BADGE_WIKI = JBColor(Color(0x6F, 0x42, 0xC1), Color(0xD2, 0xA8, 0xFF))
+
+/**
+ * The knowledge spaces the reader searches.
+ *
+ * Notes/todos and wiki pages have INDEPENDENT id sequences, so the two are
+ * never mixed in one result list: a row saying "12" would be ambiguous, and
+ * the deep link would open the wrong thing. One space on screen at a time.
+ */
+private enum class Source(val label: String, val hint: String) {
+    NOTES("Notes & todos", "Search notes and todos"),
+    WIKI("Wiki pages", "Search the approved knowledge pages"),
+}
 
 class RepotoryToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -121,6 +135,9 @@ class RepotoryPanel : JPanel(), Disposable {
     private val openButton = JButton("Open in Repotory")
     private val copyButton = JButton("Copy")
     private val startButton = JButton("Start service")
+    private val sourceNotes = JToggleButton(Source.NOTES.label)
+    private val sourceWiki = JToggleButton(Source.WIKI.label)
+    private var source = Source.NOTES
     private var disposed = false
 
     /**
@@ -199,18 +216,22 @@ class RepotoryPanel : JPanel(), Disposable {
 
     // ------------------------------------------------------------- reader body
 
-    /** Left: search box + thumbnails. Right: the expanded knowledge. */
+    /** Left: source switch + search box + thumbnails. Right: the expanded knowledge. */
     private fun readerBody(): JPanel {
         val body = JPanel(java.awt.BorderLayout())
 
         val left = JPanel(java.awt.BorderLayout(0, 0))
-        input.toolTipText = "Search notes and todos"
+        input.toolTipText = Source.NOTES.hint
         input.document.addDocumentListener(object : DocumentListener {
             override fun insertUpdate(e: DocumentEvent) = scheduleSearch()
             override fun removeUpdate(e: DocumentEvent) = scheduleSearch()
             override fun changedUpdate(e: DocumentEvent) = scheduleSearch()
         })
-        left.add(input, java.awt.BorderLayout.NORTH)
+        val top = JPanel(java.awt.BorderLayout(0, JBUI.scale(4)))
+        top.isOpaque = false
+        top.add(sourceRow(), java.awt.BorderLayout.NORTH)
+        top.add(input, java.awt.BorderLayout.SOUTH)
+        left.add(top, java.awt.BorderLayout.NORTH)
 
         list.selectionMode = ListSelectionModel.SINGLE_SELECTION
         list.cellRenderer = ThumbRenderer()
@@ -244,6 +265,61 @@ class RepotoryPanel : JPanel(), Disposable {
         body.add(left, java.awt.BorderLayout.WEST)
         body.add(JBScrollPane(detail), java.awt.BorderLayout.CENTER)
         return body
+    }
+
+    /**
+     * The source switch: notes & todos on one side, approved wiki pages on the
+     * other.
+     *
+     * Two toggles rather than one combined list, because the two spaces have
+     * independent id sequences — a merged list would make "page 12" ambiguous.
+     * The selection is set here rather than through a ButtonGroup so that
+     * exactly one of them is lit even when the user clicks the lit one (a
+     * toggle would otherwise switch itself off and leave the reader with no
+     * source at all).
+     */
+    private fun sourceRow(): JPanel {
+        val row = JPanel(java.awt.GridLayout(1, 2, JBUI.scale(4), 0))
+        row.isOpaque = false
+        for (button in listOf(sourceNotes, sourceWiki)) {
+            button.isOpaque = false
+            button.font = button.font.deriveFont(JBUI.scaleFontSize(11f))
+        }
+        sourceNotes.toolTipText = Source.NOTES.hint
+        sourceWiki.toolTipText = Source.WIKI.hint
+        sourceNotes.isSelected = true
+        sourceWiki.isSelected = false
+        sourceNotes.addActionListener { switchSource(Source.NOTES) }
+        sourceWiki.addActionListener { switchSource(Source.WIKI) }
+        row.add(sourceNotes)
+        row.add(sourceWiki)
+        return row
+    }
+
+    /**
+     * Switches the space the reader searches.
+     *
+     * The rows on screen belong to the other space's id sequence, so they are
+     * cleared before the new query runs — leaving them on screen next to a
+     * result list of a different kind of thing is how "id 12" becomes
+     * ambiguous.
+     */
+    private fun switchSource(next: Source) {
+        sourceNotes.isSelected = next == Source.NOTES
+        sourceWiki.isSelected = next == Source.WIKI
+        if (source == next) return
+        source = next
+        model.clear()
+        // Both in-flight answers answer the OTHER space: they must not land.
+        searchSeq++
+        detailSeq++
+        detail.text = promoHtml()
+        detail.caretPosition = 0
+        status.text = " "
+        startButton.isVisible = false
+        input.toolTipText = next.hint
+        val query = input.text?.trim().orEmpty()
+        if (query.isNotEmpty()) runSearch()
     }
 
     // ------------------------------------------------------------- status bar
@@ -410,10 +486,17 @@ class RepotoryPanel : JPanel(), Disposable {
         if (query.isEmpty()) return
         val seq = ++searchSeq
         val serverUrl = RepotorySettings.serverUrl()
+        // Captured before the request goes out: the answer belongs to the
+        // space it was asked for, and a switch in between must not relabel it.
+        val space = source
         status.text = "Searching \"$query\"…"
         val app = ApplicationManager.getApplication()
         app.executeOnPooledThread {
-            val outcome = repotoryClient.search(serverUrl, query)
+            val outcome = if (space == Source.WIKI) {
+                repotoryClient.searchWiki(serverUrl, query)
+            } else {
+                repotoryClient.search(serverUrl, query)
+            }
             app.invokeLater {
                 // A newer keystroke (or a cleared box) supersedes this response.
                 if (disposed || seq != searchSeq) return@invokeLater
@@ -451,7 +534,8 @@ class RepotoryPanel : JPanel(), Disposable {
 
     /**
      * Expands the selected hit. Notes get their full body over GetNote;
-     * todos (and failed reads) show the matched excerpt, labelled.
+     * wiki pages over GetWikiPage; todos (and failed reads) show the matched
+     * excerpt, labelled.
      *
      * The pane shows the excerpt immediately — a reader that blanks out
      * while the note loads reads as a bug — and swaps in the full body when
@@ -466,6 +550,20 @@ class RepotoryPanel : JPanel(), Disposable {
         }
         detail.text = loadingHtml(hit)
         detail.caretPosition = 0
+        if (hit.type == "wiki") {
+            // An approved page: the body plus the graph around it (ADR-0032).
+            val serverUrl = RepotorySettings.serverUrl()
+            val app = ApplicationManager.getApplication()
+            app.executeOnPooledThread {
+                val page = repotoryClient.wikiPage(serverUrl, hit.id)
+                app.invokeLater {
+                    if (disposed || seq != detailSeq) return@invokeLater
+                    detail.text = if (page != null) wikiPageHtml(page) else excerptHtml(hit, full = true)
+                    detail.caretPosition = 0
+                }
+            }
+            return
+        }
         if (hit.type != "note") {
             detail.text = excerptHtml(hit)
             return
@@ -491,7 +589,11 @@ class RepotoryPanel : JPanel(), Disposable {
         // The full body is one loopback call away, but the EDT must not wait
         // for it: copy on a pooled thread, then report on the EDT.
         app.executeOnPooledThread {
-            val body = if (hit.type == "note") repotoryClient.note(serverUrl, hit.id)?.body else null
+            val body = when (hit.type) {
+                "note" -> repotoryClient.note(serverUrl, hit.id)?.body
+                "wiki" -> repotoryClient.wikiPage(serverUrl, hit.id)?.content
+                else -> null
+            }
             val text = buildString {
                 appendLine(hit.title.ifBlank { "(untitled)" })
                 appendLine()
@@ -835,8 +937,12 @@ private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), j
             title.text = ""
             return this
         }
-        badge.text = hit.type.uppercase()
-        badge.foreground = if (hit.type == "todo") BADGE_TODO else BADGE_NOTE
+        badge.text = badgeLabel(hit).uppercase()
+        badge.foreground = when (hit.type) {
+            "todo" -> BADGE_TODO
+            "wiki" -> BADGE_WIKI
+            else -> BADGE_NOTE
+        }
         badge.border = BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(badge.foreground, 1),
             JBUI.Borders.empty(1, 4),

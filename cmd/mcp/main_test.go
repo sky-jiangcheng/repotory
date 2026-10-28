@@ -45,6 +45,7 @@ func newTestServer(t *testing.T) *testServer {
 	svc := service.New(database, "tester", nil)
 	s := server.NewMCPServer("repotory-mcp", "test")
 	registerTools(s, svc)
+	registerWikiTools(s, svc)
 	registerContextTools(s, svc)
 	registerScanTool(s, svc)
 	registerAuditTools(s, svc)
@@ -137,6 +138,8 @@ func TestToolsRegistered(t *testing.T) {
 		"repotory_scan",
 		"repotory_ai_audit",
 		"repotory_ai_review_rules",
+		"repotory_wiki_search",
+		"repotory_wiki_read",
 	}
 	for _, name := range want {
 		st := ts.s.GetTool(name)

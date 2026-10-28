@@ -35,6 +35,10 @@
         }
       },
       {
+        "command": "repotory.searchWiki",
+        "title": "Repotory: Search Approved Knowledge Pages"
+      },
+      {
         "command": "repotory.registerMcp",
         "title": "Repotory: Register MCP Server (repotory-init)"
       },

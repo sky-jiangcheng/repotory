@@ -268,7 +268,11 @@ func (s *Service) evidencePages(query string, projectID int64, limit int, budget
 	if budget <= 0 {
 		return nil
 	}
-	found, err := db.SearchWikiPages(s.db, query, minInt(limit, 50))
+	// The project scope is pushed into the SQL, not applied afterwards: the Go
+	// filter below would let another project's page take a LIMIT slot before the
+	// visible ones are reached. The filter stays because the semantic branch
+	// (pageVectorRecall) is a different query with the same visibility rule.
+	found, err := db.SearchWikiPages(s.db, query, projectID, minInt(limit, 50))
 	if err != nil {
 		return nil
 	}

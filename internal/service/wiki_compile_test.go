@@ -470,7 +470,7 @@ func readFile(path string) (string, error) {
 
 func mustSearchPages(t *testing.T, svc *Service, q string) []db.WikiPage {
 	t.Helper()
-	got, err := db.SearchWikiPages(svc.db, q, 10)
+	got, err := db.SearchWikiPages(svc.db, q, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

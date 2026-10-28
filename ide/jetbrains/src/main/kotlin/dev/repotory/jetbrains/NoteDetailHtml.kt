@@ -62,7 +62,7 @@ internal fun promoHtml(): String = """
 internal fun loadingHtml(hit: RepotoryHit): String = """
     <html><body style="padding:6px">
     <h2>${esc(hit.title.ifBlank { "(untitled)" })}</h2>
-    <p style="color:${metaColorHex()}">${esc(hit.type)} · #${hit.id} · loading…</p>
+    <p style="color:${metaColorHex()}">${esc(badgeLabel(hit))} · #${hit.id} · loading…</p>
     ${if (hit.snippet.isBlank()) "" else "<p>${esc(hit.snippet)}</p>"}
     </body></html>
 """.trimIndent()
@@ -84,6 +84,61 @@ internal fun noteHtml(detail: NoteDetail): String {
 }
 
 /**
+ * An approved knowledge page read in full (ADR-0032): meta line, the page
+ * body, and the graph around it.
+ *
+ * The edges are plain text, not links: a JEditorPane renders an <a> as blue
+ * underlined text but does not follow it, so a link here would look clickable
+ * and do nothing. "Open in Repotory" is the way out of the pane.
+ */
+internal fun wikiPageHtml(detail: WikiPageDetail): String {
+    val meta = buildString {
+        append(esc(detail.kind.ifBlank { "page" }))
+        append(" · #").append(detail.id)
+        if (detail.slug.isNotBlank()) append(" · /").append(esc(detail.slug))
+        append(" · ").append(if (detail.projectId > 0) "project ${detail.projectId}" else "global")
+        if (detail.updatedAt.isNotBlank()) append(" · updated ").append(detail.updatedAt.take(10))
+        if (detail.source.isNotBlank()) append(" · ").append(esc(detail.source))
+    }
+    return """
+        <html><body style="padding:6px">
+        <h2>${esc(detail.title.ifBlank { "(untitled)" })}</h2>
+        <p style="color:${metaColorHex()}">$meta</p>
+        ${MarkdownLite.toHtml(detail.content)}
+        ${edgesHtml("Links", detail.outLinks)}
+        ${edgesHtml("Backlinks", detail.inLinks)}
+        ${notesHtml(detail.sourceNoteIds)}
+        </body></html>
+    """.trimIndent()
+}
+
+/** One graph edge list: "Links: 时态图 (relates-to) · 网关". */
+private fun edgesHtml(label: String, edges: List<PageEdge>): String {
+    if (edges.isEmpty()) return ""
+    val items = edges.joinToString(" · ") { edge ->
+        val name = edge.title.ifBlank { edge.slug.ifBlank { "#${edge.pageId}" } }
+        if (edge.relation.isBlank()) esc(name) else esc(name) + " (" + esc(edge.relation) + ")"
+    }
+    return "<p style=\"color:${metaColorHex()}\">$label: $items</p>"
+}
+
+/** The notes a page was compiled from: "Compiled from notes: #3 · #7". */
+private fun notesHtml(ids: List<Long>): String {
+    if (ids.isEmpty()) return ""
+    return "<p style=\"color:${metaColorHex()}\">Compiled from notes: " +
+        ids.joinToString(" · ") { "#$it" } + "</p>"
+}
+
+/**
+ * The label a hit carries in its badge: the note/todo type, or the page kind
+ * for an approved page. "WIKI" alone says nothing about what the page IS.
+ */
+internal fun badgeLabel(hit: RepotoryHit): String = when (hit.type) {
+    "wiki" -> hit.kind.ifBlank { "page" }
+    else -> hit.type
+}
+
+/**
  * A todo, or a note whose full read failed: the matched excerpt is what
  * the search contract returned, and the pane says so instead of pretending
  * it is the whole item.
@@ -93,7 +148,7 @@ internal fun excerptHtml(hit: RepotoryHit, full: Boolean = false): String {
     return """
         <html><body style="padding:6px">
         <h2>${esc(hit.title.ifBlank { "(untitled)" })}</h2>
-        <p style="color:${metaColorHex()}">${esc(hit.type)} · #${hit.id} · $label</p>
+        <p style="color:${metaColorHex()}">${esc(badgeLabel(hit))} · #${hit.id} · $label</p>
         ${if (hit.snippet.isBlank()) "<p><i>No snippet returned.</i></p>" else MarkdownLite.toHtml(hit.snippet)}
         </body></html>
     """.trimIndent()

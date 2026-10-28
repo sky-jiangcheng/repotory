@@ -40,6 +40,45 @@ data class RepotoryHit(
     val snippet: String,
     /** The SPA route this hit opens, e.g. "/project/12?noteId=345". */
     val route: String,
+    /**
+     * The wiki page kind (concept | entity | synthesis | source | …) for a page
+     * hit; empty for a note or a todo. The badge shows it, because "page" alone
+     * tells the reader nothing about what kind of page it is.
+     */
+    val kind: String = "",
+    /** The wiki page slug for a page hit; empty otherwise. */
+    val slug: String = "",
+)
+
+/** One edge of the page graph: another page, and how it relates to this one. */
+data class PageEdge(
+    val pageId: Long,
+    val slug: String,
+    val title: String,
+    val kind: String,
+    val relation: String,
+)
+
+/**
+ * One approved knowledge page in full (ADR-0032).
+ *
+ * The page body plus the graph around it: the pages it links to, the pages
+ * that link to it, and the notes it was compiled from. Reading a page is
+ * reading published knowledge — the service refuses anything that is not
+ * approved, so the plugin never has to ask.
+ */
+data class WikiPageDetail(
+    val id: Long,
+    val slug: String,
+    val title: String,
+    val kind: String,
+    val projectId: Long,
+    val updatedAt: String,
+    val content: String,
+    val source: String,
+    val outLinks: List<PageEdge>,
+    val inLinks: List<PageEdge>,
+    val sourceNoteIds: List<Long>,
 )
 
 /**
@@ -139,6 +178,9 @@ class RepotoryClient {
         // read timeout. Every other call keeps the short one: the plugin
         // must never hang the IDE on a service that is not answering.
         private const val READ_TIMEOUT_AI_MS = 330_000
+        // The page search's ceiling, the same one the MCP tool uses: one call
+        // must not be able to dump the whole knowledge base over the wire.
+        private const val WIKI_SEARCH_LIMIT = 20
         private val GSON = Gson()
     }
 
@@ -205,6 +247,37 @@ class RepotoryClient {
             SearchOutcome.Failure(e.message ?: "SearchAll failed")
         } catch (e: Exception) {
             // IOException and friends: the service is not running, or not answering.
+            SearchOutcome.Failure(
+                "Cannot reach ${serverUrl.trimEnd('/')} — ${e.message ?: e.javaClass.simpleName}",
+                offline = true,
+            )
+        }
+    }
+
+    /**
+     * Searches the APPROVED knowledge pages (ADR-0032).
+     *
+     * `SearchWikiPages` is the same binding the desktop `/wiki` surface uses,
+     * so the plugin inherits the service's own ranking and — more important —
+     * the service's own visibility: a page a human has not approved does not
+     * come back, and a project scope means "this project's pages plus the
+     * global ones" (ADR-0031).
+     *
+     * The scope is 0 (no project filter) on purpose: the notes path above is
+     * unscoped too, and a scope here would FILTER pages rather than re-rank
+     * them, so the plugin would show fewer pages than the desktop app does
+     * for the same query.
+     */
+    fun searchWiki(serverUrl: String, query: String): SearchOutcome {
+        if (query.isBlank()) return SearchOutcome.Hits(emptyList())
+        return try {
+            val result = rpc(serverUrl, "SearchWikiPages", listOf(0, query, WIKI_SEARCH_LIMIT))
+            val array = result as? JsonArray
+                ?: return SearchOutcome.Failure("Repotory returned an unexpected SearchWikiPages payload")
+            SearchOutcome.Hits(array.mapNotNull { parseWikiHit(it) })
+        } catch (e: RepotoryRpcException) {
+            SearchOutcome.Failure(e.message ?: "SearchWikiPages failed")
+        } catch (e: Exception) {
             SearchOutcome.Failure(
                 "Cannot reach ${serverUrl.trimEnd('/')} — ${e.message ?: e.javaClass.simpleName}",
                 offline = true,
@@ -326,6 +399,44 @@ class RepotoryClient {
         }
     }
 
+    /**
+     * Reads one approved knowledge page by ID over the RPC bridge
+     * (the GetWikiPage binding).
+     *
+     * Returns null when the page does not exist, is not approved, or the call
+     * fails: the caller falls back to the matched excerpt, because a pane that
+     * shows nothing is worse than one that shows the excerpt and says so.
+     *
+     * The service is the gate here — GetWikiPage refuses anything that is not
+     * approved — so the plugin never has to ask whether a page may be read.
+     */
+    fun wikiPage(serverUrl: String, id: Long): WikiPageDetail? {
+        return try {
+            val result = rpc(serverUrl, "GetWikiPage", listOf(id)) as? JsonObject ?: return null
+            WikiPageDetail(
+                id = result.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: id,
+                slug = result.get("slug")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                title = result.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                kind = result.get("kind")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                projectId = result.get("project_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0,
+                updatedAt = result.get("updated_at")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                content = result.get("content")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                source = result.get("source")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                outLinks = parseEdges(result.get("out_links")),
+                inLinks = parseEdges(result.get("in_links")),
+                sourceNoteIds = (result.get("source_note_ids") as? JsonArray)
+                    ?.mapNotNull { it.takeIf { e -> e.isJsonPrimitive }?.asLong }
+                    ?: emptyList(),
+            )
+        } catch (e: RepotoryRpcException) {
+            Logger.getInstance(LOG).debug("repotory GetWikiPage($id) failed: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Logger.getInstance(LOG).debug("repotory GetWikiPage($id) failed", e)
+            null
+        }
+    }
+
     // ------------------------------------------------------------- writes
     //
     // The maintenance actions of the reader. All of them are human-pressed
@@ -429,6 +540,51 @@ class RepotoryClient {
             else -> "/project/$projectId"
         }
         return RepotoryHit(type, id, projectId, title, snippet, route)
+    }
+
+    /**
+     * One approved page as a list row.
+     *
+     * The route is the SPA's own `/wiki/:id` (web/src/App.tsx), so "Open in
+     * Repotory" lands on the page the desktop app shows — the same route the
+     * web surface links to.
+     */
+    private fun parseWikiHit(raw: Any?): RepotoryHit? {
+        if (raw !is com.google.gson.JsonElement || !raw.isJsonObject) return null
+        val obj = raw.asJsonObject
+        val id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: return null
+        val projectId = obj.get("project_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0
+        val title = obj.get("title")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        val snippet = obj.get("snippet")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        val slug = obj.get("slug")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        val kind = obj.get("kind")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        return RepotoryHit(
+            type = "wiki",
+            id = id,
+            projectId = projectId,
+            title = title,
+            snippet = snippet,
+            route = "/wiki/$id",
+            kind = kind,
+            slug = slug,
+        )
+    }
+
+    /** The page graph edges, skipping anything that is not an edge object. */
+    private fun parseEdges(raw: com.google.gson.JsonElement?): List<PageEdge> {
+        val array = raw as? JsonArray ?: return emptyList()
+        return array.mapNotNull { el ->
+            if (!el.isJsonObject) return@mapNotNull null
+            val obj = el.asJsonObject
+            val pageId = obj.get("page_id")?.takeIf { it.isJsonPrimitive }?.asLong ?: return@mapNotNull null
+            PageEdge(
+                pageId = pageId,
+                slug = obj.get("slug")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                title = obj.get("title")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                kind = obj.get("kind")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                relation = obj.get("relation")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            )
+        }
     }
 
     private fun open(serverUrl: String, path: String, method: String, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpURLConnection {

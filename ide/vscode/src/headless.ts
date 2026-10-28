@@ -86,22 +86,34 @@ export interface NoteHit {
  * from each candidate "[" / "{" boundary.
  */
 export function parseSearchHits(text: string): NoteHit[] {
+  const parsed = parseJsonLenient(text);
+  if (parsed === undefined) return [];
+  return toHits(parsed);
+}
+
+/**
+ * Parse a tool result as JSON, tolerating a preamble.
+ *
+ * The tool results are bare JSON documents; the tolerant retry only runs when
+ * the whole-document parse fails, so a well-formed payload is never re-cut.
+ */
+function parseJsonLenient(text: string): unknown {
   const trimmed = text.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return undefined;
   try {
-    return toHits(JSON.parse(trimmed));
+    return JSON.parse(trimmed);
   } catch {
     /* fall through to the tolerant path */
   }
   const starts = [trimmed.indexOf("["), trimmed.indexOf("{")].filter((i) => i >= 0).sort((a, b) => a - b);
   for (const start of starts) {
     try {
-      return toHits(JSON.parse(trimmed.slice(start)));
+      return JSON.parse(trimmed.slice(start));
     } catch {
       /* try the next boundary */
     }
   }
-  return [];
+  return undefined;
 }
 
 function toHits(parsed: unknown): NoteHit[] {
@@ -118,6 +130,73 @@ export function hitText(hit: NoteHit): string {
   if (typeof hit.snippet === "string" && hit.snippet) return hit.snippet;
   if (typeof hit.content === "string" && hit.content) return hit.content;
   return "";
+}
+
+/**
+ * One approved knowledge page as it crosses the wire
+ * (service.WikiPageSummary): identity, kind, scope and the matched excerpt.
+ *
+ * `project_id` is 0 for a global page (ADR-0031): it speaks for no single
+ * project, which the reader must be able to SEE rather than infer.
+ */
+export interface WikiPageSummary {
+  id?: number;
+  slug?: string;
+  title?: string;
+  kind?: string;
+  project_id?: number;
+  updated_at?: string;
+  snippet?: string;
+  [key: string]: unknown;
+}
+
+/** One approved page in full (service.WikiPageDetail). */
+export interface WikiPageDetail {
+  id: number;
+  slug: string;
+  title: string;
+  kind: string;
+  project_id: number;
+  updated_at: string;
+  content: string;
+  source: string;
+}
+
+/**
+ * Parse the `repotory_wiki_search` tool result into page summaries.
+ *
+ * The result is a bare JSON array, like every other list tool (see
+ * parseSearchHits) — the same tolerant parse applies.
+ */
+export function parseWikiPages(text: string): WikiPageSummary[] {
+  const parsed = parseJsonLenient(text);
+  if (!Array.isArray(parsed)) return [];
+  return parsed as WikiPageSummary[];
+}
+
+/**
+ * Parse the `repotory_wiki_read` tool result into one page.
+ *
+ * A shape check, not a repair pass: an unusable payload returns undefined and
+ * the caller falls back to the matched excerpt, because a pane that shows
+ * nothing is worse than one that shows the excerpt and says so.
+ */
+export function parseWikiRead(text: string): WikiPageDetail | undefined {
+  const parsed = parseJsonLenient(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const page = parsed as Record<string, unknown>;
+  const id = Number(page.id ?? 0);
+  if (!id) return undefined;
+  return {
+    id,
+    slug: typeof page.slug === "string" ? page.slug : "",
+    title: typeof page.title === "string" && page.title ? page.title : `page ${id}`,
+    kind: typeof page.kind === "string" ? page.kind : "",
+    project_id: Number(page.project_id ?? 0),
+    updated_at: typeof page.updated_at === "string" ? page.updated_at : "",
+    content: typeof page.content === "string" ? page.content : "",
+    source: typeof page.source === "string" ? page.source : "",
+  };
 }
 
 export function excerpt(text: unknown, max = 90): string {

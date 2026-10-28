@@ -27,7 +27,8 @@ import (
 //   GetProjectOverview→context, TriggerScan→scan,
 //   ListNotes/ListAllNotes→notes_list, SearchNotes/SearchAll→notes_search,
 //   CreateNote/CreateNoteWithMeta→notes_create,
-//   UpdateNote/UpdateNoteFull/UpdateNoteMeta→notes_update.
+//   UpdateNote/UpdateNoteFull/UpdateNoteMeta→notes_update,
+//   BrowseWikiPages/SearchWikiPages→wiki_search, GetWikiPage→wiki_read.
 //
 // Desktop-only (no MCP equivalent by design — GUI state, admin, or file UX):
 //   Projects: UpdateProjectLevel, ToggleStar, RefreshProjectHistory,
@@ -653,6 +654,33 @@ func (a *App) PromoteWikiPageToGlobal(pageID int64) error {
 // the promotion, and what makes it reversible.
 func (a *App) AssignWikiPageProject(pageID int64, projectID int64) error {
 	return a.svc.AssignWikiPageProject(pageID, projectID)
+}
+
+// ---- approved page browsing (ADR-0032) --------------------------------------
+
+// BrowseWikiPages returns the approved knowledge pages a reader may see, newest
+// first. It is the /wiki feed: the pages a human has already approved, which
+// until now had no reader of their own — they were only ever cited by the AI.
+//
+// The project scope means "that project's pages PLUS the global ones", the same
+// visibility the evidence path grants (ADR-0031). Reading a page does NOT count
+// as using it: access_count keeps meaning "surfaced into an answer's evidence".
+func (a *App) BrowseWikiPages(projectID int64, limit int) ([]service.WikiPageSummary, error) {
+	return a.svc.BrowseWikiPages(projectID, limit)
+}
+
+// SearchWikiPages searches the approved knowledge pages. Same retrieval the
+// evidence path uses (approved-only, bm25, CJK relaxation) and the same scope,
+// so what the answer cited and what the reader found cannot disagree.
+func (a *App) SearchWikiPages(projectID int64, query string, limit int) ([]service.WikiPageSummary, error) {
+	return a.svc.SearchWikiPages(projectID, query, limit)
+}
+
+// GetWikiPage returns one approved page with its body, its edges and the notes
+// it was compiled from. It refuses a page that is not approved: the approval
+// gate decides what may be read, not only what may be cited.
+func (a *App) GetWikiPage(pageID int64) (*service.WikiPageDetail, error) {
+	return a.svc.GetWikiPage(pageID)
 }
 
 // ---- knowledge graph: merge, communities, page history (ADR-0019/0020/0021) ----

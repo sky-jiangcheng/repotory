@@ -38,9 +38,10 @@ order: 27
 | [0029](0029-in-app-update-download.md) | 应用内更新下载——弹窗进度 + 左下角卡片，永不自替换 | **Accepted（2026-10-25）**：参考千问办公的更新下载 UX（弹窗进度 + 最小化到左下角卡片 + 完成弹窗 + 更新日志 + 当前版本）落地。**纯建议式**——只检测不自动下载/安装/替换二进制（信任面）；产物筛选用精确形状正则（同一 release 里的 MCP/server/VSIX/JetBrains zip 会被宽松匹配误当成「应用新版本」）；单一事实源 store（导航栏徽标与设置页卡片共享同一次检查，失败保留上次成功结论）；弹窗与左下角卡片读同一快照（不可能出现两个进度不一致）；轮询而非 Wails 事件（headless server 的浏览器 UI 无 Wails 事件监听者）；下载完成的判定是 SHA256 校验通过；启动检查双闸门且失败静默 |
 | [0030](0030-ai-call-audit.md) | AI 调用审计——把「谁把什么发了出去」变成可查的事实 | **Accepted（2026-10-25）**：schema v28 新增 `ai_call_log` 表 + append-only 守卫。**形态定性为安全插件而非产品升级**——记忆层仍是主角，合规是可开关的附加能力（否决「公司 AI 网关」升级与独立网关产品两案，理由见正文候选矩阵）。LLM 出口天然收敛（`ai.go` 三个 HTTP 原语覆盖全部八条业务路径与三种运行形态），审查钩子插在原语之前，流式输出审查在 chunk 边界判断且**已交付内容无法撤回**。默认全关 + 留痕默认只存哈希与元数据不存全文 + 不引入账号 + 不新增对外出口，四条硬约束守住「本机私有」承诺。关键词屏蔽明确定位为弱控制（自证清白 + 早期预警，非防泄露）。与 skill 机制划清边界：skill 是入口侧读，审计是出口侧管控 |
 | [0031](0031-global-page-scope.md) | 全局页作用域——给跨项目画像层一个能被人填实的入口 | **Accepted（2026-10-26）**：L3 跨项目画像层此前结构性恒空（live 库 45 张页、全局页 0 张——所有建页入口都强制带 projectID，`context_layers.go:216` 要求 `project_id=0`），本 ADR 给人类一个「提升为全局页」的动作：db 层 `SetWikiPageScope`（全局页存 SQL **NULL**——`project_id` 带外键且库以 `PRAGMA foreign_keys=ON` 打开，字面量 0 会被约束拒绝）、service 层提升/移回/列表、审核页「页面作用域」区（提升两击确认）、三个绑定全部 desktop-only 无 MCP 孪生。**L3 不做自动兜底**——ADR-0015 明写「Producing L3 automatically is exactly the model writes into the store with no gate」，故只能由人点。**真库副本演练通过**：L3 条目 0→1→0、按 slug 仍可检索、移回即复原 |
+| [0032](0032-approved-wiki-page-visibility.md) | 已批准知识页可见化——让「人批过的东西」重新被人看见 | **Accepted（2026-10-28 经用户批准晋升）**：live 库 27 张 approved 页对人**完全不可见**（`web/src` 只有审核页两处渲染页正文，路由表与主导航均无 wiki 条目），且 `access_count` 的唯一写入点是 AI 取证路径（27 张里只有 6 张被碰过）——闸门过了，人却读不到自己批准的东西。本 ADR 补上「可以被读」这后半截：① `/wiki` 浏览面 + `/wiki/:id` 详情路由（只列 approved）；② **只读**（编辑属 ADR-0021 修订流，另议）；③ 检索复用 `db.SearchWikiPages` 既有语义（approved-only + bm25 + CJK 松弛）并把作用域过滤下推到 SQL（项目页 + 全局页，与取证路径同语义）；④ **人浏览不写 `access_count`**（该列语义是「被答案用过」，混入「被人读过」会让信号一义两用）；⑤ MCP 孪生 `repotory_wiki_search` / `repotory_wiki_read`（读已过闸的页是纯读，闸门在写侧）；⑥ VS Code / JetBrains 两个分发面都消费（薄客户端纪律：只调绑定，不复制检索逻辑）；⑦ `/wiki` 进主导航。**无 schema 变更**。落码后的验证又撞出并修掉一个**共享层**缺口：**带标点的中文问句在页检索上零命中**（`expandForFTS` 判 CJK 时把标点算作非 CJK，整句成了不可匹配的短语；修法是按标点切段后逐段判，笔记路径与页路径一起好） |
 
 ## 约定
 
 - 每个重大不可逆决策一篇：背景 → 决策 → 后果
 - 被 superseded 的 ADR 保留原文与横幅，不删除
-- 新 ADR 从 `0031` 递增编号，文件名 `NNNN-kebab-title.md`
+- 新 ADR 从 `0033` 递增编号，文件名 `NNNN-kebab-title.md`

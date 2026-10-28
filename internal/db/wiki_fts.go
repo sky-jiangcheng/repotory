@@ -88,7 +88,12 @@ func RebuildWikiFTS(db *sql.DB) error {
 // Empty query returns
 // nothing rather than everything: callers use it as a retrieval stage, and an
 // "everything" result would silently flood the evidence budget.
-func SearchWikiPages(db *sql.DB, query string, limit int) ([]WikiPage, error) {
+//
+// projectID narrows the visible set to that project's pages plus the global ones
+// (ADR-0032 决策 3): the same visibility the evidence path grants, applied in
+// SQL so another project's page cannot take a LIMIT slot before the visible ones
+// are reached. 0 means no narrowing.
+func SearchWikiPages(db *sql.DB, query string, projectID int64, limit int) ([]WikiPage, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -100,17 +105,24 @@ func SearchWikiPages(db *sql.DB, query string, limit int) ([]WikiPage, error) {
 	// in one package is how a quote in a user query eventually breaks one path and
 	// not the other.
 	if !ftsUsable(query) {
-		return nil, nil
+		return searchWikiPagesLike(db, query, projectID, limit)
 	}
 	phrase := escapeFTS(query)
 
-	rows, err := db.Query(
-		"SELECT "+pageColumnsP+", bm25(wiki_pages_fts, 3.0, 1.0) AS rank\n"+
-			`   FROM wiki_pages_fts
-		   JOIN wiki_pages p ON p.id = wiki_pages_fts.rowid
-		  WHERE wiki_pages_fts MATCH ? AND p.status = 'approved'
-		  ORDER BY rank
-		  LIMIT ?`, phrase, limit)
+	scope, scopeArgs := wikiScopeClause(projectID, "p")
+	q := "SELECT " + pageColumnsP + ", bm25(wiki_pages_fts, 3.0, 1.0) AS rank\n" +
+		"   FROM wiki_pages_fts\n" +
+		"   JOIN wiki_pages p ON p.id = wiki_pages_fts.rowid\n" +
+		"  WHERE wiki_pages_fts MATCH ? AND p.status = 'approved'"
+	args := []any{phrase}
+	if scope != "" {
+		q += " AND " + scope
+		args = append(args, scopeArgs...)
+	}
+	q += "\n  ORDER BY rank\n  LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		// A rejected MATCH (unbalanced quotes and friends) must not be silent.
 		return nil, fmt.Errorf("db: wiki page search: %w", err)
@@ -142,22 +154,119 @@ func SearchWikiPages(db *sql.DB, query string, limit int) ([]WikiPage, error) {
 	if strings.TrimSpace(loose) == "" || loose == phrase {
 		return out, nil
 	}
-	return SearchWikiPagesMatch(db, loose, limit)
+	return SearchWikiPagesMatch(db, loose, projectID, limit)
+}
+
+// searchWikiPagesLike is the LIKE fallback for a query the trigram index
+// cannot serve.
+//
+// The tokenizer stores 3-rune windows, so a 2-character CJK term ("时态") is
+// unmatchable even though the page carrying it exists — the index holds no
+// window of that width. The notes path has had this fallback for a long time
+// (searchNotesLike); the wiki path did not, so a short Chinese query on the
+// browse surface returned zero hits and the reader was told the knowledge did
+// not exist. On a corpus written in Chinese, most queries are short.
+//
+// Ranking is synthetic rather than bm25 — bm25 lives in the FTS index we just
+// gave up on: a title match outranks a content-only match, and a recently
+// updated page outranks an older one.
+func searchWikiPagesLike(db *sql.DB, query string, projectID int64, limit int) ([]WikiPage, error) {
+	pages, err := searchWikiPagesLikePatterns(db, projectID, limit, []string{query})
+	if err != nil || len(pages) > 0 {
+		return pages, err
+	}
+	// The whole query as one contiguous substring can never match when the query
+	// is several words: no page contains that exact run including the spaces.
+	// The notes path relaxes the same way, and it only ever runs on an EMPTY
+	// result, so it cannot displace a working answer.
+	terms := likeTerms(query)
+	if len(terms) < 2 {
+		return pages, nil
+	}
+	return searchWikiPagesLikePatterns(db, projectID, limit, terms)
+}
+
+// searchWikiPagesLikePatterns returns the approved pages in scope whose title
+// or content matches ANY of the patterns.
+//
+// The approval filter and the scope clause are the same two the FTS path
+// applies: this fallback must not widen what a reader may see, only how the
+// matches are found.
+func searchWikiPagesLikePatterns(db *sql.DB, projectID int64, limit int, patterns []string) ([]WikiPage, error) {
+	if len(patterns) == 0 {
+		return nil, nil
+	}
+	// Argument order must mirror the SQL text: the rank expression is written
+	// before the WHERE, so its title probes come first.
+	titleProbes := make([]string, 0, len(patterns))
+	where := make([]string, 0, len(patterns))
+	rankArgs := make([]any, 0, len(patterns))
+	whereArgs := make([]any, 0, 2*len(patterns))
+	for _, p := range patterns {
+		pat := "%" + escapeLike(p) + "%"
+		titleProbes = append(titleProbes, "p.title LIKE ? ESCAPE '\\'")
+		rankArgs = append(rankArgs, pat)
+		where = append(where, "(p.title LIKE ? ESCAPE '\\' OR p.content LIKE ? ESCAPE '\\')")
+		whereArgs = append(whereArgs, pat, pat)
+	}
+	args := append(rankArgs, whereArgs...)
+
+	rankExpr := "CASE WHEN " + strings.Join(titleProbes, " OR ") + " THEN 0 ELSE 1 END"
+	q := "SELECT " + pageColumnsP + ", " + rankExpr + " AS rank\n" +
+		"   FROM wiki_pages p\n" +
+		"  WHERE p.status = 'approved'\n" +
+		"    AND (" + strings.Join(where, " OR ") + ")"
+	if scope, scopeArgs := wikiScopeClause(projectID, "p"); scope != "" {
+		q += "\n    AND " + scope
+		args = append(args, scopeArgs...)
+	}
+	q += "\n  ORDER BY rank, COALESCE(p.updated_at, '') DESC, p.id DESC\n  LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("db: wiki page like search: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WikiPage
+	for rows.Next() {
+		var (
+			p    WikiPage
+			rank float64
+		)
+		if err := scanPageFieldsWithRank(rows, &p, &rank); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // SearchWikiPagesMatch runs one raw MATCH expression; exported for the A/B gate
 // so it can measure the strict and relaxed paths separately.
-func SearchWikiPagesMatch(db *sql.DB, match string, limit int) ([]WikiPage, error) {
+//
+// It carries the same project scope as SearchWikiPages: the relaxed path is the
+// fallback for the strict one, so the two must agree on which pages exist —
+// otherwise "searchable but unsearchable" would drift with the word count.
+func SearchWikiPagesMatch(db *sql.DB, match string, projectID int64, limit int) ([]WikiPage, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
-	rows, err := db.Query(
-		"SELECT "+pageColumnsP+", bm25(wiki_pages_fts, 3.0, 1.0) AS rank\n"+
-			`   FROM wiki_pages_fts
-		   JOIN wiki_pages p ON p.id = wiki_pages_fts.rowid
-		  WHERE wiki_pages_fts MATCH ? AND p.status = 'approved'
-		  ORDER BY rank
-		  LIMIT ?`, match, limit)
+	scope, scopeArgs := wikiScopeClause(projectID, "p")
+	q := "SELECT " + pageColumnsP + ", bm25(wiki_pages_fts, 3.0, 1.0) AS rank\n" +
+		"   FROM wiki_pages_fts\n" +
+		"   JOIN wiki_pages p ON p.id = wiki_pages_fts.rowid\n" +
+		"  WHERE wiki_pages_fts MATCH ? AND p.status = 'approved'"
+	args := []any{match}
+	if scope != "" {
+		q += " AND " + scope
+		args = append(args, scopeArgs...)
+	}
+	q += "\n  ORDER BY rank\n  LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("db: wiki page match: %w", err)
 	}

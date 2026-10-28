@@ -1,26 +1,30 @@
 # Repotory MCP 工具完整参考（通道 A）
 
-14 个工具的精确参数签名（取自 `repotory-mcp` 的 `tools/list` 实际响应，非手写推测）。
+18 个工具的精确参数签名（取自 `repotory-mcp` 的 `tools/list` 实际响应，非手写推测）。
 
 ```
 repotory_agent_score()
+repotory_ai_audit(limit: number)
+repotory_ai_review_rules()
 repotory_ask(query: string)
 repotory_context(path: string, project_id: number, project_name: string)
 repotory_handoff(agent: string, changes: array, decisions: array, gotchas: array,
-                 next_steps: array, path: string, project_id: number, summary: string*,
+                 next_steps: array, path: string, project_id: number, summary*: string,
                  tags: string)
 repotory_integrity()
-repotory_notes_create(category: string, content: string*, project_id: number*,
-                       tags: string, title: string*)
+repotory_notes_create(category: string, content*: string, project_id*: number,
+                       tags: string, title*: string)
 repotory_notes_list(limit: number)
-repotory_notes_organize(id: number*)
+repotory_notes_organize(id*: number)
 repotory_notes_read(id: number)
 repotory_notes_search(path: string, query: string)
-repotory_notes_update(category: string, content: string, id: number*, tags: string,
+repotory_notes_update(category: string, content: string, id*: number, tags: string,
                        title: string)
 repotory_projects_list()
 repotory_projects_stats(id: number)
 repotory_scan()
+repotory_wiki_read(id*: number)
+repotory_wiki_search(query: string, project_id: number, path: string, limit: number)
 ```
 
 `*` = 必填。
@@ -76,6 +80,20 @@ repotory_scan()
 
 - 语义检索**默认关闭**，需用户在桌面端 设置 → AI 自配端点；未开时退化为词法匹配
 - 想要精确命中用 `notes_search`；想要项目全景用 `context`
+
+### `repotory_wiki_search(query?, project_id?, path?, limit?)`
+
+检索**已批准**的知识页（概念 / 实体 / 综合页 / 来源页）。
+
+- 返回 JSON 数组，每项 `{id, slug, title, kind, project_id, updated_at, snippet}`。
+- `query` 为空 = 浏览清单（已批准页按更新时间倒序），不是失败的检索。
+- **未批准的页不会出现** —— 审批闸门在写侧，过闸的页才能被读。
+- `limit` 默认 20，上限 50。
+- `project_id` / `path` 的语义与取证路径一致：选了项目 = 该项目的页 **+ 全局页**。
+
+### `repotory_wiki_read(id*)`
+
+读一页的正文（JSON 对象）：正文、slug、kind、作用域、出边、入边、来源笔记 id。
 
 ### `repotory_notes_search(query, path?)`
 
@@ -189,6 +207,8 @@ MCP 工具在 HTTP 桥上的对应关系不是同名 —— RPC 走的是桌面 
 | `repotory_projects_list` | `GetProjects()` |
 | `repotory_projects_stats` | `GetProjectStats(id)` |
 | `repotory_ask` | `AskAI(projectID, question)` —— **需要 projectID**；另有 `AskAIWithEvidence(projectID, question)` 带证据、`LayeredProjectContext(...)` 分层上下文 |
+| `repotory_wiki_search` | `SearchWikiPages(projectID, query, limit)` |
+| `repotory_wiki_read` | `GetWikiPage(pageID)` |
 | `repotory_notes_create` | `CreateNoteWithMeta(projectID, title, content, tags, kind, source)` —— 带元数据用这个；`CreateNote(projectID, title, content)` 是精简版 |
 | `repotory_notes_update` | `UpdateNoteFull(noteID, content, title, tags, kind, pinned)` |
 | `repotory_notes_read` | `GetNote(noteID)` |

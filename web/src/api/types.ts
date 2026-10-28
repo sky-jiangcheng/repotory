@@ -505,6 +505,35 @@ export interface WikiPendingPage {
   in_links: PageEdge[]
 }
 
+// --- Approved wiki browsing (ADR-0032) ---------------------------------------
+// Shapes mirror internal/service.WikiPageSummary / WikiPageDetail.
+//
+// The summary carries no page body on purpose: the browse feed can hold a
+// hundred rows, and shipping a hundred bodies with it would make the list
+// cost as much as the pages it lists.
+
+export interface WikiPageSummary {
+  id: number
+  slug: string
+  title: string
+  kind: string
+  // 0 means a global page (ADR-0031): it speaks for no single project.
+  project_id: number
+  updated_at: string
+  snippet: string
+}
+
+export interface WikiPageDetail extends WikiPageSummary {
+  content: string
+  // Always "approved" — the backend refuses to serve anything else, so the
+  // browse surface can never become a second review surface.
+  status: string
+  source: string
+  out_links: PageEdge[]
+  in_links: PageEdge[]
+  source_note_ids: number[]
+}
+
 export interface CompileJob {
   id: number
   project_id: number

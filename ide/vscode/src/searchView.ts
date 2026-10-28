@@ -4,15 +4,22 @@
 //   │ brand header: mark + wordmark + tagline + scope│  ← identity & promo
 //   ├──────────────────────┬────────────────────────┤
 //   │ search box           │ detail (defaults to    │
-//   │ knowledge thumbnails │ the first hit)         │
+//   │ [notes | wiki pages] │ knowledge thumbnails   │
+//   │                      │ (the first hit)        │
 //   └──────────────────────┴────────────────────────┘
 //
 // The thin-client discipline is unchanged: this file renders, it never
 // searches. Queries go to the extension host (repotory-mcp over stdio,
 // the same path the commands use) and answers come back as messages;
 // the full body of a note is fetched on selection via
-// repotory_notes_read. Everything business-side stays in the shared Go
+// repotory_notes_read, the full body of an approved knowledge page via
+// repotory_wiki_read. Everything business-side stays in the shared Go
 // service layer (ADR-0009).
+//
+// Two sources, two id spaces. Notes/todos and knowledge pages have separate
+// id sequences, so a hit carries the source it came from and the reader keeps
+// one space on screen at a time — mixing them would make "id 12" ambiguous
+// (the same reason the web app keeps its wiki browse on its own route).
 //
 // The detail pane doubles as the note maintenance surface (2026-10-23):
 // edit a note (title / tags / kind / project), create a new note under the
@@ -20,17 +27,30 @@
 // PROPOSAL that opens the same editor, so reviewing machine-generated
 // wording IS the edit flow and only the user's save persists it.
 import * as vscode from "vscode";
-import { excerpt, hitText, parseOrganizeProposal, parseProjects, parseSearchHits, type NoteHit, type OrganizeProposal, type ProjectOption } from "./headless.js";
+import { excerpt, hitText, parseOrganizeProposal, parseProjects, parseSearchHits, type NoteHit, type OrganizeProposal, type ProjectOption, type WikiPageSummary } from "./headless.js";
 
 export const MAX_HITS = 50;
 
+/**
+ * Which knowledge space the sidebar is reading.
+ *
+ * "notes" = notes + todos (the historical scope, `repotory_notes_search`).
+ * "wiki" = the approved knowledge pages (ADR-0032, `repotory_wiki_search`).
+ */
+export type Source = "notes" | "wiki";
+
 /** One hit as the webview needs it: identity, kind and the matched excerpt. */
 export interface Thumb {
+  /** Which id space this hit belongs to — "note", "todo" or "wiki". */
   type: string;
   id: number;
   project_id: number;
   title: string;
   snippet: string;
+  /** The page kind of a knowledge page (concept / synthesis / entity). */
+  pageKind?: string;
+  /** The page's slug, shown next to its title in the detail pane. */
+  slug?: string;
 }
 
 interface Detail {
@@ -40,11 +60,15 @@ interface Detail {
   title: string;
   /** Full body for notes; the matched excerpt for todos (no row to read). */
   body: string;
-  source: "note" | "snippet" | "error";
+  source: "note" | "wiki" | "snippet" | "error";
   updated_at?: string;
   tags?: string;
   /** The note's kind, so the editor can round-trip it (notes only). */
   kind?: string;
+  /** The page kind of an approved knowledge page (concept / synthesis / entity). */
+  pageKind?: string;
+  /** The page slug, for an approved knowledge page. */
+  slug?: string;
 }
 
 /** The editable fields of a note, as the editor pane holds them. */
@@ -59,7 +83,8 @@ export interface EditorDraft {
 }
 
 type ExtMessage =
-  | { type: "search"; query: string }
+  | { type: "search"; query: string; source: Source }
+  | { type: "source"; source: Source }
   | { type: "select"; id: number }
   | { type: "open"; hit: Thumb }
   | { type: "copy"; text: string }
@@ -70,7 +95,7 @@ type ExtMessage =
   | { type: "cancelEdit" };
 
 type ViewMessage =
-  | { type: "state"; query: string; scope: string; hits: Thumb[]; selectedId?: number }
+  | { type: "state"; query: string; scope: string; source: Source; hits: Thumb[]; selectedId?: number }
   | { type: "scope"; scope: string }
   | { type: "detail"; detail: Detail }
   | { type: "error"; message: string }
@@ -95,6 +120,25 @@ function toThumbs(hits: NoteHit[]): Thumb[] {
         ? hit.title
         : excerpt(hitText(hit), 40) || `note ${String(hit.id ?? "?")}`,
     snippet: excerpt(hitText(hit), 140),
+  }));
+}
+
+/**
+ * The approved knowledge pages as thumbnails.
+ *
+ * The id space is separate from the notes' one, so the type carries "wiki" —
+ * that is what tells the reader which tool to read the hit back with. The
+ * page kind (concept / synthesis / entity) rides along as the badge text.
+ */
+function toWikiThumbs(pages: WikiPageSummary[]): Thumb[] {
+  return pages.slice(0, MAX_HITS).map((page) => ({
+    type: "wiki",
+    id: Number(page.id ?? 0),
+    project_id: Number(page.project_id ?? 0),
+    title: typeof page.title === "string" && page.title ? page.title : `page ${String(page.id ?? "?")}`,
+    snippet: excerpt(typeof page.snippet === "string" ? page.snippet : "", 140),
+    pageKind: typeof page.kind === "string" ? page.kind : "",
+    slug: typeof page.slug === "string" ? page.slug : "",
   }));
 }
 
@@ -156,6 +200,21 @@ function html(nonce: string): string {
     border-right: 1px solid var(--r-border);
   }
   .search { padding: 8px; flex: none; }
+  /* The source switch: notes and knowledge pages live in separate id spaces,
+     so the reader shows one space at a time. */
+  .sources { display: flex; gap: 4px; margin-bottom: 6px; }
+  .src {
+    flex: 1; min-width: 0; padding: 4px 6px; font-size: 11px; cursor: pointer;
+    text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--vscode-font-family, sans-serif);
+    color: var(--vscode-foreground, #333);
+    background: var(--vscode-button-secondaryBackground, rgba(128,128,128,.18));
+    border: 1px solid transparent; border-radius: 4px;
+  }
+  .src.active {
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-button-background, #06c);
+  }
   .search input {
     width: 100%; padding: 5px 8px; font-size: 12px;
     font-family: var(--vscode-font-family, sans-serif);
@@ -192,6 +251,7 @@ function html(nonce: string): string {
   }
   .badge.note { color: var(--vscode-textLink-foreground, #06c); }
   .badge.todo { color: var(--vscode-editorWarning-foreground, #b90); }
+  .badge.wiki { color: var(--vscode-charts-purple, #8250df); }
   .empty { padding: 18px 14px; font-size: 12px; line-height: 1.5; color: var(--r-muted); }
   /* ---------- detail pane ---------- */
   .detail { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 18px; }
@@ -306,7 +366,13 @@ function html(nonce: string): string {
 </header>
 <main>
   <section class="list">
-    <div class="search"><input id="q" type="search" placeholder="Search notes & todos…" spellcheck="false"></div>
+    <div class="search">
+      <div class="sources" role="group" aria-label="Knowledge source">
+        <button class="src active" data-source="notes" type="button">Notes &amp; todos</button>
+        <button class="src" data-source="wiki" type="button">Wiki pages</button>
+      </div>
+      <input id="q" type="search" placeholder="Search notes & todos…" spellcheck="false">
+    </div>
     <div class="thumbs" id="thumbs"></div>
   </section>
   <section class="detail" id="detail"></section>
@@ -319,9 +385,14 @@ const q = document.getElementById('q');
 const thumbsEl = document.getElementById('thumbs');
 const detailEl = document.getElementById('detail');
 const scopeEl = document.getElementById('scope');
+const srcButtons = Array.from(document.querySelectorAll('.src'));
 let hits = [];
 let selectedId = undefined;
 let debounce = undefined;
+// Which knowledge space the sidebar reads: notes/todos or the approved
+// knowledge pages. They are separate id spaces, so the reader shows one at a
+// time and the host reads a hit back with the tool that owns its space.
+let source = 'notes';
 // Editor state: null = reading, otherwise the pane holds a draft. A draft
 // survives a failed save (the message handler only replaces it on success),
 // because losing typed text to a transport error is how people stop trusting
@@ -330,6 +401,21 @@ let editor = null;
 // The last detail rendered, so Cancel can restore the reading pane without
 // another round trip.
 let lastDetail = null;
+
+// setSource switches the space the sidebar reads. notify is false when the
+// host is the one that switched it, so the two never talk in circles.
+function setSource(next, notify) {
+  source = next;
+  for (const b of srcButtons) b.classList.toggle('active', b.dataset.source === next);
+  q.placeholder = next === 'wiki'
+    ? 'Search approved knowledge pages…'
+    : 'Search notes & todos…';
+  if (notify) vscode.postMessage({ type: 'source', source: next });
+}
+
+for (const b of srcButtons) {
+  b.addEventListener('click', () => setSource(b.dataset.source, true));
+}
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -379,8 +465,15 @@ function md(src) {
   return out.join('\\n');
 }
 
-function badge(kind) {
-  return '<span class="badge ' + esc(kind) + '">' + esc(kind) + '</span>';
+function badge(text, cls) {
+  return '<span class="badge ' + esc(cls || text) + '">' + esc(text) + '</span>';
+}
+
+// The badge of a hit: a knowledge page shows its page kind (concept /
+// synthesis / entity), everything else shows its type (note / todo).
+function hitBadge(hit) {
+  if (hit.type === 'wiki') return badge(hit.pageKind || 'wiki', 'wiki');
+  return badge(hit.type, hit.type);
 }
 
 function renderThumbs() {
@@ -393,7 +486,7 @@ function renderThumbs() {
     const el = document.createElement('div');
     el.className = 'thumb' + (hit.id === selectedId ? ' active' : '');
     el.dataset.id = String(hit.id);
-    el.innerHTML = '<div class="row">' + badge(hit.type) + '<span class="t">' + esc(hit.title) + '</span></div>' +
+    el.innerHTML = '<div class="row">' + hitBadge(hit) + '<span class="t">' + esc(hit.title) + '</span></div>' +
       (hit.snippet ? '<div class="s">' + esc(hit.snippet) + '</div>' : '');
     el.addEventListener('click', () => select(hit.id));
     thumbsEl.appendChild(el);
@@ -414,12 +507,20 @@ function renderDetail(d) {
   // The badge is HTML (built by badge()); the rest is escaped text. Joining
   // them through one esc() pass used to print the badge's markup verbatim.
   const metaText = [];
-  if (d.project_id) metaText.push('project ' + d.project_id);
+  if (d.type === 'wiki') {
+    if (d.slug) metaText.push(d.slug);
+    // A global page belongs to no project (ADR-0031): it speaks in every
+    // project. Saying "global" is honest; "project 0" is not.
+    metaText.push(d.project_id ? 'project ' + d.project_id : 'global');
+  } else if (d.project_id) {
+    metaText.push('project ' + d.project_id);
+  }
   if (d.updated_at) metaText.push('updated ' + d.updated_at.slice(0, 10));
   if (d.tags) metaText.push(d.tags);
   if (d.source === 'snippet') metaText.push('excerpt');
+  const badgeHtml = d.type === 'wiki' ? badge(d.pageKind || 'wiki', 'wiki') : badge(d.type, d.type);
   detailEl.innerHTML = '<h2>' + esc(d.title) + '</h2>' +
-    '<div class="meta">' + badge(d.type) + '<span>·</span> #' + d.id +
+    '<div class="meta">' + badgeHtml + '<span>·</span> #' + d.id +
     metaText.map((m) => '<span>·</span> ' + esc(m)).join('') + '</div>' +
     '<div class="body">' + (d.body ? md(d.body) : '<p><i>No content returned for this item.</i></p>') + '</div>' +
     '<div class="actions">' +
@@ -527,7 +628,7 @@ function select(id) {
   const hit = hits.find((h) => h.id === id);
   if (hit) {
     detailEl.innerHTML = '<h2>' + esc(hit.title) + '</h2>' +
-      '<div class="meta">' + badge(hit.type) + '<span>·</span> #' + hit.id + '<span>·</span> loading…</div>' +
+      '<div class="meta">' + hitBadge(hit) + '<span>·</span> #' + hit.id + '<span>·</span> loading…</div>' +
       (hit.snippet ? '<div class="body">' + esc(hit.snippet) + '</div>' : '');
   }
   vscode.postMessage({ type: 'select', id });
@@ -536,7 +637,7 @@ function select(id) {
 q.addEventListener('input', () => {
   clearTimeout(debounce);
   debounce = setTimeout(() => {
-    vscode.postMessage({ type: 'search', query: q.value.trim() });
+    vscode.postMessage({ type: 'search', query: q.value.trim(), source });
   }, 300);
 });
 
@@ -544,6 +645,9 @@ window.addEventListener('message', (event) => {
   const msg = event.data;
   if (msg.type === 'state') {
     hits = msg.hits || [];
+    // The host may have switched the space (a command-palette search in the
+    // other one): follow it without posting back, so the two never loop.
+    if (msg.source && msg.source !== source) setSource(msg.source, false);
     if (msg.query !== undefined && document.activeElement !== q) q.value = msg.query;
     scopeEl.textContent = msg.scope || '';
     scopeEl.title = msg.scope || '';
@@ -609,7 +713,10 @@ export class RepotorySearchViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg: ExtMessage) => {
       switch (msg.type) {
         case "search":
-          void this.onSearch?.(msg.query);
+          void this.onSearch?.(msg.query, msg.source);
+          break;
+        case "source":
+          void this.onSource?.(msg.source);
           break;
         case "select":
           void this.onSelect?.(msg.id);
@@ -640,7 +747,9 @@ export class RepotorySearchViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** Set by the extension: run one query through the shared search path. */
-  onSearch?: (query: string) => Promise<void> | void;
+  onSearch?: (query: string, source: Source) => Promise<void> | void;
+  /** Set by the extension: the reader switched knowledge spaces. */
+  onSource?: (source: Source) => Promise<void> | void;
   /** Set by the extension: fetch the full body of the selected hit. */
   onSelect?: (id: number) => Promise<void> | void;
   /** Set by the extension: deep-link the hit into the Repotory web UI. */
@@ -658,7 +767,20 @@ export class RepotorySearchViewProvider implements vscode.WebviewViewProvider {
   postHits(query: string, hits: NoteHit[], scope: string): void {
     const thumbs = toThumbs(hits);
     this.lastHits = thumbs;
-    this.post({ type: "state", query, scope, hits: thumbs });
+    this.post({ type: "state", query, scope, source: "notes", hits: thumbs });
+  }
+
+  /** Push approved knowledge pages into the view (ADR-0032). */
+  postWikiPages(query: string, pages: WikiPageSummary[], scope: string): void {
+    const thumbs = toWikiThumbs(pages);
+    this.lastHits = thumbs;
+    this.post({ type: "state", query, scope, source: "wiki", hits: thumbs });
+  }
+
+  /** Clear the list, staying in the given space. */
+  postEmpty(source: Source, scope: string): void {
+    this.lastHits = [];
+    this.post({ type: "state", query: "", scope, source, hits: [] });
   }
 
   /** The hits currently on screen, so the host can resolve a hit by id. */

@@ -11,8 +11,8 @@ import * as os from "node:os";
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import { exec, execFile } from "node:child_process";
 import { McpStdioClient } from "./mcpClient.js";
-import { getJson, parseOrganizeProposal, parseProjects, parseSearchHits, postJson, type OrganizeProposal, type ProjectOption } from "./headless.js";
-import { parseNoteRead, RepotorySearchViewProvider, type EditorDraft, type Thumb } from "./searchView.js";
+import { getJson, parseOrganizeProposal, parseProjects, parseSearchHits, parseWikiPages, parseWikiRead, postJson, type OrganizeProposal, type ProjectOption } from "./headless.js";
+import { parseNoteRead, RepotorySearchViewProvider, type EditorDraft, type Source, type Thumb } from "./searchView.js";
 
 const CONFIG_SECTION = "repotory";
 const SERVER_URL_KEY = "serverUrl";
@@ -27,6 +27,19 @@ export let output: vscode.OutputChannel;
 let statusItem: vscode.StatusBarItem;
 let mcp: McpStdioClient | null = null;
 let extensionContext: vscode.ExtensionContext | undefined;
+
+/**
+ * Which knowledge space the sidebar reads.
+ *
+ * Notes/todos and approved knowledge pages have separate id sequences, so the
+ * reader shows one space at a time (ADR-0032): "id 12" is a note in one and a
+ * page in the other, and a list that mixed them would make every read
+ * ambiguous.
+ */
+let searchSource: Source = "notes";
+
+/** The last query that was run, so a source switch can re-run it. */
+let lastQuery = "";
 
 interface HandoffStatus {
   note_id?: number;
@@ -391,13 +404,36 @@ async function writeHandoff(): Promise<void> {
  * The single search path for both entry points — the webview's own search
  * box and the "Repotory: Search Knowledge" command both end here, so the
  * two can never drift apart (same call, same ranking, same parser).
+ *
+ * Two sources, two tools, one parser each. The plugin holds no retrieval
+ * logic of its own: notes/todos go through `repotory_notes_search` and the
+ * approved knowledge pages through `repotory_wiki_search` (ADR-0032), both
+ * served by the same Go service layer the desktop app uses.
  */
-async function runSearch(view: RepotorySearchViewProvider, query: string): Promise<void> {
+async function runSearch(
+  view: RepotorySearchViewProvider,
+  query: string,
+  source: Source = searchSource,
+): Promise<void> {
+  searchSource = source;
+  lastQuery = query;
   if (!query) {
-    view.postHits("", [], scopeLabel());
+    view.postEmpty(source, scopeLabel());
     return;
   }
   try {
+    if (source === "wiki") {
+      // No workspace path here on purpose: a project scope would FILTER the
+      // pages down to that project (plus the global ones), while the notes
+      // path only re-ranks. A search surface that silently hides pages is a
+      // worse surprise than a long list, and the desktop app's /wiki page
+      // defaults to "all projects" too.
+      const text = await withProgress("searching knowledge pages", () =>
+        callTool("repotory_wiki_search", { query }),
+      );
+      view.postWikiPages(query, parseWikiPages(text), scopeLabel());
+      return;
+    }
     const searchArgs: Record<string, unknown> = { query };
     // Ranking only: notes recorded in THIS repository lead the result list.
     const dir = workspacePath();
@@ -427,10 +463,46 @@ function scopeLabel(): string {
  * Notes have a row to read (repotory_notes_read → the whole note); todos
  * do not — the matched excerpt is the most the search contract returns, so
  * the pane says "excerpt" rather than pretending it is the full item.
+ * An approved knowledge page is read with the page tool (ADR-0032): the
+ * two id spaces are separate, so the wrong tool would answer about the
+ * wrong thing.
  * Either way the user sees content immediately, never a spinner that dies
  * into an empty pane.
  */
 async function selectHit(view: RepotorySearchViewProvider, id: number): Promise<void> {
+  const hit = view.lastHits.find((h) => h.id === id);
+  if (hit?.type === "wiki") {
+    try {
+      const page = parseWikiRead(await callTool("repotory_wiki_read", { id }));
+      if (page) {
+        view.postDetail({
+          type: "wiki",
+          id: page.id,
+          project_id: page.project_id,
+          title: page.title,
+          body: page.content,
+          source: "wiki",
+          updated_at: page.updated_at,
+          pageKind: page.kind,
+          slug: page.slug,
+        });
+        return;
+      }
+    } catch {
+      /* fall through to the excerpt below */
+    }
+    view.postDetail({
+      type: "wiki",
+      id,
+      project_id: hit.project_id,
+      title: hit.title,
+      body: hit.snippet,
+      source: "snippet",
+      pageKind: hit.pageKind,
+      slug: hit.slug,
+    });
+    return;
+  }
   try {
     const text = await callTool("repotory_notes_read", { id });
     const detail = parseNoteRead(text);
@@ -441,7 +513,6 @@ async function selectHit(view: RepotorySearchViewProvider, id: number): Promise<
   } catch {
     /* fall through to the snippet below */
   }
-  const hit = view.lastHits.find((h) => h.id === id);
   view.postDetail({
     type: hit?.type ?? "note",
     id,
@@ -456,9 +527,11 @@ async function selectHit(view: RepotorySearchViewProvider, id: number): Promise<
 async function openHit(hit: Thumb | undefined): Promise<void> {
   if (!hit) return;
   const route =
-    hit.type === "todo"
-      ? `/project/${hit.project_id}?tab=todos`
-      : `/project/${hit.project_id}?noteId=${hit.id}`;
+    hit.type === "wiki"
+      ? `/wiki/${hit.id}`
+      : hit.type === "todo"
+        ? `/project/${hit.project_id}?tab=todos`
+        : `/project/${hit.project_id}?noteId=${hit.id}`;
   const url = `${serverUrl().replace(/\/+$/, "")}${route}`;
   await vscode.env.openExternal(vscode.Uri.parse(url));
 }
@@ -990,7 +1063,14 @@ export function activate(context: vscode.ExtensionContext): void {
   void refreshLastHandoff();
 
   const searchView = new RepotorySearchViewProvider(context);
-  searchView.onSearch = (query) => runSearch(searchView, query);
+  searchView.onSearch = (query, source) => runSearch(searchView, query, source);
+  searchView.onSource = (source) => {
+    // The list is cleared first: the rows on screen belong to the other id
+    // space, and a stale row is a row the reader would open with the wrong
+    // tool.
+    searchView.postEmpty(source, scopeLabel());
+    return runSearch(searchView, lastQuery, source);
+  };
   searchView.onSelect = (id) => selectHit(searchView, id);
   searchView.onOpen = (hit) => openHit(hit);
   searchView.onEdit = (id) => openEditorForNote(searchView, id);
@@ -1030,7 +1110,16 @@ export function activate(context: vscode.ExtensionContext): void {
       ignoreFocusOut: true,
     });
     if (!query) return;
-    await runSearch(searchView, query);
+    await runSearch(searchView, query, "notes");
+  });
+  register("repotory.searchWiki", async () => {
+    const query = await vscode.window.showInputBox({
+      prompt: "Repotory — search the approved knowledge pages",
+      placeHolder: "e.g. ADR-0021",
+      ignoreFocusOut: true,
+    });
+    if (!query) return;
+    await runSearch(searchView, query, "wiki");
   });
   register("repotory.registerMcp", () => registerMcp(context));
   register("repotory.diagnose", () => diagnose(context));

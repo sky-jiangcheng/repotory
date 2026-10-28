@@ -172,6 +172,20 @@ Compiled knowledge pages land as pending first, and only a human publishes them 
 
 Neither move changes a page's status or content, and neither touches `updated_at` (freshness semantics belong to content revisions). A global page is stored as SQL `NULL` — `project_id` carries a foreign key and the database runs with `PRAGMA foreign_keys=ON`, so the literal 0 is rejected by the constraint; Go projects it to 0 uniformly. See ADR-0031.
 
+## Reading approved knowledge pages (ADR-0032)
+
+The family above is the write side, and those are human acts; this family is the **read side** — a page that passed the gate is readable by people. **Approved only**: pending and rejected pages still appear on the review page and nowhere else.
+
+| Method | Description |
+|------|------|
+| `BrowseWikiPages(projectID, limit)` | the browse feed of approved pages, newest first; `projectID=0` means every project |
+| `SearchWikiPages(projectID, query, limit)` | searches approved pages (bm25 + CJK relaxation); the scope matches the evidence path exactly: a project scope means that project's pages **plus the global ones**, no scope means all of them |
+| `GetWikiPage(pageID)` | reads one page's body, slug, kind, scope, outbound / inbound edges and the ids of the notes it was compiled from; **anything that is not approved is refused** (the gate governs reading too) |
+
+All three have MCP twins (`repotory_wiki_search` / `repotory_wiki_read`), and both IDE distribution surfaces consume them (the VS Code sidebar, the JetBrains tool window) — the plugins only call the bindings, they never write retrieval of their own.
+
+**Human browsing does not write `access_count`**: that column means "this page was surfaced into some answer's evidence", and a human opening a page is a different visit — mixing them would make one signal carry two meanings. See ADR-0032.
+
 ## Configuration
 
 | Method | Description |

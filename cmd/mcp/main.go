@@ -36,6 +36,7 @@ func main() {
 
 	mcpServer := server.NewMCPServer("repotory-mcp", version.Version)
 	registerTools(mcpServer, svc)
+	registerWikiTools(mcpServer, svc)
 	registerContextTools(mcpServer, svc)
 	registerScanTool(mcpServer, svc)
 	registerAuditTools(mcpServer, svc)

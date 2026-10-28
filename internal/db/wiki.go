@@ -456,6 +456,71 @@ func ListWikiPagesByStatus(db *sql.DB, status string, projectID int64) ([]WikiPa
 	return out, rows.Err()
 }
 
+// wikiScopeClause renders the visibility predicate for a project scope.
+//
+// The semantics are the ones the evidence path already grants (ADR-0031 事实三):
+// a project scope means "that project's pages PLUS the global ones" — a global
+// page belongs to no project, so it speaks in every project, while another
+// project's page does not. projectID 0 means no narrowing.
+//
+// The predicate is SQL, not Go: filtering after the LIMIT lets another
+// project's page take a slot the visible one needed, so a busy foreign project
+// can silently starve this one.
+//
+// This is NOT the review surface's semantics (ListWikiPagesByStatus filters
+// project_id = ? exactly, so a global page stays out of a project's queue).
+// The two coexist deliberately — see ADR-0031 决策 5.
+func wikiScopeClause(projectID int64, alias string) (string, []any) {
+	if projectID <= 0 {
+		return "", nil
+	}
+	col := "project_id"
+	if alias != "" {
+		col = alias + ".project_id"
+	}
+	return "(" + col + " = ? OR " + col + " IS NULL)", []any{projectID}
+}
+
+// ListVisibleApprovedPages is the browse feed's query (ADR-0032): the approved
+// pages a reader may see, newest first.
+//
+// It is deliberately not the search path: SearchWikiPages treats an empty query
+// as "no results" (its callers use it as a retrieval stage, where "everything"
+// would flood the evidence budget), so the browse list needs its own
+// approved-only query.
+//
+// The project scope means "this project's pages plus the global ones" — the
+// visibility the evidence path grants — applied in SQL for the same LIMIT
+// reason.
+func ListVisibleApprovedPages(db *sql.DB, projectID int64, limit int) ([]WikiPage, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := "SELECT " + pageColumns + " FROM wiki_pages WHERE status = 'approved'"
+	args := []any{}
+	if scope, scopeArgs := wikiScopeClause(projectID, ""); scope != "" {
+		q += " AND " + scope
+		args = append(args, scopeArgs...)
+	}
+	q += " ORDER BY COALESCE(updated_at, '') DESC, id DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("db: list visible approved pages: %w", err)
+	}
+	defer rows.Close()
+	var out []WikiPage
+	for rows.Next() {
+		var p WikiPage
+		if err := scanPageFields(rows, &p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // CountWikiPagesByStatus feeds the review badge and the compile report's
 // "what is waiting" line.
 func CountWikiPagesByStatus(db *sql.DB) (map[string]int, error) {

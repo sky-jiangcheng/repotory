@@ -135,7 +135,7 @@ ls -la ~/Library/Application\ Support/repotory/repotory.db   # macOS
 
 ## 三、工具路由（通道 A）
 
-14 个工具，按意图选：
+18 个工具，按意图选：
 
 ### 读
 
@@ -143,6 +143,8 @@ ls -la ~/Library/Application\ Support/repotory/repotory.db   # macOS
 |------|-----------|------|
 | `repotory_context` | **会话开始**，或需要某项目的全景 | 首选入口 |
 | `repotory_ask` | 「关于 X 我知道什么？」—— 自然语言提问 | top-5 语义结果；语义检索未开时退化为词法 |
+| `repotory_wiki_search` | 查**已批准**的知识页（概念 / 实体 / 综合页） | 未批准过的页不会出现；空 `query` = 列出已批准页（按时间倒序） |
+| `repotory_wiki_read` | 读一页的正文 + 出处页 + 来源笔记 | 按 id |
 | `repotory_notes_search` | 精确全文检索 | FTS5 trigram + bm25 排序，支持 CJK |
 | `repotory_notes_read` | 读某条笔记全文 | 按 id |
 | `repotory_notes_list` | 列出全部笔记 | 默认 50，上限 500；单项目工作集用 `context` |
@@ -187,7 +189,7 @@ ls -la ~/Library/Application\ Support/repotory/repotory.db   # macOS
 | `GetProjectDetail` / `GetProjectCommits` / `RefreshProjectHistory` | GUI 明细页；agent 用 `repotory_context` 一次拿到同样的事实 |
 | `PreviewProjectMergeUp` | 破坏性合并的上半段；分组是人做的事 |
 | `ToggleStar` / `UpdateProjectLevel` / `SearchProjects` | UI 状态 |
-| `CompileWiki` / 审批 / 合并 / 社区综述 | 机器写的知识**必须过人工审核**才进检索 |
+| `CompileWiki` / 审批 / 合并 / 社区综述 | 机器写的知识**必须过人工审核**才进检索；**审过之后 agent 可以读**（`repotory_wiki_search` / `repotory_wiki_read`），不能写 |
 
 **主题层（project → topic → note）的读写归人。** agent 只能读主题（笔记上的 `topic_name`），
 不能建、改、删，也不能给笔记归类。用户让你「按主题整理」时，请他在桌面端操作，

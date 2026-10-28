@@ -74,7 +74,7 @@ func TestPromoteWikiPageToGlobal_KeepsThePageRetrievable(t *testing.T) {
 		t.Fatalf("PromoteWikiPageToGlobal: %v", err)
 	}
 
-	hits, err := db.SearchWikiPages(svc.db, "globalprofile", 10)
+	hits, err := db.SearchWikiPages(svc.db, "globalprofile", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

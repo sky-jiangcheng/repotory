@@ -204,6 +204,15 @@ var bindingSurfaces = map[string]BindingSurface{
 	"ListRejectedWikiPages": {SurfaceDesktopOnly, "", "the error-page list in the review tab, so tombstones stay visible to the person who can clean them up"},
 	"DeleteCompiledPage":    {SurfaceDesktopOnly, "", "permanent removal of never-published pages: human only"},
 
+	// ---- approved page browsing (ADR-0032) ------------------------------------
+	// Reading a page a human already approved is a pure read: the gate is on
+	// the write side (ADR-0015). The scope bindings below are a different case
+	// — they decide what speaks for the user across projects — and stay
+	// human-only.
+	"BrowseWikiPages": {SurfaceMCPBacked, "repotory_wiki_search", ""},
+	"SearchWikiPages": {SurfaceMCPBacked, "repotory_wiki_search", ""},
+	"GetWikiPage":     {SurfaceMCPBacked, "repotory_wiki_read", ""},
+
 	// ---- page scope: project tier <-> global tier (ADR-0031) -------------------
 	"ListApprovedWikiPages":   {SurfaceDesktopOnly, "", "the scope surface a person looks at in order to decide which pages speak for the user across projects"},
 	"PromoteWikiPageToGlobal": {SurfaceDesktopOnly, "", "widening a page's scope puts it into the cross-project profile that steers every answer; that is a curated human statement, and an agent doing it is the no-gate write ADR-0015 refuses (ADR-0031)"},

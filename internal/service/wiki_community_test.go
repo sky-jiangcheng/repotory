@@ -198,7 +198,7 @@ func TestRunCommunitySummary_FilesPendingSynthesis(t *testing.T) {
 
 func searchSlugs(t *testing.T, svc *Service, q string) []string {
 	t.Helper()
-	found, err := db.SearchWikiPages(svc.db, q, 10)
+	found, err := db.SearchWikiPages(svc.db, q, 0, 10)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}

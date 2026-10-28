@@ -44,6 +44,8 @@ import type {
   WikiCommunityReport,
   WikiPageVersion,
   WikiPendingPage,
+  WikiPageSummary,
+  WikiPageDetail,
 } from './types'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
@@ -790,6 +792,34 @@ export function startLintJob(projectId: number): Promise<number> {
 
 export function cancelCompileJob(jobId: number): Promise<CompileJob | null> {
   return call<CompileJob | null>({ method: 'CancelCompileJob', args: [jobId] })
+}
+
+// --- Approved wiki browsing (ADR-0032) ----------------------------------------
+// The read side a person uses: the pages that already passed the approval gate.
+//
+// projectId 0 means "no scope" — every approved page, whatever its project.
+// A project id means "that project's pages PLUS the global ones" (ADR-0031),
+// the same visibility rule the AI evidence path applies, so the reader and the
+// answer can never disagree about which pages exist.
+
+// browseWikiPages lists the approved pages, newest first. It is a dedicated
+// list query rather than a search with an empty query: db.SearchWikiPages
+// treats an empty query as "no results" on purpose.
+export function browseWikiPages(projectId: number, limit = 100): Promise<WikiPageSummary[]> {
+  return call<WikiPageSummary[]>({ method: 'BrowseWikiPages', args: [projectId, limit] }).then(d => d ?? [])
+}
+
+// searchWikiPages searches the same visible set through the backend's own
+// retrieval (approved-only, bm25, CJK relaxation) — the one the evidence path
+// uses, so the two surfaces cannot drift apart.
+export function searchWikiPages(projectId: number, query: string, limit = 20): Promise<WikiPageSummary[]> {
+  return call<WikiPageSummary[]>({ method: 'SearchWikiPages', args: [projectId, query, limit] }).then(d => d ?? [])
+}
+
+// getWikiPage returns one approved page in full. The backend refuses a page
+// that is not approved, so this never renders a pending one.
+export function getWikiPage(pageId: number): Promise<WikiPageDetail> {
+  return call<WikiPageDetail>({ method: 'GetWikiPage', args: [pageId] })
 }
 
 // --- Concept merge, community synthesis & page versions -------------------------

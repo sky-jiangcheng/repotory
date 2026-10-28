@@ -184,7 +184,7 @@ func TestEvidencePagesVectorSeedRescue(t *testing.T) {
 	}
 
 	// Precondition: the trigram index genuinely has nothing for this query.
-	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 10); err != nil || len(hits) != 0 {
+	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 0, 10); err != nil || len(hits) != 0 {
 		t.Fatalf("precondition: FTS should miss %q, got %d hits (err %v)", vectorSeedQuery, len(hits), err)
 	}
 
@@ -230,7 +230,7 @@ func TestEvidencePagesGraphHopBeyondVectorRecall(t *testing.T) {
 		seedGraphPage(t, svc, pid, "bei-xuan-"+string(rune('a'+i-1)), "丙备选"+string(rune('A'+i-1)), "丙的内容若干")
 	}
 
-	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 10); err != nil || len(hits) != 0 {
+	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 0, 10); err != nil || len(hits) != 0 {
 		t.Fatalf("precondition: FTS should miss %q, got %d hits (err %v)", vectorSeedQuery, len(hits), err)
 	}
 
@@ -282,7 +282,7 @@ func TestEvidencePagesFTSPrefixPreservedUnderGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 10); err != nil || len(hits) != 1 || hits[0].ID != pageC {
+	if hits, err := db.SearchWikiPages(svc.db, vectorSeedQuery, 0, 10); err != nil || len(hits) != 1 || hits[0].ID != pageC {
 		t.Fatalf("precondition: FTS should return exactly page %d, got %v (err %v)", pageC, hits, err)
 	}
 
