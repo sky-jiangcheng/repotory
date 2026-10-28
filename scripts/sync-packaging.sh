@@ -187,6 +187,61 @@ fi
 
 VERSION="$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')"
 
+# ---------------------------------------------------------------- freshness
+# The manifests carry a sha256 per asset, and brew/scoop HARD-FAIL when the
+# download does not match. So a manifest that still holds an older release's
+# digest is not "slightly wrong" — it is an install path that fails on the
+# user's machine.
+#
+# That is not hypothetical. The digests are filled by the release workflow's
+# fill-sha256 job, which commits the filled manifests back to master. A
+# manual sync run from a checkout that predates that commit publishes the
+# PREVIOUS release's digests, and the tap/bucket then point at artifacts that
+# no longer match what the release serves. (Seen for real on v2.18.0: the
+# first manual sync shipped v2.17.0's digests, and Homebrew would have
+# rejected the download.)
+#
+# So: before pushing, ask the Release API which digests this version
+# actually serves, and refuse to publish anything that is not in that set.
+if [ "$PUSH" -eq 1 ]; then
+  echo "==> checking the manifests against the v${VERSION} release"
+  SUMS="$(mktemp)"
+  trap 'cd "$ROOT" && rm -rf "$WORK" && rm -f "$SUMS"' EXIT
+  if ! curl -fsSL --max-time 60 -H "Accept: application/vnd.github+json" \
+       "https://api.github.com/repos/sky-jiangcheng/repotory/releases/tags/v${VERSION}" \
+     | python3 -c "
+import json, sys
+rel = json.load(sys.stdin)
+assets = rel.get('assets')
+if assets is None:
+    sys.exit('no release found for v%s (message: %s)' % ('${VERSION}', rel.get('message', '?')))
+for a in assets:
+    name, digest = a.get('name', ''), a.get('digest', '')
+    if name and digest.startswith('sha256:'):
+        print(digest[7:])
+" > "$SUMS"; then
+    echo "ERROR: could not read the v${VERSION} release from the GitHub API." >&2
+    echo "       Refusing to push unverified manifests." >&2
+    exit 1
+  fi
+  stale=0
+  for d in $(grep -rhoE '[a-f0-9]{64}' packaging/homebrew packaging/scoop | sort -u); do
+    if ! grep -q "$d" "$SUMS"; then
+      echo "STALE digest in packaging/: $d" >&2
+      stale=1
+    fi
+  done
+  if [ "$stale" -ne 0 ]; then
+    echo "ERROR: packaging/ carries digests that the v${VERSION} release does not serve." >&2
+    echo "       The release workflow fills them in a commit to master — this" >&2
+    echo "       checkout is probably older than that commit. Fix:" >&2
+    echo "         git pull --rebase origin master" >&2
+    echo "         ./scripts/update-manifests.sh --fill-sha256 --from-api" >&2
+    exit 1
+  fi
+  echo "    all packaging/ digests match release v${VERSION}"
+fi
+
 echo "==> diff"
 cd "$CLONE"
 # Stage first: the new repotory.* manifests are UNTRACKED, and a plain
