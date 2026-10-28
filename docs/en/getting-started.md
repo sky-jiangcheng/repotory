@@ -5,128 +5,164 @@ order: 1
 
 # Getting Started
 
-Repotory is a local-first desktop app (Wails v2, a single file with zero runtime dependencies). Its core value is a **cross-agent project memory layer**: it automatically discovers the Git repositories on your machine and quickly captures notes, dependencies, tech stack, and activity information, so you and any AI agent can search and reuse them. The dashboard and statistics are supporting capabilities, not the product's main entry point.
+Repotory is the local-first memory layer and workbench for AI coding agents. Its core value is establishing a **persistent, cross-agent project memory**: it automatically discovers local Git repositories and captures architecture decisions, gotchas, dependencies, and tech stacks, enabling any AI agent to access project context in a single tool call.
 
-## Download and Install
+The project ships as a **multi-artifact suite**. You can choose the entry point that best matches your workflow:
+- **MCP-Only Mode**: No GUI required. Register local memory with Claude Code, Cursor, and Windsurf in a single command.
+- **Desktop Workbench Mode**: A native single-file desktop application (Wails v2 + React 19) offering visual note management, todo tracking, and a human-gated review queue.
 
-The install script sets up both the desktop app and `repotory-mcp` (the MCP server used by AI clients).
+---
 
-### macOS / Linux
+## Quick Access
 
+### Option A: Connect Your AI Agents (Fastest, No GUI Required)
+
+If your daily development revolves around Claude Code, Cursor, or Windsurf in the terminal/IDE, simply install `repotory-mcp` and register it:
+
+```bash
+# 1. Download and install repotory-mcp (macOS / Linux)
+curl -fsSL https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.sh | bash
+
+# 2. Automatically register MCP with installed agents + configure session auto-capture hooks
+node scripts/repotory-init/index.mjs --with-hook
+
+# Or add manually to Claude Code:
+claude mcp add repotory -- "$(which repotory-mcp)"
+```
+
+Once registered, have your agent run `repotory_scan()` once in your project directory to bootstrap the knowledge base.
+
+---
+
+### Option B: Install the Desktop App (GUI Workbench)
+
+If you prefer a visual knowledge base, block-based Markdown editor, and human review queue:
+
+#### macOS / Linux One-Line Script
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.sh | bash
 ```
+> Installs to `/Applications/Repotory.app` on macOS and `/usr/local/bin/repotory` on Linux; also places `repotory-mcp` in your PATH.
 
-On macOS it installs to `/Applications/Repotory.app`, on Linux to `/usr/local/bin/repotory`; both place `repotory-mcp` in `/usr/local/bin`.
-
-### Windows
-
+#### Windows One-Line Script
 ```powershell
 iwr -useb https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.ps1 | iex
 ```
 
-Or download the binary for your platform from [GitHub Releases](https://github.com/sky-jiangcheng/repotory/releases).
+#### Package Managers & Direct Download
+- **Homebrew (macOS)**: `brew install --cask sky-jiangcheng/repo/repotory`
+- **Scoop (Windows)**: `scoop install repo/repotory`
+- **Direct Downloads**: Grab `.dmg` / `.tar.gz` / `.zip` from [GitHub Releases](https://github.com/sky-jiangcheng/repotory/releases).
 
-## First Launch
+---
 
-Launching opens the desktop window directly (a Wails app — no browser needed).
+## First Launch & 5-Minute Walkthrough
 
-The five-minute path — the first two steps are required, the last two only affect dashboard statistics; MCP-only users (no desktop app) can simply have their agent call `repotory_scan` once:
+Launching opens the desktop window directly.
+
+The initial walkthrough is visualised below: the first two steps are required; the remaining two steps are optional enhancements for dashboard metrics. MCP-only users simply have their agent call `repotory_scan`:
 
 ```mermaid
 flowchart TB
-    A["① Configure scan roots<br/>seeded on first launch"] --> B["② Run scan<br/>discover repos · mine knowledge"]
-    E["MCP-only users<br/>agent calls repotory_scan"] -.-> B
-    B --> DONE["✅ Knowledge base ready<br/>notes · search · AI"]
+    A["① Configure scan roots<br/>Seeded on first launch"] --> B["② Run scan<br/>Discover repos · Mine tech stack"]
+    E["MCP-only users<br/>Agent calls repotory_scan"] -.-> B
+    B --> DONE["✅ Knowledge base ready<br/>Notes · Search · AI context injection"]
     B -.-> C["③ Star repos (optional)"]
-    C -.-> D["④ Backfill history (optional)"]
+    C -.-> D["④ Backfill 365-day history (optional)"]
     classDef done fill:#f0fdf4,stroke:#22c55e,color:#14532d
     classDef opt fill:#f8fafc,stroke:#94a3b8,color:#475569
     class DONE done
     class C,D,E opt
 ```
 
-How to read it: the solid path is required; **the boundary between solid and dashed is exactly the "knowledge base is usable" line** — once ② is done, notes / search / AI injection all work (see the callout below), while ③ and ④ only fill in the dashboard and change nothing if you never do them. MCP-only users take the other dashed edge and let the agent complete ① and ② itself.
+> **The boundary between solid and dashed lines marks when the knowledge base is fully usable**: once step ② completes, note-taking, full-text search, and AI context injection are operational. Steps ③ and ④ only enrich dashboard metrics.
 
 ### 1. Configure Scan Directories
 
-On first launch, default scan roots are seeded automatically:
+Default scan roots are seeded automatically on first launch:
 
 | Platform | Default scan scope |
-|------|-------------|
-| macOS | The current user's HOME directory |
-| Linux | The current user's HOME directory |
-| Windows | All drives except C: |
+| :--- | :--- |
+| **macOS** | Current user HOME directory |
+| **Linux** | Current user HOME directory |
+| **Windows** | All drives except C: |
 
-You can change this in **Settings → Scan Directories** (add or remove roots; scan depth 1-2 levels).
+You can add or remove root directories under **Settings → Scan Directories** (supports 1–2 directory depth levels).
 
 ### 2. Run a Scan
 
-Click **Rescan** on the dashboard; the app recursively discovers every Git repository under the scan roots and intelligently groups them into projects by directory.
+Click **Rescan** on the dashboard. The application recursively discovers all Git repositories under your scan roots and groups them intelligently into projects.
 
-> The first scan only registers repositories and projects; it does not pre-scan historical commit data.
->
-> **At this point the knowledge base is already usable**: you can write notes, search, and hand context to AI (`repotory_context` / `repotory_handoff`). The starring and backfill steps below only affect dashboard statistics, not the knowledge base.
+> The initial scan registers repository metadata and tech stacks without scanning historical commits. **The knowledge base is immediately ready to use.**
 
-### 3. Star Repositories (optional, dashboard statistics)
+### 3. Star Repositories (Optional, Dashboard Statistics)
 
-Click the star icon on the dashboard to star the repositories you care about. Once starred, the card shows full statistics (new today / files / repositories / net change / team total).
+Click the star icon on project cards to star repositories you care about. Starred cards display detailed metrics (additions today, file changes, team contributions).
 
-### 4. Backfill History (optional, dashboard statistics)
+### 4. Backfill History (Optional, Dashboard Statistics)
 
-Click the **Backfill History** button on a starred repository card to backfill the last 365 days of daily statistics for that repository (the progress ring and heatmap fill in right away).
+Click **Backfill History** on starred cards to asynchronously fetch the past 365 days of commit activity, populating the progress ring and activity heatmap.
 
 ### 5. Write Your First Knowledge Note
 
-The first four steps only *register* your repositories; what actually makes the knowledge base valuable is leaving behind one note anyone can reuse. Two paths:
+The real power of Repotory comes from saving reusable insights:
+- **Desktop**: Select a project in **Quick create note** on the home page and record gotchas or setup instructions (see [Knowledge Base and Notes](features/knowledge.md));
+- **AI Side**: At session end, calling `repotory_handoff` automatically saves a handoff note, which is pinned to the top of subsequent sessions via `repotory_context` (see [AI Integration](features/ai-integration.md)).
 
-- **Desktop**: pick a project in **Quick create note** on the home page and write down how the project runs and where its gotchas are (see [Knowledge Base and Notes](features/knowledge.md));
-- **AI side**: the session end automatically writes a `handoff` note, which is pinned at the top of the next session's context (see [AI Integration](features/ai-integration.md)).
+### 6. Import Existing Agent Memory (Optional)
 
-## Core Features at a Glance
+If you already have memory logs from Claude, Codex, OpenCode, OpenClaw, or Hermes, you can import them idempotently under **Settings → Plugins**. See [Knowledge Source Import](plugins/overview.md).
 
-| Feature | Tier | Description |
-|------|------|------|
-| Knowledge base | Core | Cross-project note hub: Markdown, tags, pinning, FTS5 full-text search, version history |
-| Repository knowledge mining | Core | Automatically extracts README, tech stack, language breakdown, dependencies, contributors, activity |
-| Project understanding and retrieval | Core | Command palette `⌘/Ctrl+K`, global search, project context navigation |
-| AI integration | Core | llms.txt, note export, MCP server (with agent-score self-check; see [AI Integration](features/ai-integration.md)) |
-| Dashboard | Supporting | Daily goal progress ring, project cards, trend line charts, commit heatmap |
-| Knowledge source import | Built in | Six agent-memory sources imported idempotently; no user script plugins (see [Knowledge Source Import](plugins/overview.md)) |
+---
 
-The diagrams behind each page: the dashboard's page layering is in [Dashboard](features/dashboard.md#page-structure-top-to-bottom), the save-and-version chain of a note is in [Knowledge Base and Notes](features/knowledge.md), and why a knowledge base beats letting AI read git directly is in [Storage Optimization and AI Value](storage-optimization.md#2-advantages-over-reading-git-repositories-directly-with-ai).
+## Core Capability Matrix
+
+| Capability | Tier | Description |
+| :--- | :--- | :--- |
+| **Knowledge Base** | Core | Cross-project note hub: Markdown `/` block editor, tags, pinning, FTS5 full-text search, version history |
+| **Repo Mining** | Core | Automatically extracts README, tech stack (20+ formats), language breakdown, dependencies, contributors |
+| **Project Retrieval** | Core | Global command palette `⌘/Ctrl+K`, global full-text search, fast project context jump |
+| **AI Memory Interfaces** | Core | llms.txt, note export, `repotory-mcp` with 13 tools (including `repotory_context` / `repotory_handoff`) |
+| **Dashboard & Metrics** | Supporting | Daily goal progress ring, project cards, activity trend lines, Git commit heatmap |
+| **Memory Importers** | Built-in | 8 idempotent agent memory importers (see [Knowledge Source Import](plugins/overview.md)) |
+
+---
 
 ## Data and Log Locations
 
+All data is stored locally in a single SQLite database per user:
+
 | Item | macOS | Windows | Linux |
-|------|-------|---------|-------|
-| Database | `~/Library/Application Support/repotory/repotory.db` | `%APPDATA%\repotory\repotory.db` | `~/.config/repotory/repotory.db` |
-| Plugin directory | `…/repotory/plugins/` | `…/repotory\plugins\` | `…/repotory/plugins/` |
-| Logs | `~/Library/Logs/repotory.log` | `%APPDATA%\repotory\logs\repotory.log` | `$XDG_STATE_HOME/repotory/repotory.log` (default `~/.local/state/repotory/`) |
+| :--- | :--- | :--- | :--- |
+| **Database** | `~/Library/Application Support/repotory/repotory.db` | `%APPDATA%\repotory\repotory.db` | `~/.config/repotory/repotory.db` |
+| **Snapshots** | `…/repotory/backups/` (daily backups, 14 kept) | `…/repotory\backups\` | `…/repotory/backups/` |
+| **Logs** | `~/Library/Logs/repotory.log` | `%APPDATA%\repotory\logs\repotory.log` | `$XDG_STATE_HOME/repotory/repotory.log` |
 
-The schema migrates automatically on upgrade; no manual data handling is needed. For detailed troubleshooting, see [Troubleshooting](troubleshooting.md).
+Database schema migrations run automatically during version upgrades. For troubleshooting, see [Troubleshooting](troubleshooting.md).
 
-## Build from Source
+---
 
-**Prerequisites**: Go 1.25+, Node.js 20+; the [Wails CLI](https://wails.io) v2.13+ is optional for development and debugging.
+## Building from Source
+
+Requirements: **Go 1.26+**, **Node.js 20+**, optional [Wails CLI](https://wails.io) v2.13+.
 
 ```bash
-# Install frontend dependencies and build (the output is embedded into the binary via go:embed)
+# 1. Frontend build (assets are embedded into the Go binary)
 cd web && npm install && npm run build && cd ..
 
-# Desktop app
+# 2. Build Desktop App & MCP Server
 go build -ldflags="-s -w" -o repotory .
-
-# MCP server
 go build -o repotory-mcp ./cmd/mcp/
 ```
 
-Development mode: `wails dev` (frontend hot reload + Wails binding injection). Testing: `go test ./...`; frontend `npm test` / `npm run build` (strict tsc checks).
+Dev mode: `wails dev` (desktop hot reload); test suite: `go test ./...`, frontend `npm test && npm run build`.
+
+---
 
 ## Next Steps
 
-- [Data and Backup](data-management.md): backup, migrating to a new machine, reset, and uninstall
-- [Dashboard](features/dashboard.md): goal progress ring, heatmap, project cards, and sorting
-- [Global Search](features/search.md): cross-project search and hot recommendations
-- [Knowledge Base and Notes](features/knowledge.md): the block editor and full-text search
-- [Settings](features/settings.md): scanning, daily code target, appearance, plugins
+- [Data & Backup](data-management.md): Backup strategy, machine migration, and uninstallation
+- [AI Integration](features/ai-integration.md): MCP tool calls and automated session handoffs
+- [Knowledge Base & Notes](features/knowledge.md): Markdown editor and full-text search
+- [Project Details](features/project-detail.md): Repository mining and dependency analysis
+- [Architecture](architecture.md): System layering and data flows

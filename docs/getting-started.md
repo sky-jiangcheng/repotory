@@ -5,39 +5,68 @@ order: 1
 
 # 快速开始
 
-Repotory 是一款本地优先的桌面应用（Wails v2，单文件、零运行时依赖），核心价值是一层**跨 agent 的项目记忆层**：自动发现本机 Git 仓库，快速沉淀笔记、依赖、技术栈与活跃信息，便于你和任何 AI agent 检索复用。仪表盘与统计是支持能力，不是产品主入口。
+Repotory 是面向 AI 编程 Agent 的本地优先记忆层与工作台。其核心价值在于建立**跨 Agent 的持久化项目记忆**：自动发现本机 Git 仓库，沉淀架构决策、避坑记录、依赖与技术栈，让任何 AI Agent 一次工具调用即可接入上下文。
 
-## 下载安装
+本项目提供**多形态产物**，你可以根据实际需要选择最适合的上手方式：
+- **纯 MCP 模式**：无需桌面界面，一条命令为 Claude Code / Cursor / Windsurf 注册本地记忆；
+- **桌面工作台模式**：单文件原生桌面应用（Wails v2 + React 19），提供笔记浏览、待办看板与人机审核队列。
 
-安装脚本会同时装上桌面应用和 `repotory-mcp`（AI 客户端用的 MCP 服务器）。
+---
 
-### macOS / Linux
+## 快速接入
 
+### 方式 A：为 AI Agent 接入记忆（无需桌面应用）
+
+如果你主要在终端或 IDE 里使用 Claude Code、Cursor、Windsurf，只需安装 `repotory-mcp` 并一键注册：
+
+```bash
+# 1. 下载并安装 repotory-mcp（macOS / Linux）
+curl -fsSL https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.sh | bash
+
+# 2. 一键注册 MCP 到所有已安装 Agent 并配置会话自动交接钩子
+node scripts/repotory-init/index.mjs --with-hook
+
+# 或者在 Claude Code 中手动添加：
+claude mcp add repotory -- "$(which repotory-mcp)"
+```
+
+注册完成后，让 Agent 在项目目录下执行一次 `repotory_scan()` 即可完成初始化。
+
+---
+
+### 方式 B：安装桌面应用（GUI 工作台）
+
+如果你希望拥有可视化的知识库管理、Markdown 块编辑器和人机审核队列：
+
+#### macOS / Linux 一键脚本
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.sh | bash
 ```
+> macOS 安装到 `/Applications/Repotory.app`，Linux 安装到 `/usr/local/bin/repotory`；同时都会把 `repotory-mcp` 放入 PATH。
 
-macOS 装到 `/Applications/Repotory.app`，Linux 装到 `/usr/local/bin/repotory`；两者都会把 `repotory-mcp` 放进 `/usr/local/bin`。
-
-### Windows
-
+#### Windows 一键脚本
 ```powershell
 iwr -useb https://raw.githubusercontent.com/sky-jiangcheng/repotory/master/scripts/install.ps1 | iex
 ```
 
-或从 [GitHub Releases](https://github.com/sky-jiangcheng/repotory/releases) 下载对应平台的二进制文件。
+#### 包管理器与二进制直接下载
+- **Homebrew (macOS)**：`brew install --cask sky-jiangcheng/repo/repotory`
+- **Scoop (Windows)**：`scoop install repo/repotory`
+- **二进制下载**：访问 [GitHub Releases](https://github.com/sky-jiangcheng/repotory/releases) 下载 `.dmg` / `.tar.gz` / `.zip`
 
-## 首次启动
+---
 
-启动后直接打开桌面窗口（Wails 应用，无需浏览器）。
+## 首次启动与五分钟上手
 
-五分钟上手路径如下——前两步必做，后两步只影响仪表盘统计；纯 MCP 用户（不装桌面应用）可以让 agent 直接调一次 `repotory_scan`：
+打开桌面应用后即可直接进入工作台。
+
+上手流转图如下：前两步为核心必须，后两步为可选的统计拓展；纯 MCP 用户只需让 Agent 调用 `repotory_scan` 即可完成：
 
 ```mermaid
 flowchart TB
-    A["① 配置扫描目录<br/>首次启动已播种"] --> B["② 执行扫描<br/>发现仓库 · 挖掘知识"]
-    E["纯 MCP 用户<br/>agent 调 repotory_scan"] -.-> B
-    B --> DONE["✅ 知识库已可用<br/>写笔记 · 搜索 · AI 注入"]
+    A["① 配置扫描目录<br/>首次启动已自动播种"] --> B["② 执行扫描<br/>发现仓库 · 挖掘技术栈"]
+    E["纯 MCP 用户<br/>Agent 调 repotory_scan"] -.-> B
+    B --> DONE["✅ 知识库即刻可用<br/>写笔记 · 搜索 · AI 上下文注入"]
     B -.-> C["③ 收藏仓库（可选）"]
     C -.-> D["④ 回填 365 天历史（可选）"]
     classDef done fill:#f0fdf4,stroke:#22c55e,color:#14532d
@@ -46,97 +75,94 @@ flowchart TB
     class C,D,E opt
 ```
 
-读图：实线路径是必做的；**实线与虚线的分界就是“知识库可用”的边界**——② 走完，笔记 / 搜索 / AI 注入就全部可用（见下方提示框），而 ③ ④ 只把仪表盘统计填满，不做任何事它们也照样能用。纯 MCP 用户走另一条虚线，让 agent 自己完成 ①②。
+> **实线与虚线的分界就是「知识库可用」的边界**：第 ② 步完成，笔记、全文搜索、AI 会话注入即全部可用。第 ③ ④ 步仅为丰富仪表盘统计，不影响核心功能。
 
 ### 1. 配置扫描目录
 
 首次启动会自动播种默认扫描根目录：
 
 | 平台 | 默认扫描范围 |
-|------|-------------|
-| macOS | 当前用户 HOME 目录 |
-| Linux | 当前用户 HOME 目录 |
-| Windows | 除 C: 盘外的所有磁盘 |
+| :--- | :--- |
+| **macOS** | 当前用户 HOME 目录 |
+| **Linux** | 当前用户 HOME 目录 |
+| **Windows** | 除 C: 盘外的所有磁盘 |
 
-可在 **设置 → 扫描目录** 中修改（支持添加 / 移除，扫描深度 1-2 级）。
+可在 **设置 → 扫描目录** 中自由增删根目录（支持 1-2 级扫描深度）。
 
 ### 2. 执行扫描
 
-仪表盘点击 **重新扫描**，应用递归发现扫描根下的所有 Git 仓库并按目录智能分组为项目。
+在工作台点击 **重新扫描**（Rescan），应用将递归发现根目录下的所有 Git 仓库并智能识别分组。
 
-> 首次扫描仅登记仓库与项目，不预扫历史提交数据。
->
-> **到这一步知识库已经可用**：可以写笔记、搜索、交给 AI（`repotory_context` / `repotory_handoff`）。下面的收藏与回填只影响仪表盘统计，不影响知识库。
+> 首次扫描仅登记仓库元数据与技术栈，不预扫历史提交数据。**到这一步知识库已全面可用**。
 
 ### 3. 收藏仓库（可选，仪表盘统计）
 
-在仪表盘中点击星标收藏关注的仓库。收藏后卡片展示完整统计（今日新增 / 文件 / 仓库数 / 净增 / 团队总量）。
+在工作台点击星标收藏你重点关注的仓库，卡片将展示完整统计（今日新增、文件变动、团队贡献等）。
 
 ### 4. 回填历史数据（可选，仪表盘统计）
 
-在收藏的仓库卡片上点击 **刷新历史** 按钮，回填该仓库近 365 天的每日统计数据（进度环与热力图随即填充）。
+在已收藏的仓库卡片上点击 **刷新历史**，将异步回填近 365 天的每日提交统计，热力图与进度环随之点亮。
 
 ### 5. 沉淀第一条知识笔记
 
-前四步只是把仓库“登记”进来；让知识库真正开始有价值的，是留下一条谁都能复用的笔记。两条路径：
+让本地知识库发挥最大价值的关键，是记录一条对后续会话有价值的知识：
+- **桌面端**：首页 **快速创建笔记** 选定项目，记录运行方式或关键坑点（详见[知识库与笔记](features/knowledge.md)）；
+- **AI 侧**：会话结束时调用 `repotory_handoff` 自动生成交接笔记，下一次会话启动时由 `repotory_context` 自动顶置读取（详见[AI 集成](features/ai-integration.md)）。
 
-- **桌面端**：首页 **快速创建笔记** 选项目，写下“这个项目怎么跑起来的 / 坑在哪”（见[知识库](features/knowledge.md)）；
-- **AI 侧**：会话结束自动写入 `handoff` 笔记，下一个会话开头自动置顶（见[AI 集成](features/ai-integration.md)）。
+### 6. 导入现有的 Agent 记忆（可选）
 
-### 6. 导入已有的 agent 记忆（可选）
+如果你已在 Claude / Codex / OpenCode / OpenClaw / Hermes 中积累了记忆文件，支持一键无缝导入。在 **设置 → 插件** 中即可按需触发导入。详见[知识源导入](plugins/overview.md)。
 
-如果你在 Claude / Codex / OpenCode / OpenClaw / Hermes 里已经攒过记忆或会话记录，可以直接导成知识笔记，不用手抄。**设置 → 插件** 里能看到全部 5 个源：
+---
 
-- `claude` 记忆默认随应用启动自动导入，无需手动操作；
-- 其余四个源在 **设置 → 插件** 逐个点击触发，每次会显示 `新增 / 更新 / 跳过` 三个数字；
-- `openclaw` 与 `hermes` 导入前需先指定归属项目（否则会全部计为“跳过”）。
+## 核心能力矩阵速览
 
-建议在第 3 步扫描完成之后再做这步 —— 导入靠项目名匹配归属，项目先入库了命中率才高。详见[知识源导入](plugins/overview.md)。
+| 功能模块 | 定级 | 说明 |
+| :--- | :--- | :--- |
+| **知识库** | 核心 | 跨项目笔记中心：Markdown `/` 块编辑器、标签、置顶、FTS5 全文搜索、版本历史 |
+| **仓库深度挖掘** | 核心 | 自动提取 README 摘要、技术栈识别（20+ 格式）、语言占比、依赖关系、贡献者 |
+| **项目理解与检索** | 核心 | 全局快捷键 `⌘/Ctrl+K`、全局全文搜索、项目上下文直达 |
+| **AI 记忆接口** | 核心 | llms.txt、笔记导出、`repotory-mcp` 13 个 MCP 工具（含 `repotory_context` / `repotory_handoff`） |
+| **仪表盘与统计** | 支持 | 每日目标进度环、项目卡片、趋势折线图、Git 提交热力图 |
+| **内置记忆导入源** | 内置 | 8 个 Agent 记忆源幂等导入（详见[知识源导入](plugins/overview.md)） |
 
-## 核心功能速览
+---
 
-| 功能 | 定位 | 说明 |
-|------|------|------|
-| 知识库 | 核心 | 跨项目笔记中心：Markdown、标签、置顶、FTS5 全文搜索、版本历史 |
-| 仓库知识挖掘 | 核心 | 自动提取 README、技术栈、语言占比、依赖、贡献者、活跃度 |
-| 项目理解与检索 | 核心 | 命令面板 `⌘/Ctrl+K`、全局搜索、项目上下文跳转 |
-| AI 集成 | 核心 | llms.txt、笔记导出、MCP server（含 agent-score 自检，见[AI 集成](features/ai-integration.md)） |
-| 仪表盘 | 支持 | 每日目标进度环、项目卡片、趋势折线图、提交热力图 |
-| 知识源导入 | 内置 | 8 个 agent 记忆源幂等导入，无用户脚本插件（见[知识源导入](plugins/overview.md)） |
+## 数据与日志路径
 
-各页展开的图：仪表盘的页面分层见[仪表盘](features/dashboard.md#页面结构自上而下)，笔记的保存与版本链路见[知识库](features/knowledge.md)，知识库为何比 AI 直读 git 更划算见[存储结构优化与 AI 价值](storage-optimization.md#二比-ai-直接读-git-仓库的优势)。
-
-## 数据与日志位置
+所有数据统一保存在当前用户本地目录下的单一 SQLite 文件中：
 
 | 内容 | macOS | Windows | Linux |
-|------|-------|---------|-------|
-| 数据库 | `~/Library/Application Support/repotory/repotory.db` | `%APPDATA%\repotory\repotory.db` | `~/.config/repotory/repotory.db` |
-| 插件目录 | `…/repotory/plugins/` | `…/repotory\plugins\` | `…/repotory/plugins/` |
-| 日志 | `~/Library/Logs/repotory.log` | `%APPDATA%\repotory\logs\repotory.log` | `$XDG_STATE_HOME/repotory/repotory.log`（默认 `~/.local/state/repotory/`） |
+| :--- | :--- | :--- | :--- |
+| **主数据库** | `~/Library/Application Support/repotory/repotory.db` | `%APPDATA%\repotory\repotory.db` | `~/.config/repotory/repotory.db` |
+| **自动备份快照** | `…/repotory/backups/`（每日快照，保留 14 份） | `…/repotory\backups\` | `…/repotory/backups/` |
+| **运行日志** | `~/Library/Logs/repotory.log` | `%APPDATA%\repotory\logs\repotory.log` | `$XDG_STATE_HOME/repotory/repotory.log` |
 
-升级时 schema 自动迁移，数据无需手工处理。详细排障见[故障排查](troubleshooting.md)。
+系统内嵌自动迁移逻辑，版本升级无需人工干预。排障请参考[故障排查](troubleshooting.md)。
+
+---
 
 ## 从源码构建
 
-**前置要求**：Go 1.25+、Node.js 20+；开发调试可选 [Wails CLI](https://wails.io) v2.13+。
+环境要求：**Go 1.26+**、**Node.js 20+**；桌面调试可选 [Wails CLI](https://wails.io) v2.13+。
 
 ```bash
-# 前端依赖与构建（产物被 go:embed 进二进制）
+# 1. 前端构建（产物经 go:embed 嵌入二进制）
 cd web && npm install && npm run build && cd ..
 
-# 桌面应用
+# 2. 构建桌面端应用与独立 MCP 服务
 go build -ldflags="-s -w" -o repotory .
-
-# MCP server
 go build -o repotory-mcp ./cmd/mcp/
 ```
 
-开发模式：`wails dev`（前端热更新 + Wails 绑定注入）。测试：`go test ./...`；前端 `npm test` / `npm run build`（tsc 严格检查）。
+本地联调模式：`wails dev`（桌面前端热更新）；测试全家桶：`go test ./...`，前端 `npm test && npm run build`。
+
+---
 
 ## 下一步
 
-- [数据与备份](data-management.md)：备份、换机迁移、重置与卸载
-- [仪表盘](features/dashboard.md)：目标进度环、热力图、项目卡片与排序
-- [全局搜索](features/search.md)：跨项目检索与热门推荐
-- [知识库与笔记](features/knowledge.md)：块编辑器与全文搜索
-- [设置](features/settings.md)：扫描、标准、外观、插件
+- [数据与备份](data-management.md)：备份策略、跨机器迁移与卸载指南
+- [AI 集成](features/ai-integration.md)：MCP 工具调用与会话自动交接
+- [知识库与笔记](features/knowledge.md)：Markdown 编辑器与全文搜索
+- [项目详情](features/project-detail.md)：仓库挖掘与依赖分析
+- [架构设计](architecture.md)：系统分层与数据流
