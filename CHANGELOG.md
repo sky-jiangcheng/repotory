@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-10-28
+
 ### 新增
 
 - **异盘副本：把每日快照复制到用户指定的第二块盘（L3，ADR-0025 决策 6，默认关）**：L1 的快照与活库**同盘**——2026-10-14 事故的代价正来自「数据只在一块盘上」；L2 远端推送是服务器的正解，但要对象存储加两份凭据，插了块移动硬盘的人不该先搭一套对象存储才拿得到第二份。新增一个键 `backup_copy_dir`（留空 = 完全关闭：不建目录、不写文件、不探测），每日本地快照生成后把**快照副本**复制到该目录（外置盘 / NAS / 同步目录都行）。三条承诺与 L1/L2 同源：**默认关**；**复制即校验**（副本发布前用 `VerifySnapshot` 验「是不是能打开的库」，验不过就不发布——恢复不了的副本比没有副本更危险，因为它让你以为「我还有备份」）；**日期即幂等键**（当天已有可读副本即跳过，小时级 ticker 每天只干一次实事）。目标目录是**用户的**目录：轮转只删**整名**匹配 `repotory-YYYY-MM-DD.db` 的文件（`repotory-notes.db` 这种只是长得像的绝不动），副本 0600，先写同目录临时文件 → fsync → 校验 → 原子 rename 发布。复制在后台执行并带 5 分钟上限——僵死的网络挂载不能卡住备份 ticker（本地快照此时已成功，只丢副本）。
@@ -484,7 +486,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.16.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.17.0...HEAD
+[2.17.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.13.1...v2.14.0
