@@ -1,0 +1,186 @@
+/* HandoffComposer styles — 组件独占样式。
+   边界判据：
+   - 所有类只被 HandoffComposer.tsx 引用。
+   - `.form-input` / `.form-select` 是 inputs.css 共享族成员，markup 保留全局类名；
+     module 只叠加组件自有规则，共享族的 padding/border/focus 环继续生效。
+   - 覆盖共享族时用 doubled 选择器（.x.x），保证在产物级联顺序（设计系统 CSS 排在
+     路由 chunk 之后）下仍然生效 —— 理由见 CommandPalette.module.css 开头说明。 */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 1100;
+}
+
+.dialog {
+  position: fixed;
+  z-index: 1101;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(600px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.close:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.required {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.project.project {
+  width: 100%;
+}
+
+/* The summary is the one field the backend cannot do without, so it is the
+   only one that gets the larger box and the default focus. */
+.summary.summary {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.6;
+}
+
+.sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.sectionInput.sectionInput {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  line-height: 1.6;
+  font-size: 12px;
+}
+
+.note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-danger);
+}
+
+.empty {
+  margin: 0;
+  padding: 12px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+
+.footHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .sections {
+    grid-template-columns: 1fr;
+  }
+}

@@ -182,6 +182,7 @@ var bindingSurfaces = map[string]BindingSurface{
 	"PreviewKnowledgeImport":     {SurfaceDesktopOnly, "", "read-only dry-run of one import; same human opt-in surface as the trigger it previews (ADR-0011 privacy gate)"},
 	"TriggerAllKnowledgeImports": {SurfaceDesktopOnly, "", "batch import of other tools' memory files; same per-click consent as the single-source triggers"},
 	"ImportClaudeMemory":         {SurfaceDesktopOnly, "", "reads another tool's memory files off disk; the explicit per-click consent is the point (ADR-0011 decision 4)"},
+	"CreateHandoff":              {SurfaceMCPBacked, "repotory_handoff", ""},
 	"CaptureClaudeHandoff":       {SurfaceDesktopOnly, "", "reads another tool's session transcript; consent is per-click in settings"},
 	"ListRecentHandoffs":         {SurfaceDesktopOnly, "", "memory-ring chrome: content-free entries, reading a handoff stays behind notes_read"},
 	"LatestHandoff":              {SurfaceDesktopOnly, "", "IDE status chrome: timestamp/title only by design, the body belongs to the knowledge reader"},

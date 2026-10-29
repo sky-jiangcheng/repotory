@@ -4,13 +4,13 @@ title: Repotory 文档
 
 # Repotory 文档
 
-<p class="subtitle"><strong>The local-first memory layer for AI coding agents</strong> — discover your Git repos, understand what changed, capture knowledge as searchable Markdown, and hand it to any agent in one tool call.<br><strong>本地优先的跨 agent 项目记忆层</strong>：自动发现本地 Git 项目，理解每个项目「现在发生了什么、沉淀了哪些知识」，并在会话边界自动注入与收回，让任何 agent 复用同一份项目上下文。</p>
+<p class="subtitle"><strong>The local-first memory layer for AI coding agents</strong> — discover your Git repos, understand what changed, capture knowledge as searchable Markdown, and hand it to any agent in one tool call.<br><strong>面向 AI 编程 Agent 的本地优先记忆层</strong>：自动发现本地 Git 项目，理解每个项目「现在发生了什么、沉淀了哪些知识」，并在会话边界自动注入与收回，让任何 agent 复用同一份项目上下文。</p>
 
 <!--NAV_LINKS-->
 
 ## 产品定位
 
-Repotory 的核心价值是：**让本地 Git 项目从‘散落在终端和记忆里’变成‘可检索、可复用的上下文’**。
+Repotory 是**面向 AI 编程 Agent 的本地优先记忆层**：把 agent 记住的东西留在本机，让下一个 agent 接着用——核心价值是**让本地 Git 项目从'散落在终端和记忆里'变成'可检索、可复用的上下文'**。
 
 当前优先级声明：
 1. **本地项目理解与知识上下文** 是第一优先级
@@ -78,7 +78,7 @@ flowchart TB
 
     subgraph AGENT["🤖 AI Agent —— 工具面调用"]
         direction LR
-        MCP["repotory-mcp<br/>13 个工具"]
+        MCP["repotory-mcp<br/>18 个工具"]
         DSH["dsh 插件<br/>3 个工具"]
         LLMSTXT["llms.txt 导出"]
         MCP ~~~ DSH ~~~ LLMSTXT

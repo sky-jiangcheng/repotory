@@ -1,6 +1,6 @@
 # Repotory for JetBrains
 
-**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This plugin puts it where you work: a **Repotory** tool window that searches your notes and todos, expands what you find in full, and opens the result in the Repotory web UI.
+**The local-first memory layer for AI coding agents.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This plugin puts it where you work: a **Repotory** tool window that searches your notes and todos, expands what you find in full, and opens the result in the Repotory web UI.
 
 One build covers the whole IntelliJ family — it declares `com.intellij.modules.platform`, so IntelliJ IDEA, PyCharm, WebStorm, GoLand and the rest all install the same zip.
 

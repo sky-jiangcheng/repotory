@@ -41,6 +41,12 @@ type HandoffInput struct {
 	NextSteps []string
 	// Tags appends user-supplied tags to the reserved "handoff" tag.
 	Tags string
+	// Source records who wrote the handoff. Empty means "an agent pushed it
+	// over MCP" — the path the session protocol defines — so it only has to be
+	// set when the writer is something else (a person in the desktop app).
+	// Filing a hand-written handoff as "mcp" would make the note claim a
+	// provenance it does not have.
+	Source string
 	// WorkspacePath is the directory the session was working in (an IDE workspace
 	// folder or an agent cwd). Optional. When it resolves inside a scanned
 	// repository, the note is attributed to that repository in note_repositories —
@@ -76,7 +82,11 @@ func (s *Service) CreateHandoffNote(in HandoffInput) (*HandoffResult, error) {
 		tags = tags + ", " + extra
 	}
 
-	note, err := s.CreateNoteWithMeta(in.ProjectID, title, renderHandoffMarkdown(in, summary), tags, "knowledge", "mcp")
+	source := strings.TrimSpace(in.Source)
+	if source == "" {
+		source = "mcp"
+	}
+	note, err := s.CreateNoteWithMeta(in.ProjectID, title, renderHandoffMarkdown(in, summary), tags, "knowledge", source)
 	if err != nil {
 		return nil, err
 	}

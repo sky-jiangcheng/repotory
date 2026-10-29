@@ -10,7 +10,7 @@ title: Repotory Documentation
 
 ## Product Positioning
 
-The core value of Repotory: **turning local Git projects from things scattered across terminals and memory into searchable, reusable context**.
+The core value of Repotory: it is **the local-first memory layer for AI coding agents** — it keeps what your agents learned on your machine so the next agent can pick it up, turning local Git projects from things scattered across terminals and memory into searchable, reusable context.
 
 Current priorities:
 
@@ -79,7 +79,7 @@ flowchart TB
 
     subgraph AGENT["🤖 AI agent — tool surface"]
         direction LR
-        MCP["repotory-mcp<br/>13 tools"]
+        MCP["repotory-mcp<br/>18 tools"]
         DSH["dsh plugin<br/>3 tools"]
         LLMSTXT["llms.txt export"]
         MCP ~~~ DSH ~~~ LLMSTXT

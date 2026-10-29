@@ -1,6 +1,6 @@
 # Repotory for VS Code
 
-**Your local knowledge base, inside your IDE.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This extension surfaces it where you work: load a project's full session context, write a structured handoff when you stop, browse your captured knowledge in a built-in reader, and search everything you ever captured, without leaving VS Code.
+**The local-first memory layer for AI coding agents.** Repotory keeps what your coding agents learn — why a decision was made, what gotcha you hit, what to do next — in a local, searchable store. This extension surfaces it where you work: load a project's full session context, write a structured handoff when you stop, browse your captured knowledge in a built-in reader, and search everything you ever captured, without leaving VS Code.
 
 One VSIX covers the whole fork family — **VS Code, Cursor and Windsurf**.
 

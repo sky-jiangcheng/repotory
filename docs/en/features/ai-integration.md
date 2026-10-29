@@ -9,7 +9,7 @@ Repotory provides read channels and self-check tools for AI agents, all reusing 
 
 ## Value proposition: Repotory is a data source for AI, not an AI platform
 
-**Repotory does not host models, does not hold API keys on your behalf, and ships no agent orchestration.** More precisely: it is the **data foundation** — it models raw git information into a structured, indexable, materializable local knowledge base (see [Storage Optimization and AI Value](../storage-optimization.md)); AI tools (Claude Code / Cursor, etc.) **consume** this layer of data through the 13 MCP tools, fetching on demand and searching precisely.
+**Repotory does not host models, does not hold API keys on your behalf, and ships no agent orchestration.** More precisely: it is the **data foundation** — it models raw git information into a structured, indexable, materializable local knowledge base (see [Storage Optimization and AI Value](../storage-optimization.md)); AI tools (Claude Code / Cursor, etc.) **consume** this layer of data through the 18 MCP tools, fetching on demand and searching precisely.
 
 For the argument for why this layer is better than letting AI read git directly, see [Storage Optimization and AI Value](../storage-optimization.md).
 
@@ -65,6 +65,23 @@ Default-on for semantic search and the ADR-0018 lane 2 graph-aware evidence gate
 
 Gate thresholds: M3 default-on needs hybrid−lexical recall@10 gain ≥ 0.05; M7 Lane 2 graph-aware evidence needs a positive evidence+graph vs evidence delta, plus the `page#N` vs `note#N` mixing regression.
 
+### Cross-session memory gate (handoff gate)
+
+There is exactly one hard PMF signal: **can it remember last week's gotcha across sessions?** That had only a qualitative "the handoff lands first" behind it; now there is a repeatable command:
+
+```bash
+go run ./cmd/abeval -mode handoff -k 10
+```
+
+It needs no labelled set: the probes are derived mechanically from the handoffs already in your library — the first line with content, taken in the order gotcha → decision → change → next step → summary, clipped to one query's length. So "what was recorded at the time" is generated, not written by hand. It reports two things:
+
+- **Reachability (hard gate)**: every recorded handoff must be findable within the top-k of the **production retrieval path** (`svc.SearchAll` — the function behind all five frontend search entry points, the MCP `repotory_notes_search` / `repotory_ask` tools, and the HTTP `/api/search?all=1` endpoint). Not found = `GATE FAIL`.
+- **First-position hit rate (`repotory_context`)**: for each project it renders the context an agent actually receives and checks whether the first entry under "## Knowledge Notes" is the newest handoff, printing `context lead rate: N/M project(s)`. This is a **wiring check**, not a quality score.
+
+It also prints `hit@1 / recall@k / ndcg@k` (one row for the lexical arm, one for the hybrid arm). **Those numbers are reported, never gated**: a probe is a verbatim fragment of what was recorded, so a high hit rate is structural — at personal-library scale it measures reachability, not answer quality. Measuring answer quality still needs the hand-labelled query set.
+
+The gate runs against a throwaway copy too, so it never touches your database.
+
 ## AI Q&A: how it gathers evidence now
 
 The floating-ball panel on the project detail page has an AI Q&A tab (since v1.15.1 it lives in the panel rather than the page header, sharing the shell and project selector with the logging tab).
@@ -95,7 +112,7 @@ go build -o repotory-server ./cmd/server
 - For browser development use `bash scripts/dev.sh`: it starts the headless API (default 18765) *and* Vite. Running `npx vite` alone yields a page that loads but 502s every request — that is a missing backend, not a broken app.
 - **Release assets contain only**: the desktop installers (4 platforms), `repotory-mcp-<platform>`, and the VS Code VSIX. `repotory-server`, `cmd/vector-init`, `cmd/abeval`, `cmd/repotory-capture` and `cmd/wiki-export` (the read-only wiki export) must be built yourself (`go build` / `go run`); they are not distributed with releases.
 
-MCP is the only AI execution interface (the `repotory` CLI is not shipped with releases). stdio protocol, the database is opened once per process, 13 tools (including 4 write operations: scan + note create/update + session handoff):
+MCP is the only AI execution interface (the `repotory` CLI is not shipped with releases). stdio protocol, the database is opened once per process, 18 tools (including 4 write operations: scan + note create/update + session handoff):
 
 The two ends of the session memory protocol, in sequence:
 
@@ -116,6 +133,8 @@ sequenceDiagram
 
 How to read it: the protocol has exactly **two entry calls** (`repotory_context` to open a session, `repotory_handoff` to close it) and one guarantee in between — a handoff note is written once, tagged `handoff`, and `repotory_notes_update` refuses to overwrite it, so the next session always reads the same record at the top of its context.
 
+A **fully offline local model** (ollama / LM Studio) speaks the same MCP; the wiring steps and the recorded real-machine verification are in the [Local Agent Recipe](local-agent-recipe.md).
+
 | Tool | Description | Read/Write |
 |------|-------------|------------|
 | `repotory_scan` | Cold start: seeds the default scan roots and scans them synchronously, discovering local Git repositories (works with a pure MCP install, no desktop app needed) | Write |
@@ -126,11 +145,16 @@ How to read it: the protocol has exactly **two entry calls** (`repotory_context`
 | `repotory_notes_read` | Read a note by ID | Read |
 | `repotory_notes_create` | Create a new knowledge note | Write |
 | `repotory_notes_update` | Update note content and metadata (partial update; refuses to overwrite `handoff` protocol notes) | Write |
+| `repotory_notes_organize` | Ask the configured AI to restructure one note into clean Markdown (same facts, better structure; a table-of-contents when the note grew sections, a mermaid flowchart when the content is a process). **Returns a proposal only** (title/tags/content) — nothing is saved; review it, then persist with `repotory_notes_update`. Requires a configured AI endpoint | Read (proposal) |
 | `repotory_projects_list` | All projects | Read |
 | `repotory_projects_stats` | Project statistics (by id) | Read |
 | `repotory_ask` | Q&A-style retrieval, top-5 text results | Read |
+| `repotory_wiki_search` | Search **approved** knowledge pages (concepts/entities/syntheses/sources). With a query, pages rank by relevance (FTS5, CJK-tolerant); with an empty query, the newest pages are listed. `project_id` / `path` scopes to one project. Unapproved pages are never returned | Read |
+| `repotory_wiki_read` | Read one approved page in full: body + outgoing links + incoming links + the notes it was compiled from | Read |
 | `repotory_agent_score` | Check local AI readiness (DB / notes / search / MCP / llms.txt / SKILL.md / i18n) | Read |
 | `repotory_integrity` | Audit data trustworthiness (FTS index drift / orphan rows / cache freshness / coverage) | Read |
+| `repotory_ai_audit` | Show what this machine sent to an AI recently: time / endpoint / model / surface (mcp/http/desktop) / characters / whether a local rule blocked it. **Prompts and replies are not included** — the audit trail stores a hash and a size | Read |
+| `repotory_ai_review_rules` | Show the local AI review rules and the input/output review switches. Rules are the user's own regexes (one per line, `#` for comments), matched before sending and on arrival; no built-in blocklist | Read |
 
 ### Readiness vs. data trustworthiness
 

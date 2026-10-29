@@ -6,7 +6,7 @@ Repotory（原 RepoNest）：本地优先的代码项目知识库。Go + Wails �
 
 1. **[TODO.md](TODO.md)** — 未完成事项 + 现状速查（品牌/版本/schema/近期大项）
 2. **[CONTRIBUTING.md](CONTRIBUTING.md)** — 架构约定、命名分层、范围冻结、提交规范
-3. **[docs/adr/index.md](docs/adr/index.md)** — 33 份架构决策（每份含背景/决策/代价）
+3. **[docs/adr/index.md](docs/adr/index.md)** — 架构决策记录（每份含背景/决策/代价，编号连续递增）
 4. **[CHANGELOG.md](CHANGELOG.md)** — 近期版本明细；v1.15.1 及更早在 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)
 5. **[outputs/](outputs/)** — 过程报告归档（P35 迁移清单、知识图谱实施计划、评估稿）
 

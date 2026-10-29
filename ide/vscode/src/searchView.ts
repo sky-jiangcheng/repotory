@@ -106,7 +106,7 @@ type ViewMessage =
 
 // The promo line under the wordmark. It is the only marketing copy in the
 // product surface, and it says what the knowledge base actually holds.
-const TAGLINE = "Your local knowledge base — every decision, gotcha and next step your agents captured.";
+const TAGLINE = "The local-first memory layer for AI coding agents";
 
 const KINDS = ["knowledge", "log", "idea", "other"];
 

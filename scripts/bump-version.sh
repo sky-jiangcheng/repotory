@@ -7,6 +7,12 @@
 #   - ide/vscode/package.json    (the extension follows the app version — 2b)
 #   - ide/jetbrains/build.gradle.kts (the plugin follows the app version — 2c)
 #   - internal/version/version.go                     (const Version, also overridable via ldflags at CI build time)
+#   - TODO.md                     (the "current state" version line — 3c)
+#
+# TODO.md is the one copy that used to drift: it carried a hand-written version
+# that stayed a release behind (v2.18.0 while the app shipped v2.19.0) because
+# nothing mechanical touched it. scripts/check-version-drift.mjs now fails CI
+# when the two disagree, so this line has to move with every bump.
 #
 # Usage:
 #   ./scripts/bump-version.sh 1.5.4
@@ -164,12 +170,30 @@ fi
 #    Ruby + JSON rewriting rules live in exactly one place.
 ./scripts/update-manifests.sh
 
+# 4b. TODO.md 现状速查的版本行.
+#
+#     Only the "版本 **vX.Y.Z**" token on the "- 品牌 **Repotory**" line is
+#     rewritten. TODO.md also mentions older versions in historical narrative
+#     ("随 v2.15.0 发布改为…"), and those must stay in the past — so the
+#     pattern is anchored on the wording, not on a bare version number.
+if [ -f TODO.md ]; then
+  TODO_HITS=$(grep -c '版本 \*\*v[0-9]' TODO.md || true)
+  if [ "$TODO_HITS" -ne 1 ]; then
+    echo "ERROR: TODO.md has $TODO_HITS lines matching '版本 **vN', expected 1." >&2
+    echo "       Refusing to rewrite — the pattern would hit the wrong line." >&2
+    exit 1
+  fi
+  update_file "TODO.md" \
+    '(版本 \*\*v)[0-9]+\.[0-9]+\.[0-9]+(\*\*)' \
+    "\1$VERSION\2"
+fi
+
 # 5. docs 站版本徽章随生成脚本读取 web/package.json，无需手工更新：
 #    node scripts/build-docs.mjs
 
 echo
 echo "Done. Verify with:"
-echo "  grep -rn '$VERSION' wails.json web/package.json web/package-lock.json internal/version/version.go ide/vscode/package.json ide/jetbrains/build.gradle.kts packaging/ docs/index.html"
+echo "  grep -rn '$VERSION' wails.json web/package.json web/package-lock.json internal/version/version.go ide/vscode/package.json ide/jetbrains/build.gradle.kts packaging/ TODO.md docs/index.html"
 echo "  go build ./... && (cd web && npm run build)"
 echo
 echo "Then commit & tag:"

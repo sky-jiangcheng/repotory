@@ -4,7 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 const callMock = vi.fn()
 vi.mock('./transport', () => ({ call: (...args: unknown[]) => callMock(...args) }))
 
-import { listRecentHandoffs } from './memoryEndpoints'
+import { listRecentHandoffs, createHandoff } from './memoryEndpoints'
 
 beforeEach(() => {
   callMock.mockReset()
@@ -28,5 +28,31 @@ describe('memory endpoint routing contract', () => {
       expect.objectContaining({ method: 'ListRecentHandoffs', args: [10] }),
     )
     expect(got).toEqual([])
+  })
+
+  it('createHandoff routes to the CreateHandoff binding with every section', async () => {
+    await createHandoff(7, {
+      summary: 'shipped the composer',
+      changes: ['added the dialog'],
+      gotchas: ['the palette overlay traps fixed children'],
+    })
+    expect(callMock).toHaveBeenCalledWith({
+      method: 'CreateHandoff',
+      args: [
+        7,
+        'shipped the composer',
+        ['added the dialog'],
+        [],
+        ['the palette overlay traps fixed children'],
+        [],
+      ],
+    })
+  })
+
+  it('createHandoff sends empty arrays for the sections the caller omitted', async () => {
+    await createHandoff(1, { summary: 'only a summary' })
+    expect(callMock).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'CreateHandoff', args: [1, 'only a summary', [], [], [], []] }),
+    )
   })
 })

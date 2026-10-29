@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Icon from '../components/Icon'
+import HandoffComposer from '../components/HandoffComposer'
 import {
   listRecentHandoffs,
   getProjects,
@@ -22,6 +23,13 @@ export default function Home() {
   const [entries, setEntries] = useState<HandoffEntry[] | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
+  const [composerOpen, setComposerOpen] = useState(false)
+
+  const loadHandoffs = useCallback(() => {
+    listRecentHandoffs(10)
+      .then(r => setEntries(r ?? []))
+      .catch(() => setEntries([]))
+  }, [])
 
   useEffect(() => {
     document.title = 'Home - Repotory'
@@ -29,13 +37,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false
-    listRecentHandoffs(10)
-      .then(r => {
-        if (!cancelled) setEntries(r ?? [])
-      })
-      .catch(() => {
-        if (!cancelled) setEntries([])
-      })
+    loadHandoffs()
 
     getProjects(undefined, false)
       .then(p => {
@@ -56,7 +58,7 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadHandoffs])
 
   const starredOrTopProjects = projects
     .filter(p => p.is_starred)
@@ -79,6 +81,19 @@ export default function Home() {
           <h2>{t('home.ringTitle', { defaultValue: '记忆环' })}</h2>
           <p className={s.ringSub}>{t('home.ringSub', { defaultValue: '最近的会话交接' })}</p>
         </div>
+
+        {/* The zero-config entry into the session loop: write one handoff by
+            hand. The agent half of the protocol needs an MCP client, a model
+            and a client that remembers to call the tool — none of which a
+            first-time user has. */}
+        <button
+          type="button"
+          className={`${s.ringWrite} btn btn-secondary btn-sm`}
+          onClick={() => setComposerOpen(true)}
+        >
+          <Icon name="plus" size={12} />
+          {t('home.writeHandoff', { defaultValue: '写一条交接' })}
+        </button>
 
         {entries === null ? null : entries.length === 0 ? (
           <p className={s.ringEmpty}>
@@ -114,6 +129,15 @@ export default function Home() {
           <span className={s.searchEntryHint}>{t('search:homeEntryHint', { defaultValue: '笔记 · 待办 · 项目' })}</span>
         </Link>
       </section>
+
+      <HandoffComposer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onCreated={() => {
+          loadHandoffs()
+          pushToast({ kind: 'success', title: t('handoff.saved', { defaultValue: '交接已写入' }) })
+        }}
+      />
 
       {/* Interactive AI Knowledge Dialogue Workbench */}
       <section className={s.chatArea} aria-label={t('home.assistantTitle', { defaultValue: '知识库智能对话' })}>

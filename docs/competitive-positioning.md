@@ -30,9 +30,9 @@
 | 核心问题 | 单 agent 长任务 token 膨胀、跨会话个性化 | 跨工具上下文蒸发：Claude 写的交接，Cursor 直接读 |
 | 记忆形成 | LLM 全自动提炼：L0 对话 → L1 原子 → L2 场景 → L3 画像；工具日志 → Mermaid 符号 | 结构化录入 + 仓库挖掘：handoff 模板、笔记、todo、扫描、知识图谱（关系八型/社区摘要） |
 | 运行依赖 | Node ≥22.16 + 常驻 Gateway + **必须 LLM API key** | 单 Go 二进制、零 CGO、**离线零 LLM**（语义检索可选、默认关，过 `abeval` 门才开） |
-| 接入面 | OpenClaw / Hermes 插件（纯 agent 侧） | MCP 13 工具 + 桌面 GUI + VS Code 扩展 + llms.txt，**人可直接读写** |
+| 接入面 | OpenClaw / Hermes 插件（纯 agent 侧） | MCP 工具集 + 桌面 GUI + VS Code 扩展 + llms.txt，**人可直接读写** |
 | 存储 | DB（底层证据）+ Markdown 文件（顶层结构）双层 | 单 SQLite（FTS5 + sqlite-vec）单一事实源，一次备份迁移全部带走 |
-| 可信度建设 | 公开 benchmark（token −61.38%、通过率 +51.52%、PersonaMem 48→76%） | 版本快照、`repotory_integrity` 六项审计、可逆 schema 迁移、21 份 ADR、评测门控 |
+| 可信度建设 | 公开 benchmark（token −61.38%、通过率 +51.52%、PersonaMem 48→76%） | 版本快照、`repotory_integrity` 六项审计、可逆 schema 迁移、ADR 全量留档（见 [adr/index.md](adr/index.md)）、评测门控 |
 | 生态规模 | 大厂背书、20k+ star、Discord、npm 分发 | 小众单人维护，有 Homebrew/Scoop 发布链 |
 
 ## 三、Repotory 的差异化支柱（对方未覆盖）

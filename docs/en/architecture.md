@@ -131,7 +131,7 @@ flowchart TB
     end
     subgraph AGENT[🤖 AI agent user — tool surface]
         direction LR
-        MCP[repotory-mcp · 13 MCP tools]
+        MCP[repotory-mcp · 18 MCP tools]
         DSH[dsh Harness plugin · llms.txt]
     end
     subgraph CORE[🧠 Local knowledge base — single source of truth]

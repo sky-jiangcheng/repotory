@@ -235,6 +235,31 @@ func TestCreateHandoffNoteValidationAndTemplate(t *testing.T) {
 	}
 }
 
+// A handoff written by a person in the desktop app must not be filed as if an
+// agent pushed it over MCP. The default stays "mcp" because that is the
+// protocol path every existing caller uses.
+func TestCreateHandoffNoteRecordsTheActualSource(t *testing.T) {
+	s, _ := setupService(t)
+	pid := seedProject(t, s.db, "demo", "/home/me/demo")
+
+	res, err := s.CreateHandoffNote(HandoffInput{
+		ProjectID: pid,
+		Summary:   "wrote it by hand",
+		Changes:   []string{"added the composer"},
+		Source:    "desktop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := db.GetNoteByID(s.db, res.NoteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Source != "desktop" {
+		t.Errorf("source = %q, want %q", note.Source, "desktop")
+	}
+}
+
 func TestNoteAndHandoffWriteBounds(t *testing.T) {
 	s, _ := setupService(t)
 	pid := seedProject(t, s.db, "demo", "/home/me/demo")

@@ -20,6 +20,28 @@ flowchart TB
 
 How to read it: the box in the middle is the **single source of truth** — the desktop app writes it, the AI side reads the same database, and backup / migration / reset are all just a copy or a deletion of it. That is also where this page's two constraints come from: the database runs in WAL mode (copying it while the app is running can lose un-flushed `-wal` content, so **quit the app before backing up**), and scan roots are stored as **absolute paths** (after migrating machines you must change them to the new paths in Settings).
 
+## Boundary: this library belongs to one person
+
+Repotory's knowledge base is **single-user and local**: one data directory, one SQLite file, one person. There are no accounts, no server and no multi-tenancy.
+
+**Out of scope**:
+
+- **Sharing one live library across devices** — it is a SQLite file, not a sync service
+- **Several people editing the same knowledge** — no permission model, no conflict resolution, no arbitration over who changed what
+- **Hosted accounts and cloud storage** — knowledge stays on your machine unless you configure the L2 remote push yourself
+
+This is scope freeze, not unfinished work (see [ADR-0006](adr/0006-scope-freeze.md)): sharing one library means concurrent writes, permissions and conflict resolution — a different product from "local-first, zero services".
+
+**If what you want lives somewhere else, take one of these paths**:
+
+| What you want | How to get there |
+|---|---|
+| The same library on another machine | Keep a copy with the L3 off-disk copy (a synced directory / NAS) or the L2 remote push, then follow [Migrating to a New Machine](#migrating-to-a-new-machine) on the new machine |
+| Two machines moving forward separately, reconciled occasionally | One library each; export the notes and import them when you want to merge |
+| One shared knowledge base for a team | Do not share this library — it is a personal memory layer, and team knowledge belongs in documents |
+
+In one line: Repotory is about **what your agents remember for you**, not about **a team's knowledge base**.
+
 ## Where the Data Lives
 
 | Item | Location |

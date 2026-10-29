@@ -45,6 +45,15 @@
   color: var(--text-muted);
 }
 
+/* The zero-config entry into the session loop. It sits between the ring head
+   and the entries so it is reachable whether the ring is empty or not. */
+.ringWrite {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .ringEmpty {
   flex: 1;
   min-width: 0;

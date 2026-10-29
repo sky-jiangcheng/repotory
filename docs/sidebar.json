@@ -62,6 +62,11 @@
           "label_en": "AI Integration (CLI/MCP/llms.txt)"
         },
         {
+          "file": "features/local-agent-recipe",
+          "label": "本地 Agent 配方（全离线）",
+          "label_en": "Local Agent Recipe (Fully Offline)"
+        },
+        {
           "file": "plugins/overview",
           "label": "插件手册",
           "label_en": "Plugins"

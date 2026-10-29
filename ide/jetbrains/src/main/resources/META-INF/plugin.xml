@@ -24,6 +24,8 @@
          a required property of a valid plugin), and Marketplace shows it to
          the user, so it says what the plugin actually does. -->
     <description><![CDATA[
+        The local-first memory layer for AI coding agents.
+
         Search your Repotory knowledge base from inside the IDE and read the
         result in full, without leaving the editor.
 

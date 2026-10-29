@@ -4,6 +4,7 @@ import { getProjects, searchAll, captureClaudeHandoff, SearchHit } from '../api/
 import { useTranslation } from 'react-i18next'
 import DOMPurify from 'dompurify'
 import { useApiData } from '../hooks/useApiData'
+import HandoffComposer from './HandoffComposer'
 import s from './CommandPalette.module.css'
 
 interface Props {
@@ -28,6 +29,11 @@ export default function CommandPalette({ open, onClose }: Props) {
   // handoff is reachable from the keyboard without leaving the palette.
   const [handoffMode, setHandoffMode] = useState(false)
   const [handoffMsg, setHandoffMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // The manual composer lives beside the palette, not inside it: the palette's
+  // overlay carries a backdrop-filter, which makes it the containing block for
+  // fixed-position descendants, and a dialog anchored to the overlay would
+  // scroll with it instead of the viewport.
+  const [composerOpen, setComposerOpen] = useState(false)
   // All-projects list for the quick-jump suggestions, shared with NoteSection
   // via the same cache key so only one request is ever made.
   const { data: projectsData } = useApiData(() => getProjects(undefined, false), [], { cacheKey: 'projects:all' })
@@ -77,11 +83,15 @@ export default function CommandPalette({ open, onClose }: Props) {
     return projects.filter(p => p.name.toLowerCase().includes(q)).slice(0, 5)
   }, [projects, query])
 
-  // The memory-ring action sits at index 0 of the idle (empty-query) list:
-  // ADR-0017 附录 4 「Command Palette 首位动作改为新建 handoff」.
-  const showHandoffAction = !handoffMode && !query.trim()
+  // The handoff actions sit at the top of the idle (empty-query) list:
+  // ADR-0017 附录 4 「Command Palette 首位动作改为新建 handoff」. Two of them
+  // now — writing one by hand needs nothing configured, while the Claude
+  // capture needs the CLI AND the `claude_session_capture` gate (default off),
+  // so the manual one comes first and the capture second.
+  const showHandoffActions = !handoffMode && !query.trim()
+  const actionCount = showHandoffActions ? 2 : 0
 
-  const totalItems = (showHandoffAction ? 1 : 0) + hits.length + filteredProjects.length
+  const totalItems = actionCount + hits.length + filteredProjects.length
   const activeId = totalItems > 0 ? `cmdk-opt-${activeIndex}` : undefined
 
   // Keep the active option in view as the user navigates with the arrow keys,
@@ -114,9 +124,10 @@ export default function CommandPalette({ open, onClose }: Props) {
       if (p) runCapture(p.id)
       return
     }
-    if (showHandoffAction) {
-      if (index === 0) { setHandoffMode(true); setActiveIndex(0); return }
-      index -= 1
+    if (showHandoffActions) {
+      if (index === 0) { onClose(); setComposerOpen(true); return }
+      if (index === 1) { setHandoffMode(true); setActiveIndex(0); return }
+      index -= 2
     }
     if (index < hits.length) {
       const h = hits[index]
@@ -140,9 +151,9 @@ export default function CommandPalette({ open, onClose }: Props) {
     }
   }
 
-  if (!open) return null
-
   return (
+    <>
+    {open && (
     <div className={s.cmdkOverlay} onClick={onClose} tabIndex={-1}>
       <div
         className={s.cmdk}
@@ -170,30 +181,54 @@ export default function CommandPalette({ open, onClose }: Props) {
           {handoffMode && filteredProjects.length > 0 && (
             <div className={s.cmdkGroup}>{t('commandPalette.pickProject', { defaultValue: '选择要捕捉的项目' })}</div>
           )}
-          {(handoffMode ? filteredProjects.length === 0 : hits.length === 0 && filteredProjects.length === 0) && (
-            <div className={s.cmdkEmpty}>{query.trim() ? t('commandPalette.noResults', { defaultValue: 'No results' }) : t('commandPalette.startSearch', { defaultValue: 'Start searching' })}</div>
+          {totalItems === 0 && (
+            <div className={s.cmdkEmpty}>
+              {handoffMode
+                ? t('commandPalette.noProjectsToCapture', { defaultValue: '没有可选的项目' })
+                : query.trim()
+                  ? t('commandPalette.noResults', { defaultValue: 'No results' })
+                  : t('commandPalette.startSearch', { defaultValue: 'Start searching' })}
+            </div>
           )}
-          {showHandoffAction && (
-            <button
-              type="button"
-              id="cmdk-opt-0"
-              role="option"
-              aria-selected={activeIndex === 0}
-              tabIndex={-1}
-              className={`${s.cmdkItem} ${activeIndex === 0 ? s.cmdkItemActive : ''}`}
-              onMouseEnter={() => setActiveIndex(0)}
-              onClick={() => { setHandoffMode(true); setHits([]); setActiveIndex(0) }}
-            >
-              <span className={`${s.cmdkType} ${s.cmdkTypeNote}`}>{t('commandPalette.newHandoffMark', { defaultValue: '新建' })}</span>
-              <div className={s.cmdkItemBody}>
-                <div className={s.cmdkItemTitle}>{t('commandPalette.newHandoff', { defaultValue: '新建 handoff' })}</div>
-                <div className={s.cmdkItemSub}>{t('commandPalette.newHandoffHint', { defaultValue: '捕捉最近的 Claude 会话为交接笔记' })}</div>
-              </div>
-            </button>
+          {showHandoffActions && (
+            <>
+              <button
+                type="button"
+                id="cmdk-opt-0"
+                role="option"
+                aria-selected={activeIndex === 0}
+                tabIndex={-1}
+                className={`${s.cmdkItem} ${activeIndex === 0 ? s.cmdkItemActive : ''}`}
+                onMouseEnter={() => setActiveIndex(0)}
+                onClick={() => { onClose(); setComposerOpen(true) }}
+              >
+                <span className={`${s.cmdkType} ${s.cmdkTypeNote}`}>{t('commandPalette.newHandoffMark', { defaultValue: '新建' })}</span>
+                <div className={s.cmdkItemBody}>
+                  <div className={s.cmdkItemTitle}>{t('commandPalette.newHandoff', { defaultValue: '新建 handoff' })}</div>
+                  <div className={s.cmdkItemSub}>{t('commandPalette.newHandoffHint', { defaultValue: '手动写下这次会话的交接' })}</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                id="cmdk-opt-1"
+                role="option"
+                aria-selected={activeIndex === 1}
+                tabIndex={-1}
+                className={`${s.cmdkItem} ${activeIndex === 1 ? s.cmdkItemActive : ''}`}
+                onMouseEnter={() => setActiveIndex(1)}
+                onClick={() => { setHandoffMode(true); setHits([]); setActiveIndex(0) }}
+              >
+                <span className={`${s.cmdkType} ${s.cmdkTypeTodo}`}>{t('commandPalette.captureHandoffMark', { defaultValue: '捕捉' })}</span>
+                <div className={s.cmdkItemBody}>
+                  <div className={s.cmdkItemTitle}>{t('commandPalette.captureHandoff', { defaultValue: '捕捉 Claude 会话' })}</div>
+                  <div className={s.cmdkItemSub}>{t('commandPalette.captureHandoffHint', { defaultValue: '把最近的 Claude 会话转成交接笔记' })}</div>
+                </div>
+              </button>
+            </>
           )}
           {hits.length > 0 && <div className={s.cmdkGroup}>{t('commandPalette.groupNotes')}</div>}
           {hits.map((h, i) => {
-            const idx = i + (showHandoffAction ? 1 : 0)
+            const idx = i + actionCount
             return (
             <Link
               key={`${h.type}-${h.id}`}
@@ -215,7 +250,7 @@ export default function CommandPalette({ open, onClose }: Props) {
             )
           })}
           {filteredProjects.map((p, i) => {
-            const idx = hits.length + (showHandoffAction ? 1 : 0) + i
+            const idx = hits.length + actionCount + i
             if (handoffMode) {
               return (
                 <button
@@ -269,5 +304,10 @@ export default function CommandPalette({ open, onClose }: Props) {
         </div>
       </div>
     </div>
+    )}
+    {/* The composer outlives the palette: picking "write a handoff" closes the
+        palette, and a composer mounted inside it would unmount with it. */}
+    <HandoffComposer open={composerOpen} onClose={() => setComposerOpen(false)} />
+    </>
   )
 }

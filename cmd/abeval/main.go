@@ -14,10 +14,16 @@
 //	    (1-hop expansion + PPR on), over wiki_pages + project_notes.
 //	    cases: {"query": "...", "relevant": [{"type":"page","id":3},...]}
 //
+//	-mode handoff (TODO 2.1 度量口径)
+//	    the cross-session memory gate: derives one probe per recorded handoff
+//	    and measures whether the next session can still find it, plus whether
+//	    repotory_context opens with the newest handoff. No -cases file.
+//
 // Usage:
 //
 //	abeval -mode notes    -cases queries.jsonl -k 10 -min-recall 0.05
 //	abeval -mode evidence -cases queries.evidence.jsonl -k 10 -min-recall 0.05
+//	abeval -mode handoff -k 10
 //
 // Both gates run on a throwaway copy of the database, never the live one. The
 // notes gate's hybrid arm needs the embedding endpoint configured
@@ -51,12 +57,18 @@ type labeledCase struct {
 func main() {
 	platform.SetPrivateUmask()
 
-	mode := flag.String("mode", "notes", "gate to run: notes (M3 semantic) | evidence (M7 graph-aware)")
-	casesPath := flag.String("cases", "", "path to labeled queries.jsonl (required)")
+	mode := flag.String("mode", "notes", "gate to run: notes (M3 semantic) | evidence (M7 graph-aware) | handoff (cross-session memory)")
+	casesPath := flag.String("cases", "", "path to labeled queries.jsonl (required for notes/evidence)")
 	k := flag.Int("k", 10, "cutoff for recall@k / ndcg@k")
 	minRecall := flag.Float64("min-recall", 0.05, "required recall@k gain (candidate-baseline) to pass the gate")
 	dbPath := flag.String("db", "", "database path (default: the app's DB)")
 	flag.Parse()
+
+	// The handoff gate derives its own cases from the database, so it needs no
+	// -cases file. Dispatch it before the -cases requirement.
+	if *mode == "handoff" {
+		os.Exit(runHandoffGate(*dbPath, *k))
+	}
 
 	if *casesPath == "" {
 		log.Fatal("abeval: -cases is required")
@@ -69,7 +81,7 @@ func main() {
 		os.Exit(runEvidenceGate(*casesPath, *dbPath, *k, *minRecall))
 	}
 	if *mode != "notes" {
-		log.Fatalf("abeval: unknown -mode %q (want notes|evidence)", *mode)
+		log.Fatalf("abeval: unknown -mode %q (want notes|evidence|handoff)", *mode)
 	}
 
 	cases, err := loadCases(*casesPath)

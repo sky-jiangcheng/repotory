@@ -186,7 +186,7 @@ class RepotoryPanel : JPanel(), Disposable {
         val name = JLabel("Repotory")
         name.font = name.font.deriveFont(Font.BOLD, JBUI.scale(15f))
         name.foreground = BRAND_INK
-        val tagline = ElidingLabel("Your local knowledge base — decisions, gotchas, next steps")
+        val tagline = ElidingLabel("The local-first memory layer for AI coding agents")
         tagline.font = tagline.font.deriveFont(JBUI.scale(11f))
         tagline.foreground = BRAND_INK_SOFT
         text.add(name)

@@ -100,12 +100,13 @@ node scripts/check-i18n-keys.mjs    # locale 词条覆盖守卫（key 缺失 / �
 ## 提交与版本
 
 - 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)（`feat:` / `fix:` / `docs:` / `refactor:` …），scope 用受影响的域（如 `feat(server):`、`fix(kb):`）
-- 版本号 SSOT 是 `wails.json` 的 `info.productVersion`，用 `scripts/bump-version.sh` 同步到 `web/package.json`、`internal/version` 与文档站徽章，不要手改散点
+- 版本号 SSOT 是 `wails.json` 的 `info.productVersion`，用 `scripts/bump-version.sh` 同步到 `web/package.json`、`internal/version`、两个 IDE 分发面、包管理器清单与 `TODO.md` 的现状速查，不要手改散点。**「不要手改散点」靠 CI 兜底**：`node scripts/check-version-drift.mjs`（CI `version-drift` job）从 SSOT 重新算一遍，任何一处抄写没跟上就报红
+- **计数型事实不要抄写**：ADR 份数、MCP 工具数这类会随开发变化的数字，写「见 `docs/adr/index.md`」这类指向事实源的链接，而不是把数字抄进正文——抄进去的那个数字下次就会过期
 - 面向用户的变更请同步更新 [CHANGELOG.md](CHANGELOG.md) 的 `[Unreleased]` 条目与对应手册页（`docs/**/*.md` 是唯一内容源，`docs/**/*.html` 是构建产物，**不要手改**）
 
 ## PR 检查清单
 
-- [ ] `go test ./...`、`npm test`、`npm run build` 全绿；`node scripts/check-docs-mirror.mjs`（双语文档 1:1 镜像守卫，CI `docs-mirror` job）与 `node scripts/check-i18n-keys.mjs`（locale 词条覆盖守卫，CI `i18n-keys` job）通过
+- [ ] `go test ./...`、`npm test`、`npm run build` 全绿；`node scripts/check-docs-mirror.mjs`（双语文档 1:1 镜像守卫，CI `docs-mirror` job）、`node scripts/check-i18n-keys.mjs`（locale 词条覆盖守卫，CI `i18n-keys` job）与 `node scripts/check-version-drift.mjs`（版本/计数漂移守卫，CI `version-drift` job）通过
 - [ ] 不触碰范围冻结与冻结标识（或已在 Issue/ADR 中说明理由）
 - [ ] 绑定面变更已同步 API 参考；用户可见变更已更新手册与 CHANGELOG
 - [ ] 新增依赖有明确理由（本项目依赖极简：wails、mcp-go、minio-go、chromem-go、modernc sqlite）

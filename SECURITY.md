@@ -6,8 +6,8 @@
 
 | 版本 | 受支持 |
 |------|--------|
-| 2.15.x | ✅ 是 |
-| < 2.15  | ❌ 否 |
+| 当前版本线（见 `wails.json` 的 `info.productVersion`） | ✅ 是 |
+| 更早的版本 | ❌ 否 |
 
 ## 报告漏洞
 
@@ -57,7 +57,7 @@ Repotory 在开发中遵循以下安全原则：
 
 ## 依赖安全
 
-仓库启用 Dependabot 每周扫描 Go modules 与 npm 依赖，发现漏洞会自动创建 PR。请及时合并相关升级。
+仓库启用 Dependabot 每月扫描 Go modules、npm 依赖与 GitHub Actions，发现漏洞会自动创建 PR。请及时合并相关升级。
 
 ### 远程访问安全
 

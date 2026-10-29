@@ -452,6 +452,29 @@ func (a *App) ImportClaudeMemory() (*service.ImportResult, error) {
 	return a.svc.ImportClaudeMemory()
 }
 
+// CreateHandoff writes a structured session handoff from the desktop UI.
+//
+// It is the zero-config half of the session protocol (ADR-0007): the same
+// record the agent path writes via repotory_handoff, entered by a person.
+// The trial path matters because the agent path needs an MCP client, a model
+// and a client that remembers to call the tool — three things a person
+// evaluating the product on day one does not have.
+//
+// Each section is one bullet per line; blank lines are dropped by the
+// service. Summary is required, and so is at least one of the four sections
+// (the same contract the MCP tool enforces).
+func (a *App) CreateHandoff(projectID int64, summary string, changes, decisions, gotchas, nextSteps []string) (*service.HandoffResult, error) {
+	return a.svc.CreateHandoffNote(service.HandoffInput{
+		ProjectID: projectID,
+		Summary:   summary,
+		Changes:   changes,
+		Decisions: decisions,
+		Gotchas:   gotchas,
+		NextSteps: nextSteps,
+		Source:    "desktop",
+	})
+}
+
 // ListRecentHandoffs returns the first-screen memory ring's recent handoffs
 // (content-free entries, newest first; D25). Desktop-only: the ring is the
 // human entry point, agents read via repotory_notes_read / repotory_context.

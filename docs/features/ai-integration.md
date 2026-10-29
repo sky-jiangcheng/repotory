@@ -9,7 +9,7 @@ Repotory 面向 AI 代理提供读取通道与自检工具，全部复用同一 
 
 ## 价值定位：Repotory 是 AI 的数据源，而非 AI 平台
 
-**Repotory 不托管模型、不代持密钥、不自带 agent 编排。** 更准确地说：它是**数据底座**——把 git 原始信息建模成结构化、可索引、可物化的本地知识库（详见[存储结构优化与 AI 价值](../storage-optimization.md)）；AI 工具（Claude Code / Cursor 等）通过 MCP 的 13 个工具来**消费**这层数据，按需取数、精确检索。
+**Repotory 不托管模型、不代持密钥、不自带 agent 编排。** 更准确地说：它是**数据底座**——把 git 原始信息建模成结构化、可索引、可物化的本地知识库（详见[存储结构优化与 AI 价值](../storage-optimization.md)）；AI 工具（Claude Code / Cursor 等）通过 MCP 的 18 个工具来**消费**这层数据，按需取数、精确检索。
 
 这一层「为什么比让 AI 直接读 git 更优」的论证，见[存储结构优化与 AI 价值](../storage-optimization.md)。
 
@@ -65,6 +65,23 @@ Repotory 面向 AI 代理提供读取通道与自检工具，全部复用同一 
 
 门禁阈值：M3 语义检索默认上线要求 hybrid−lexical recall@10 增益 ≥ 0.05；M7 Lane 2 图感知取证要求 evidence+graph 相对 evidence 的 delta 为正，并附带 `page#N` vs `note#N` 串号专项回归。
 
+### 跨会话记忆门禁（handoff 门）
+
+「产品有没有 PMF」只有一个硬指标：**跨会话能不能记住上周的 gotcha**。这条口径此前只有一句定性的「首条命中」，现在有一条可复跑的命令：
+
+```bash
+go run ./cmd/abeval -mode handoff -k 10
+```
+
+它不需要标注集：探针由库里的历史 handoff **机械派生**——按 gotcha → decision → change → next step → summary 的顺序取第一条有内容的行，截成一句查询那么长。所以「当时记的是什么」是生成的，不靠人编。产出两件事：
+
+- **可达性（硬门）**：每条记过的 handoff 都必须能被**生产检索路径**（`svc.SearchAll`——前端五个搜索入口、MCP `repotory_notes_search` / `repotory_ask`、HTTP `/api/search?all=1` 走的那一条）在 top-k 内找回。找不回来 = `GATE FAIL`。
+- **首位命中率（`repotory_context`）**：逐个项目渲染 agent 真正拿到的那份上下文，检查「## Knowledge Notes」下的第一条是不是最新的那条 handoff，输出 `context lead rate: N/M project(s)`。这是**接线检查**，不是质量分。
+
+同时打印 `hit@1 / recall@k / ndcg@k`（词法臂、混合臂各一行）。**这几个数只报不卡**：探针是记过内容的原文片段，命中率高是结构性的——在个人库这个量级上它衡量的是「可达」，不是「答得准」。要衡量答得准，仍然需要那份人工标注的 query 集。
+
+工具同样走一次性副本，不动真库。
+
 ## AI 问答：现在怎么取证
 
 项目详情页的悬浮球面板里有 AI 问答 tab（v1.15.1 起从详情页头部并入面板，与「记录」共享外壳与项目选择器）。
@@ -97,7 +114,7 @@ go build -o repotory-server ./cmd/server
 
 ## MCP Server（`repotory-mcp`）
 
-MCP 是唯一的 AI 执行接口（`repotory` CLI 未随版本发布）。stdio 协议，进程内单次开库，13 个工具（含 4 个写操作：扫描 + 笔记创建/更新 + 会话交接）：
+MCP 是唯一的 AI 执行接口（`repotory` CLI 未随版本发布）。stdio 协议，进程内单次开库，18 个工具（含 4 个写操作：扫描 + 笔记创建/更新 + 会话交接）：
 
 会话记忆协议的两端在时序上是这样落位的：
 
@@ -118,6 +135,8 @@ sequenceDiagram
 
 读图：整个协议只有**两个入口调用**——开会话 `repotory_context`、收会话 `repotory_handoff`，中间的工作期走的是普通读写工具。两条关键保证：交接笔记**写入一次即带 `handoff` 标签**，且 `repotory_notes_update` 拒绝覆盖它（所以下一个会话读到的始终是同一条记录，置顶渲染）；落库走的是统一模板，不是自由文本。
 
+**完全离线的本地模型**（ollama / LM Studio）接的是同一套 MCP，接线步骤与真机验证记录见[本地 Agent 配方](local-agent-recipe.md)。
+
 | 工具 | 说明 | 读写 |
 |------|------|------|
 | `repotory_scan` | 冷启动：播种默认扫描根目录并同步扫描，发现本地 Git 仓库（纯 MCP 安装可用，无需桌面应用） | 写 |
@@ -128,11 +147,16 @@ sequenceDiagram
 | `repotory_notes_read` | 按 ID 读笔记 | 读 |
 | `repotory_notes_create` | 新建知识笔记 | 写 |
 | `repotory_notes_update` | 更新笔记内容与元数据（部分更新；拒绝覆盖 `handoff` 协议笔记） | 写 |
+| `repotory_notes_organize` | 让已配置的 AI 把一篇笔记重排成干净 Markdown（同一批事实、更好的结构；长了给目录、是流程给 mermaid）。**只返回提案**（title/tags/content），不落库——审阅后自行用 `repotory_notes_update` 保存。需先配置 AI 端点 | 读（提案） |
 | `repotory_projects_list` | 全部项目 | 读 |
 | `repotory_projects_stats` | 项目统计（按 id） | 读 |
 | `repotory_ask` | 问答式检索，Top-5 文本 | 读 |
+| `repotory_wiki_search` | 检索**已批准**的知识页（概念/实体/综述/来源）。带 query 按相关度排序（FTS5，容中文），空 query 列出最新页；`project_id` / `path` 可限定项目。未批准的页面永不返回 | 读 |
+| `repotory_wiki_read` | 完整读取一页已批准知识页：正文 + 出链页 + 入链页 + 编译来源笔记 | 读 |
 | `repotory_agent_score` | 检查本地 AI 就绪度（DB/笔记/搜索/MCP/llms.txt/SKILL.md/i18n） | 读 |
 | `repotory_integrity` | 审计数据可信度（FTS 索引漂移 / 孤儿行 / 缓存新鲜度 / 覆盖率） | 读 |
+| `repotory_ai_audit` | 查看本机最近向 AI 发了什么：时间 / 端点 / 模型 / 发起面（mcp/http/desktop）/ 字符数 / 是否被本地规则拦截。**不含提示词与回复原文**（审计只存哈希与长度） | 读 |
+| `repotory_ai_review_rules` | 查看本地 AI 审阅规则与输入/输出审阅开关。规则是用户自己的正则（每行一条，`#` 注释），命中即在发出前拦截/返回时标记；不内置黑名单 | 读 |
 
 ### 就绪度 vs 数据可信度
 

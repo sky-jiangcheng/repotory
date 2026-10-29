@@ -155,6 +155,36 @@ jobs:
       - name: Check the manifests
         run: ./scripts/check-packaging-manifests.sh
 
+  # ------------------------------------------------------------ 版本漂移 ----
+  # The version and a few counts are stated in a dozen places. They used to be
+  # kept in sync by hand, and the hand-sync did not survive: TODO.md still said
+  # v2.18.0 after v2.19.0 shipped, SECURITY.md promised weekly Dependabot
+  # scans while dependabot.yml ran monthly, AGENTS.md counted "33 ADRs" that
+  # stopped being 33 the moment the next one landed. "Remember to update it"
+  # does not survive two release rounds.
+  #
+  # So the rule here is: derived facts are derived (this job recomputes them
+  # from the source of truth instead of comparing two hand-written copies),
+  # facts that cannot be derived are not written down (AGENTS.md and
+  # SECURITY.md now point at the source instead of repeating it), and whatever
+  # is left is a hard gate. scripts/bump-version.sh now moves TODO.md's version
+  # line together with the manifests, and this job fails if it did not.
+  version-drift:
+    name: Version & count drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+
+      - name: Check version & count drift
+        run: node scripts/check-version-drift.mjs
+
   # ------------------------------------------------------------- Icons ----
   # The brand mark lives once (build/icon.svg); every shipped icon — the
   # Wails appicon, the Windows .ico, the VS Code extension icon and the docs
