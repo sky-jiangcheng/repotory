@@ -155,7 +155,7 @@ func main() {
 	}
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
-	svc := service.New(database, "searchbench", nil)
+	svc := service.New(database, "searchbench")
 
 	queries := make([]string, len(cases))
 	for i, c := range cases {

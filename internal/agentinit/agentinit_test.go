@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -165,9 +166,12 @@ func TestRegisterInstallsHookOnce(t *testing.T) {
 	if string(content) != hookScript {
 		t.Errorf("hook script content differs:\n%s", content)
 	}
+	// The exec bit is how the hook is made runnable on POSIX; on Windows the
+	// script runs through the shell configured in settings.json, and the mode
+	// argument to WriteFile is ignored, so there is no bit to assert.
 	if info, err := os.Stat(scriptPath); err != nil {
 		t.Fatal(err)
-	} else if info.Mode().Perm()&0o100 == 0 {
+	} else if runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
 		t.Errorf("hook script is not executable (mode %v)", info.Mode().Perm())
 	}
 

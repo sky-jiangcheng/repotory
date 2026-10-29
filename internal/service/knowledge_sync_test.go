@@ -132,7 +132,7 @@ func TestRunKnowledgeSync(t *testing.T) {
 	rt.RegisterSourceManual(undetected.name, undetected)
 	rt.RegisterSourceManual(broken.name, broken)
 
-	svc := NewWithDeps(database, &fakeGit{ranges: map[string][]stats.DailyEntry{}}, rt, "me", nil)
+	svc := NewWithDeps(database, &fakeGit{ranges: map[string][]stats.DailyEntry{}}, rt, "me")
 	// The fake names are not registered config keys (only the built-in eight
 	// are), so write the rows directly — syncSourceEnabled reads the same path.
 	for _, name := range []string{enabled.name, undetected.name, broken.name} {

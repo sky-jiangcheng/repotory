@@ -16,6 +16,11 @@
 // （sidebar.json 的 11 页手册 + adr/index），是研究性/内部审查稿，按仓库惯例只出中文。
 // 新增这类文档时，把它的相对路径加进白名单并附一行理由注释，别让守卫误报。
 //
+// 第三棵树：blog/*.html ↔ blog/en/*.html。这些是杂志风单文件交付物（手写 HTML，
+// 不是构建产物），不进手册，但同样会漂——第一篇（ADR-0009 博客化）在品牌改名两年后
+// 仍写着旧名与已不存在的旧路径，而没有任何门看得见。规则与上面同形：中文交付物
+// 必须有英文 twin，反之亦然。
+//
 // 运行：node scripts/check-docs-mirror.mjs
 // 结果：全部 1:1 → exit 0；发现缺失/游离 → 打印清单并 exit 1。
 
@@ -38,14 +43,18 @@ const ZH_ONLY = [
 
 // 递归列出目录下所有 .md（相对 baseDir 的 posix 风格路径）。
 function listMarkdown(dir, baseDir) {
+  return listFiles(dir, baseDir, '.md')
+}
+
+function listFiles(dir, baseDir, ext) {
   const out = []
   if (!existsSync(dir)) return out
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     const st = statSync(full)
     if (st.isDirectory()) {
-      out.push(...listMarkdown(full, baseDir))
-    } else if (name.endsWith('.md')) {
+      out.push(...listFiles(full, baseDir, ext))
+    } else if (name.endsWith(ext)) {
       out.push(relative(baseDir, full).split('\\').join('/'))
     }
   }
@@ -78,17 +87,35 @@ for (const rel of enSource) {
   if (!zhSource.includes(rel)) issues.push(`stray EN file: docs/en/${rel}  (no docs/${rel})`)
 }
 
+// ③ blog/ 的交付物孪生：blog/*.html ↔ blog/en/*.html。
+// 这些是杂志风单文件交付物，不是手册页——它们不进 docs/ 的手册镜像，但也同样
+// 会漂：第一篇（ADR-0009 博客化）在品牌改名两年后仍写着旧名与已经不存在的
+// 旧路径，而没有任何门看得见。规则与 docs 镜像同形：中文交付物必须有英文 twin。
+const blogDir = join(root, 'blog')
+const blogEnDir = join(blogDir, 'en')
+const blogZh = listFiles(blogDir, blogDir, '.html').filter((rel) => !rel.startsWith('en/'))
+const blogEn = listFiles(blogEnDir, blogEnDir, '.html')
+
+for (const rel of blogZh) {
+  if (!blogEn.includes(rel)) issues.push(`missing EN twin: blog/${rel}  (blog/en/${rel})`)
+}
+for (const rel of blogEn) {
+  if (!blogZh.includes(rel)) issues.push(`stray EN artifact: blog/en/${rel}  (no blog/${rel})`)
+}
+
 if (issues.length > 0) {
-  console.error('docs mirror drift detected — ZH/EN .md trees are not 1:1:\n')
+  console.error('docs mirror drift detected — the ZH/EN trees are not 1:1:\n')
   for (const line of issues) console.error(`  - ${line}`)
   console.error(
     '\nFix: add the missing twin under docs/en/ (or docs/), or — if this file is ' +
-      'intentionally Chinese-only research doc — register it in ZH_ONLY above.'
+      'intentionally Chinese-only research doc — register it in ZH_ONLY above. ' +
+      'For blog/ artifacts the twin lives at blog/en/<same name>.html.'
   )
   process.exit(1)
 }
 
 console.log(
   `docs mirror OK: ${zhSource.length} ZH-source .md ↔ ${enSource.length} EN-source .md ` +
-    `(${ZH_ONLY.filter((e) => e.endsWith('/') ? zhSource.some((r) => r.startsWith(e)) : zhSource.includes(e)).length} ZH-only whitelisted).`
+    `(${ZH_ONLY.filter((e) => e.endsWith('/') ? zhSource.some((r) => r.startsWith(e)) : zhSource.includes(e)).length} ZH-only whitelisted), ` +
+    `${blogZh.length} ZH blog artifact(s) ↔ ${blogEn.length} EN.`
 )

@@ -22,7 +22,7 @@ func newBackupTestService(t *testing.T) *Service {
 	if _, err := database.Exec("CREATE TABLE app_config (key TEXT PRIMARY KEY, value TEXT)"); err != nil {
 		t.Fatal(err)
 	}
-	s := New(database, "", nil)
+	s := New(database, "")
 	s.backupDir = t.TempDir() // 绝不写进真实用户数据目录
 	return s
 }

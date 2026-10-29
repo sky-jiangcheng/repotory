@@ -142,6 +142,65 @@ describe('AiAuditSection the call list', () => {
     expect(screen.getAllByText('通过').length).toBe(1)
   })
 
+  it('shows where the call went and enough of the digest to check the claim', async () => {
+    // The panel's own copy promises "time, endpoint, model, surface, size" and
+    // that only a hash is kept. Both were fetched and neither was rendered: the
+    // table said "trust us" while showing neither the destination nor the hash.
+    vi.mocked(listAICallAudit).mockResolvedValue([
+      {
+        id: 7,
+        created_at: '2026-10-25 10:00:00',
+        surface: 'mcp',
+        endpoint: 'https://api.example.com/v1',
+        model: 'gpt-x',
+        prompt_hash: 'a1b2c3d4e5f60718',
+        prompt_chars: 120,
+        response_chars: 340,
+        input_verdict: 'allow',
+        output_verdict: '',
+      },
+    ])
+
+    renderSection()
+    const table = await screen.findByTestId('ai-audit-table')
+    const row = within(table).getAllByRole('row')[1]
+
+    // The endpoint cell carries the full URL in its title even though CSS
+    // truncates what is painted.
+    const endpoint = within(row).getByTitle('https://api.example.com/v1')
+    expect(endpoint.textContent).toBe('https://api.example.com/v1')
+
+    // Eight characters, not the whole digest — and the whole digest on hover.
+    const hash = within(row).getByTitle('a1b2c3d4e5f60718')
+    expect(hash.textContent).toBe('a1b2c3d4')
+  })
+
+  it('does not invent an endpoint or hash for a row that has none', async () => {
+    vi.mocked(listAICallAudit).mockResolvedValue([
+      {
+        id: 8,
+        created_at: '2026-10-25 11:00:00',
+        surface: 'unknown',
+        endpoint: '',
+        model: '',
+        prompt_hash: '',
+        prompt_chars: 0,
+        response_chars: 0,
+        input_verdict: '',
+        output_verdict: '',
+      },
+    ])
+
+    renderSection()
+    const table = await screen.findByTestId('ai-audit-table')
+    const row = within(table).getAllByRole('row')[1]
+
+    // A pre-v28 row (or one written while auditing was partly off) has neither;
+    // an empty cell is honest, a made-up value is not. Three dashes: endpoint,
+    // hash and the verdict column, which is empty for the same reason.
+    expect(within(row).getAllByText('—').length).toBe(3)
+  })
+
   it('says so when there is nothing recorded yet', async () => {
     renderSection()
     await waitFor(() => expect(getAIAuditStatus).toHaveBeenCalled())

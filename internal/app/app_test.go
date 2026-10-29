@@ -28,7 +28,7 @@ func setupTestApp(t *testing.T) *App {
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("failed to commit seed: %v", err)
 	}
-	return New(service.New(database, "testuser", nil))
+	return New(service.New(database, "testuser"))
 }
 
 func TestAppCreateAndListTodos(t *testing.T) {

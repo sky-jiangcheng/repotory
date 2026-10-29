@@ -40,13 +40,29 @@ GOPROXY=https://goproxy.cn,direct GOSUMDB=off CGO_ENABLED=0 \
 | `REPOTORY_SERVER_BIN` | 空 | headless 服务二进制路径；设置后插件自启它 |
 | `REPOTORY_AUTOSTART` | `1` | 设为 `0` 关闭自启（需你手动启动服务） |
 
+## 依赖与类型检查
+
+依赖锁在 `package-lock.json` 里，用 **npm** 装（`npm ci`）。早先的清单写的是
+`"@deepseek-ai/dsh-tools": "*"`，而该包在 npm 上只有 `0.0.1-rc.*` 预发布版——`*` 跟着
+`latest` 走，下一次谁发布什么就是什么，没有锁文件也没有任何 CI 看过这个文件能否编译。
+现在：
+
+```bash
+npm ci            # 按锁文件装（与 CI 同一条命令）
+npm run typecheck  # tsc --noEmit
+```
+
+插件**没有构建产物**：`main` 直接指向 `src/index.ts`，dsh 自己加载 TypeScript。所以
+这道门问的不是「能不能打包」，而是「这个文件还对着它调用的 API 类型检查得过吗」。
+CI 的 `dsh-plugin-test` job 就是这两条命令。
+
 ## 安装到 dsh
 
 方式一（推荐，外置插件）：
 
 ```bash
 # 先装好依赖
-cd dsh-plugin-repotory && pnpm install
+cd dsh-plugin-repotory && npm ci
 
 # 注册到 web profile
 pnpm dsh plugin --profile web add /abs/path/to/dsh-plugin-repotory

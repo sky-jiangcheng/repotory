@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("database error: %v", err)
 	}
 	defer d.Close()
-	svc := service.New(d, platform.GetGitUserName(), nil)
+	svc := service.New(d, platform.GetGitUserName())
 	// This process IS the MCP surface (ADR-0030): every model call it makes
 	// is an agent call, and the audit row says so.
 	svc.SetAuditSurface(service.AISurfaceMCP)

@@ -1,0 +1,15 @@
+# Build context for the headless-server image (see Dockerfile).
+#
+# Without this file the context is whatever the working tree happens to contain:
+# 1.7 GB on a developer machine, 420 MB of it web/node_modules and 78 MB .git,
+# none of which the image needs (both stages re-install and rebuild from source).
+# Everything below is either host state, a regenerated artifact, or a directory
+# the image never reads.
+.git
+.github
+**/node_modules
+web/dist
+web/dist-server
+web/coverage
+**/*.log
+.DS_Store

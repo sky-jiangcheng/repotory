@@ -51,7 +51,7 @@ func main() {
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
 
-	svc := service.New(database, "", nil)
+	svc := service.New(database, "")
 	report, err := svc.ExportWikiTree(*out, *projectID, *force)
 	if err != nil {
 		log.Fatalf("export failed: %v", err)

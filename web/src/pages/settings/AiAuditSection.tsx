@@ -231,13 +231,20 @@ export default function AiAuditSection({ config, showMessage }: Props) {
       )}
 
       {calls.length > 0 && (
-        <table className={css.auditTable} data-testid="ai-audit-table">
+        /* Seven columns do not fit a narrow settings pane: without this
+         * wrapper the last one (the verdict) is simply clipped by the viewport,
+         * with nothing to scroll. The wrapper scrolls the table alone so the
+         * page itself never grows a horizontal scrollbar. */
+        <div className={css.auditTableWrap}>
+          <table className={css.auditTable} data-testid="ai-audit-table">
           <thead>
             <tr>
               <th>{t('settings.audit.colTime', { defaultValue: '时间' })}</th>
               <th>{t('settings.audit.colSurface', { defaultValue: '来源' })}</th>
+              <th>{t('settings.audit.colEndpoint', { defaultValue: '端点' })}</th>
               <th>{t('settings.audit.colModel', { defaultValue: '模型' })}</th>
               <th>{t('settings.audit.colChars', { defaultValue: '字符数' })}</th>
+              <th>{t('settings.audit.colHash', { defaultValue: '提示词哈希' })}</th>
               <th>{t('settings.audit.colVerdict', { defaultValue: '判定' })}</th>
             </tr>
           </thead>
@@ -246,10 +253,25 @@ export default function AiAuditSection({ config, showMessage }: Props) {
               <tr key={c.id}>
                 <td className={css.auditTime}>{c.created_at}</td>
                 <td>{c.surface}</td>
+                {/* The endpoint is the single most important column here: "what
+                    left this machine" is only half the question, "where to" is
+                    the other half. Long URLs are truncated in CSS with the
+                    full value on hover, so the column cannot blow the table
+                    width out on a long gateway path. */}
+                <td className={css.auditEndpoint} title={c.endpoint}>
+                  {c.endpoint || '—'}
+                </td>
                 <td>{c.model}</td>
                 <td>
                   {c.prompt_chars}
                   {c.response_chars > 0 ? ` / ${c.response_chars}` : ''}
+                </td>
+                {/* Only a prefix: the full digest is long enough to wrap and
+                    says nothing more at a glance. The tooltip carries the
+                    whole thing, which is what makes the "we keep a hash, not
+                    the text" promise checkable by the person reading it. */}
+                <td className={css.auditHash} title={c.prompt_hash}>
+                  {c.prompt_hash ? c.prompt_hash.slice(0, 8) : '—'}
                 </td>
                 <td>
                   {c.input_verdict === 'blocked'
@@ -263,7 +285,8 @@ export default function AiAuditSection({ config, showMessage }: Props) {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
       {status && status.call_count === 0 && (
         <p className={css.auditHint}>

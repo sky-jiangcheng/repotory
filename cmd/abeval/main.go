@@ -108,7 +108,7 @@ func main() {
 	}
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
-	svc := service.New(database, "abeval", nil)
+	svc := service.New(database, "abeval")
 
 	// semanticEnabled() reads app_config on EVERY search, and db.SetConfig
 	// writes straight through to the user's database. An evaluation tool must

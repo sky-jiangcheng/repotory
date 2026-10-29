@@ -54,7 +54,7 @@ func setupService(t *testing.T) (*Service, *fakeGit) {
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	fg := &fakeGit{ranges: map[string][]stats.DailyEntry{}}
-	return NewWithDeps(database, fg, nil, "me", nil), fg
+	return NewWithDeps(database, fg, nil, "me"), fg
 }
 
 func seedProject(t *testing.T, database *sql.DB, name, root string) int64 {

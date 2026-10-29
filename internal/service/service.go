@@ -26,7 +26,6 @@ type ImportEventPayload map[string]any
 // progress, status-bar cache). It is safe for concurrent use.
 type Service struct {
 	db    *sql.DB
-	roDB  *sql.DB // read-only replica; may be nil if not configured
 	git   git.Provider
 	rt    *pluginruntime.Runtime
 	guser string // git user.name used to split "mine" vs "all" stats
@@ -126,16 +125,15 @@ type Service struct {
 
 // New creates a Service with production dependencies: the local git CLI
 // provider and the knowledge-source runtime over the given database.
-func New(database *sql.DB, gitUser string, roDatabase *sql.DB) *Service {
-	return NewWithDeps(database, git.NewLocalGitProvider(), pluginruntime.New(database), gitUser, roDatabase)
+func New(database *sql.DB, gitUser string) *Service {
+	return NewWithDeps(database, git.NewLocalGitProvider(), pluginruntime.New(database), gitUser)
 }
 
 // NewWithDeps constructs a Service with explicitly supplied dependencies
 // (used by tests and future alternative providers).
-func NewWithDeps(database *sql.DB, provider git.Provider, runtime *pluginruntime.Runtime, gitUser string, roDatabase *sql.DB) *Service {
+func NewWithDeps(database *sql.DB, provider git.Provider, runtime *pluginruntime.Runtime, gitUser string) *Service {
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	s := &Service{db: database, git: provider, rt: runtime, guser: gitUser, bgCtx: bgCtx, bgCancel: bgCancel}
-	s.roDB = roDatabase
 	s.updates = newUpdateDownloader()
 	return s
 }

@@ -80,7 +80,7 @@ func main() {
 	}
 
 	gitUser := platform.GetGitUserName()
-	svc := service.New(database, gitUser, nil)
+	svc := service.New(database, gitUser)
 	// This process IS the HTTP surface (ADR-0030): every model call it makes
 	// arrives over the HTTP / JSON-RPC API, and the audit row says so.
 	svc.SetAuditSurface(service.AISurfaceHTTP)

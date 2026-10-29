@@ -172,7 +172,7 @@ func seedGateCorpus(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	svc := service.New(database, "abeval", nil)
+	svc := service.New(database, "abeval")
 	if _, err := svc.CreateHandoffNote(service.HandoffInput{
 		ProjectID: pid,
 		Summary:   "支付回调的幂等键改造完成了",
@@ -231,7 +231,7 @@ func TestHandoffGateFailsWhenARecordedHandoffIsUnreachable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := service.New(database, "abeval", nil)
+	svc := service.New(database, "abeval")
 	for i := 0; i < 25; i++ {
 		if _, err := svc.CreateNoteWithMeta(pid, title, content, "distractor", "knowledge", "manual"); err != nil {
 			t.Fatal(err)

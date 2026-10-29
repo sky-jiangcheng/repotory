@@ -31,7 +31,7 @@ func newAuditTestService(t *testing.T, handler http.HandlerFunc) *Service {
 		t.Fatalf("init db: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	svc := New(database, "tester", nil)
+	svc := New(database, "tester")
 	svc.SetAuditSurface(AISurfaceMCP)
 
 	if handler != nil {

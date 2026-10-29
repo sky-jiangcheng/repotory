@@ -30,11 +30,11 @@ go build -o repotory-mcp ./cmd/mcp/
 go test ./...            # Go 全量测试（service/db/knowledge/scanner/diff…）
 cd web && npm test       # vitest
 cd web && npm run build  # tsc 严格检查（ESLint 现状见 TODO.md）
-node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** ↔ docs/en/**）
+node scripts/check-docs-mirror.mjs  # 双语文档 1:1 镜像守卫（docs/** ↔ docs/en/**，blog/*.html ↔ blog/en/*.html）
 node scripts/check-i18n-keys.mjs    # locale 词条覆盖守卫（key 缺失 / 语言漂移 / 英文残留中文）
 ```
 
-> 双语文档镜像守卫：`docs/**/*.md`（中文源）与 `docs/en/**/*.md`（英文源）必须互为 1:1。改一边、只改一边的「双语漂移」会被 `scripts/check-docs-mirror.mjs` 在 CI（`docs-mirror` job）拦下。有意只出中文的研究文档（`competitive-positioning.md`、`positioning-brief.md`、`product-review/*`）在该脚本的 `ZH_ONLY` 白名单里；新增此类文档时同步登记白名单，否则守卫会误报。
+> 双语文档镜像守卫：`docs/**/*.md`（中文源）与 `docs/en/**/*.md`（英文源）必须互为 1:1。改一边、只改一边的「双语漂移」会被 `scripts/check-docs-mirror.mjs` 在 CI（`docs-mirror` job）拦下。有意只出中文的研究文档（`competitive-positioning.md`、`positioning-brief.md`、`product-review/*`）在该脚本的 `ZH_ONLY` 白名单里；新增此类文档时同步登记白名单，否则守卫会误报。**同一道门也管 `blog/`**：`blog/*.html` 是手写的杂志风交付物（不是构建产物），每篇必须有 `blog/en/<同名>.html` 英文 twin——第一篇就漂过：品牌改名两年后仍写着旧名，还有已经不存在的旧路径。
 
 > **locale 词条覆盖守卫**：`scripts/check-i18n-keys.mjs`（CI `i18n-keys` job）断言四件事——① 代码里静态引用到的每个 `t()` key 在每个 locale 都存在；② 各 locale 的 base key 集合一致（没有「只加一边」的漂移）；③ 用了复数变体（`_other` 等）就必须有 base key；④ 英文 locale 的值里不残留中文。**新增界面文案时，中英两份 `web/src/locales/*/common.json` 必须同批改**——只改一边会在 CI 上报红。
 

@@ -49,7 +49,7 @@ func main() {
 	}
 	defer database.Close()
 
-	svc := service.New(database, "claude-hook", nil)
+	svc := service.New(database, "claude-hook")
 	report, err := svc.CaptureClaudeSessionByCwd(cwd)
 	if err != nil {
 		// Disabled-by-config or no-matching-project are expected, non-fatal for a

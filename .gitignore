@@ -93,6 +93,9 @@ scratch-ui-test/
 
 # 本地 wiki 真库演练工作区（cmd/wiki-rehearse 的一次性副本指针，含机器本地 /tmp 路径）
 # 证据 jsonl/json 按需 git add；演练工作区本身不入库。
+# v21-rehearse 早于本规则，过去只靠 `*.db` 通配拦住 4MB 真库副本；已入库的 3 个证据文件
+# 继续被跟踪（忽略规则不作用于已跟踪文件），新产生的副本与中间产物从这里起被拦住。
+v21-rehearse/
 v25-rehearse/
 
 # Agent 会话工作目录（DB 副本 / 编译日志 / go 缓存 / 工具二进制，数百 MB，纯本地复现物，绝不入库）

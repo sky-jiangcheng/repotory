@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -51,7 +52,11 @@ func TestCreateBackupProducesValidSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// 0600 is what makes the snapshot private on a POSIX filesystem; Windows
+	// has no mode bits to assert here (the permission argument to OpenFile is
+	// ignored there), so the same code would look "wrong" for the right
+	// reason. The matrix runs this suite on all three platforms.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("snapshot perms = %o, want 0600 (it carries the full dataset)", info.Mode().Perm())
 	}
 }

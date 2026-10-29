@@ -81,9 +81,16 @@
   color: var(--text-secondary);
 }
 
+/* Seven columns are wider than a narrow settings pane. Scrolling the table
+ * inside its own box (rather than letting it widen the page) keeps the verdict
+ * column reachable instead of clipped at the viewport edge. */
+.auditTableWrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
 .auditTable {
   width: 100%;
-  margin-top: 12px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -103,4 +110,24 @@
 .auditTime {
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+/* Endpoints are URLs and can be arbitrarily long (gateway paths especially).
+ * Truncating in CSS with the full value in a tooltip keeps the table readable
+ * without hiding the fact that the value is there. */
+.auditEndpoint {
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* The digest is displayed as a prefix; the rest lives in the tooltip. */
+.auditHash {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-tertiary);
 }

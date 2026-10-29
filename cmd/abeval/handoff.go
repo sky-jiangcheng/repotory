@@ -85,7 +85,7 @@ func runHandoffGate(dbPath string, k int) int {
 	}
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
-	svc := service.New(database, "abeval", nil)
+	svc := service.New(database, "abeval")
 
 	// semanticEnabled() reads app_config on EVERY search, so the arms must flip
 	// the key immediately before searching. The value is restored on exit,

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -57,7 +58,9 @@ func TestCopyBackupToProducesRestorableCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// POSIX-only assertion: Windows ignores the OpenFile mode argument, so
+	// there are no permission bits to check there.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("copy perms = %o, want 0600 (it carries the full dataset)", info.Mode().Perm())
 	}
 }

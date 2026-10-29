@@ -3,10 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "DeepSeek Harness plugin that exposes Repotory's local git analysis (AI context, repo overview, knowledge search) through its headless HTTP server.",
   "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-tools": "*"
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.3"
   }
 }

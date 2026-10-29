@@ -30,10 +30,37 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------- Go ----
+  # Why a matrix and not just ubuntu: v2.14.0 shipped a red main branch because
+  # a test hardcoded `darwin/arm64` — the code compiled fine, it just asserted a
+  # fact about the machine it was written on. A single-OS gate cannot see that
+  # class of defect, and this product ships installers for all three platforms.
+  #
+  # `fail-fast: false` on purpose: when two platforms break for different
+  # reasons we want both lists in one run, not one at a time.
   go-test:
-    name: Go build & test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Go build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            race: '-race'
+          - os: macos-latest
+            race: '-race'
+          # No -race on Windows: the detector needs cgo and a working gcc, and
+          # the windows runner's mingw toolchain turns every run into a slow,
+          # occasionally-flaky build for a signal the two Unix rows already
+          # give us. Windows is here for the platform-specific runtime paths
+          # (file modes, path separators, case sensitivity), not for races.
+          - os: windows-latest
+            race: ''
+    # The stub step below is a POSIX shell one-liner; make every run step use
+    # bash so it reads the same on Windows.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -82,12 +109,78 @@ jobs:
       #
       # `-race` is on because the service layer fans out goroutines during scans
       # and knowledge indexing; without it a data race that only shows up under CI
-      # parallelism ships silently. The one caveat: the race detector itself needs
-      # cgo and a C toolchain. That is gcc from the stock ubuntu-latest image —
-      # preinstalled, nothing to add — and it is unrelated to the Wails/GTK
-      # dependencies discussed above.
+      # parallelism ships silently. The caveat: the race detector needs cgo and a
+      # C toolchain. On the Unix rows that is the stock image's compiler; the
+      # Windows row runs without it (see the matrix comment above).
       - name: Run Go tests
-        run: go test -race -timeout 10m ./...
+        run: go test ${{ matrix.race }} -timeout 15m ./...
+
+  # ---------------------------------------------------------------- Vet ----
+  # `go test` runs a subset of `go vet`'s checks (the ones that affect
+  # correctness of the test run); the rest — printf verbs, unreachable code,
+  # lost cancel funcs, struct tag mistakes — only run under an explicit vet.
+  # Kept as its own job so a vet finding reads as "vet" in the checks list
+  # instead of hiding inside a red test matrix.
+  go-vet:
+    name: Go vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache: true
+
+      # Same reason as in go-test: the root package's `//go:embed all:web/dist`
+      # does not resolve in a fresh checkout.
+      - name: Stub web/dist for the embed directive
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
+
+      - name: Run go vet
+        run: go vet ./...
+
+  # ------------------------------------------------------- Vulnerabilities ----
+  # A dependency can be safe the day it is added and vulnerable a year later
+  # with no commit in this repository. govulncheck answers a narrower question
+  # than a CVE list does: it reports only vulnerabilities in code this repo
+  # actually *reaches*, which is what makes it usable as a gate rather than a
+  # wall of advisories.
+  #
+  # Pinned on purpose (the same discipline as the action SHAs above): `@latest`
+  # would let a new release change the verdict of a push that changed nothing.
+  # Bump this line deliberately when you want the newer database/analysis.
+  #
+  # What a red result usually means: a standard-library advisory whose fix is
+  # in a NEWER PATCH of the same minor Go version. `go-version: '1.26'` resolves
+  # the newest 1.26.x, so the job heals itself on the next runner update; if it
+  # stays red, the fix is a Go patch bump, not a code change. Module findings
+  # (the ones this repository can actually fix) are the other, rarer case.
+  govulncheck:
+    name: Vulnerability scan (govulncheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Stub web/dist for the embed directive
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Run govulncheck
+        run: govulncheck ./...
 
   # ------------------------------------------------------------ Format ----
   # gofmt is the one tool every Go developer already runs before committing,
@@ -343,6 +436,72 @@ jobs:
       # configuration is never touched.
       - name: Check the wiring script against the shared contract fixture
         run: node scripts/check-agent-init-contract.mjs
+
+  # ---------------------------------------------------------- dsh plugin ----
+  # dsh-plugin-repotory is a third client surface (after the desktop app and the
+  # MCP server) and had no gate at all: no lockfile, a `"*"` dependency that
+  # floats onto whatever `latest` happens to be, and no job that compiled it.
+  # A type error in src/index.ts, or a dependency bump that changed defineTool's
+  # signature, would have sat on master until somebody ran `dsh web` by hand.
+  #
+  # `npm ci` + `tsc --noEmit` is the whole gate: the plugin ships no build step
+  # because dsh loads `src/index.ts` directly (package.json `main`), so there is
+  # no bundle to produce — only the question "does this file still type-check
+  # against the APIs it calls". `npm ci` (not `install`) doubles as the lockfile
+  # check: it fails when package-lock.json has drifted from package.json.
+  dsh-plugin-test:
+    name: dsh plugin typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dsh-plugin-repotory
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '20'
+          cache: npm
+          # The plugin has its own lockfile; the default lookup would key on the
+          # repo root one instead.
+          cache-dependency-path: dsh-plugin-repotory/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  # ------------------------------------------------------------- Docker ----
+  # The Dockerfile is the NAS/homelab delivery path (ADR-0025 Docker tier) and
+  # nothing had ever built it: release.yml does not, and there is no image job
+  # anywhere in the repo. `web/package.json`'s `build:server` script (which the
+  # image calls), the `cmd/server` path, and the web-dist directory it copies
+  # were all unchecked — a rename in either would surface only in a user's
+  # terminal.
+  #
+  # Build, never publish. Publishing needs a registry the maintainer has to
+  # choose and credentials to push with; a build that nobody pushed still
+  # answers the question this job exists to answer ("does the Dockerfile still
+  # describe this repo?").
+  #
+  # No runtime smoke (`docker run` + /health) on purpose: the container's data
+  # directory is a user-mounted volume, so what a smoke test would really assert
+  # is Docker's volume ownership, not this repo's code — and a gate that fails
+  # for reasons outside the repo teaches people to ignore it.
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build the headless-server image
+        run: docker build --progress=plain --tag repotory-server:ci .
 
   # --------------------------------------------------------------- Web ----
   web-test:

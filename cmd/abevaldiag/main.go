@@ -71,7 +71,7 @@ func main() {
 	}
 	defer func() { _ = cp.Close() }()
 	database := cp.DB
-	svc := service.New(database, "abevaldiag", nil)
+	svc := service.New(database, "abevaldiag")
 
 	// Without this the vector index is empty and every "hybrid" arm is really
 	// lexical — the harness then reports a confident number about a retriever

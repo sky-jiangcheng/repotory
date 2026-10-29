@@ -45,7 +45,7 @@ func main() {
 	// Create the service core and the thin Wails binding layer over it. Scan
 	// roots are seeded through the service (shared with the MCP server) so the
 	// first-run behaviour is identical on both entry points.
-	svc := service.New(database, gitUser, nil)
+	svc := service.New(database, gitUser)
 	// This process IS the desktop surface (ADR-0030): every model call it
 	// makes was started by a human in the app, and the audit row says so.
 	svc.SetAuditSurface(service.AISurfaceDesktop)
