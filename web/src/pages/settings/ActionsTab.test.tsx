@@ -216,13 +216,23 @@ describe('ActionsTab AI client wiring', () => {
     expect(screen.queryByRole('option', { name: 'uncategorized' })).toBeNull()
   })
 
-  it('connects the picked project and clients', async () => {
-    renderTab()
-
+  // Pick demo + Claude and press Connect. The project list arrives
+  // asynchronously, and a <select> whose option is not there yet coerces the
+  // value to '' — the change then lands as "no project picked" and the connect
+  // handler early-returns, so waiting for the select alone is a race the test
+  // can lose (it did, on CI). Wait for the option itself.
+  const pickDemoAndConnect = async () => {
     const picker = await screen.findByRole('combobox')
+    await screen.findByRole('option', { name: 'demo' })
     fireEvent.change(picker, { target: { value: '1' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
     fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+  }
+
+  it('connects the picked project and clients', async () => {
+    renderTab()
+
+    await pickDemoAndConnect()
 
     await waitFor(() =>
       expect(setupAgentClients).toHaveBeenCalledWith(1, ['claude'], true),
@@ -238,10 +248,7 @@ describe('ActionsTab AI client wiring', () => {
     })
     renderTab()
 
-    const picker = await screen.findByRole('combobox')
-    fireEvent.change(picker, { target: { value: '1' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
-    fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+    await pickDemoAndConnect()
 
     expect(await screen.findByText('settings.agentSetupAutoGroupedProject')).toBeTruthy()
   })
@@ -249,10 +256,7 @@ describe('ActionsTab AI client wiring', () => {
   it('lists the files it wrote', async () => {
     renderTab()
 
-    const picker = await screen.findByRole('combobox')
-    fireEvent.change(picker, { target: { value: '1' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'settings.agentClientClaude' }))
-    fireEvent.click(screen.getByRole('button', { name: 'settings.agentClientsConnect' }))
+    await pickDemoAndConnect()
 
     expect(await screen.findByText('/code/demo/.mcp.json')).toBeTruthy()
   })
