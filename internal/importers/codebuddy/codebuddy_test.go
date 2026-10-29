@@ -78,7 +78,7 @@ func TestSessionRootsFindsNestedAndShallow(t *testing.T) {
 
 func TestImportProducesNoteFromNestedSession(t *testing.T) {
 	home := writeCodebuddyFixture(t)
-	t.Setenv("HOME", home)
+	imptest.SetHome(t, home)
 
 	database, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -132,7 +132,7 @@ func TestImportEmptyIndexYieldsNothing(t *testing.T) {
 		[]byte(`{"conversations": [], "current": ""}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", home)
+	imptest.SetHome(t, home)
 
 	database, _ := sql.Open("sqlite", ":memory:")
 	defer database.Close()

@@ -21,8 +21,12 @@ import (
 const (
 	wsHashKnown   = "87d6b92a30e184ca731bbd6532a00631"
 	wsHashUnknown = "0000000000000000000000000000dead"
-	wsFolder      = "/Users/dev/Workspace/CodeStat"
 )
+
+// wsFolder is the folder the sample workspace.json names, spelled the way the
+// host spells paths: folderPathFromWorkspaceJSON cleans natively, so a
+// forward-slash literal is not what it returns on Windows.
+var wsFolder = filepath.FromSlash("/Users/dev/Workspace/CodeStat")
 
 // newFixture builds a fake Cursor tree and an app database containing the
 // CodeStat project, and points CURSOR_STATE_DB at the state file.
@@ -228,9 +232,9 @@ func TestFolderPathFromWorkspaceJSON(t *testing.T) {
 		name, raw, want string
 		ok              bool
 	}{
-		{"file uri", `{"folder":"file:///Users/dev/Workspace/Foo"}`, "/Users/dev/Workspace/Foo", true},
+		{"file uri", `{"folder":"file:///Users/dev/Workspace/Foo"}`, filepath.FromSlash("/Users/dev/Workspace/Foo"), true},
 		{"windows uri drops leading slash", `{"folder":"file:///C:/dev/proj"}`, filepath.Clean("C:/dev/proj"), true},
-		{"raw path accepted too", `{"folder":"/srv/app"}`, "/srv/app", true},
+		{"raw path accepted too", `{"folder":"/srv/app"}`, filepath.FromSlash("/srv/app"), true},
 		{"missing folder key", `{"label":"x"}`, "", false},
 		{"empty folder", `{"folder":"  "}`, "", false},
 		{"not json", `{{{`, "", false},

@@ -13,11 +13,11 @@ import (
 	"repotory/internal/importers/memsrc"
 )
 
-// fakeHome points os.UserHomeDir at an empty temp dir via $HOME.
+// fakeHome points os.UserHomeDir at an empty temp dir.
 func fakeHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	imptest.SetHome(t, dir)
 	return dir
 }
 

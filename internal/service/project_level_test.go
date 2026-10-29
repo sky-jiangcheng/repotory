@@ -3,6 +3,7 @@ package service
 import (
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"repotory/internal/db"
@@ -105,11 +106,14 @@ func TestUpdateProjectLevel_DownOnSingleRepoStillMovesLevel(t *testing.T) {
 // split once, never regroup again.
 func TestUpdateProjectLevel_SplitThenMergeIsReversible(t *testing.T) {
 	svc, _ := setupService(t)
-	root := "/tmp/leveltest4"
+	// The merge walks up with filepath.Dir, so the fixture root has to be a
+	// real temp dir rather than a /tmp literal — on Windows a "/tmp/..." string
+	// does not survive that walk.
+	root := t.TempDir()
 	group := seedProject(t, svc.db, "grp", root)
-	seedRepo(t, svc.db, root+"/a", group)
-	seedRepo(t, svc.db, root+"/b", group)
-	seedRepo(t, svc.db, root+"/c", group)
+	seedRepo(t, svc.db, filepath.Join(root, "a"), group)
+	seedRepo(t, svc.db, filepath.Join(root, "b"), group)
+	seedRepo(t, svc.db, filepath.Join(root, "c"), group)
 
 	if _, err := svc.UpdateProjectLevel(group, "down", false); err != nil {
 		t.Fatalf("down: %v", err)
@@ -193,11 +197,11 @@ func TestUpdateProjectLevel_UpRefusesWithoutConfirmation(t *testing.T) {
 // agreement numerically: preview counts == what actually arrives.
 func TestPreviewProjectMergeUpMatchesTheMerge(t *testing.T) {
 	svc, _ := setupService(t)
-	parent := "/tmp/mergepreview"
-	group := seedProject(t, svc.db, "grp", parent+"/grp")
-	sibling := seedProject(t, svc.db, "sib", parent+"/sib")
-	seedRepo(t, svc.db, parent+"/grp/repo-a", group)
-	seedRepo(t, svc.db, parent+"/sib/repo-b", sibling)
+	parent := t.TempDir()
+	group := seedProject(t, svc.db, "grp", filepath.Join(parent, "grp"))
+	sibling := seedProject(t, svc.db, "sib", filepath.Join(parent, "sib"))
+	seedRepo(t, svc.db, filepath.Join(parent, "grp", "repo-a"), group)
+	seedRepo(t, svc.db, filepath.Join(parent, "sib", "repo-b"), sibling)
 	for _, title := range []string{"笔记一", "笔记二"} {
 		if _, err := db.CreateNoteEx(svc.db, sibling, title, "内容", "", "knowledge", "manual"); err != nil {
 			t.Fatalf("seed note %s: %v", title, err)

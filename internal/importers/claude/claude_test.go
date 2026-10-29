@@ -12,11 +12,11 @@ import (
 	"repotory/internal/importers/imptest"
 )
 
-// fakeHome redirects os.UserHomeDir via HOME env var.
+// fakeHome redirects os.UserHomeDir at a throwaway dir.
 func fakeHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	imptest.SetHome(t, dir)
 	return dir
 }
 

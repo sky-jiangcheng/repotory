@@ -80,7 +80,11 @@ func TestWikiMigration_IsReversibleByConstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db2.Close() }()
-	if _, err := db2.Query("SELECT 1 FROM wiki_pages LIMIT 1"); err != nil {
+	// QueryRow, not Query: the *Rows from Query is never closed here, and a busy
+	// connection stays open past db.Close(), which on Windows makes TempDir
+	// cleanup fail with "the file is being used by another process".
+	var pages int
+	if err := db2.QueryRow("SELECT count(*) FROM wiki_pages").Scan(&pages); err != nil {
 		t.Fatalf("fresh InitDB has no wiki_pages: %v", err)
 	}
 }

@@ -35,7 +35,11 @@ func CheckStorageSafety(targetPath string) StorageSafetyReport {
 	}
 
 	cleanDir := filepath.Clean(dir)
-	cleanLower := strings.ToLower(cleanDir)
+	// The patterns below are path text, so the separators have to be canonical
+	// first: Windows spells them "\" and the multi-segment patterns are written
+	// "a/b". Without this, an iCloud path handed to us on Windows matched
+	// nothing and the probe fell through to a misleading "unwritable".
+	cleanLower := strings.ToLower(filepath.ToSlash(cleanDir))
 
 	// 1. Path-based pattern detection for cloud sync & virtual mounts (fast exit)
 	cloudSyncPatterns := []struct {

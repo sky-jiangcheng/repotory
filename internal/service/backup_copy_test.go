@@ -3,12 +3,27 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"repotory/internal/db"
 )
+
+// noModeBits is the guard for the two "unwritable" tests below: they stage
+// unwritability with chmod 0500, which Windows does not honour (there is no
+// mode-bit permission model — a directory's read-only attribute does not stop
+// file creation), so the condition cannot be staged there at all.
+func noModeBits(t *testing.T) {
+	t.Helper()
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no mode-bit permissions — chmod 0500 does not make a directory unwritable")
+	}
+}
 
 // The off-disk exit (ADR-0025 L3). The point of these tests is the promise
 // the feature makes: a second copy, on another disk, that nobody has to set
@@ -213,9 +228,7 @@ func TestCheckBackupCopyTargetReportsMissingDirectory(t *testing.T) {
 }
 
 func TestCheckBackupCopyTargetReportsUnwritableDirectory(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root ignores directory permissions")
-	}
+	noModeBits(t)
 	s := newCopyTestService(t)
 	target := t.TempDir()
 	if err := os.Chmod(target, 0o500); err != nil {
@@ -242,9 +255,7 @@ func TestCheckBackupCopyTargetReportsUnwritableDirectory(t *testing.T) {
 // never be created — which is decided by the nearest EXISTING ancestor, not
 // by the immediate parent (CopyBackupTo creates missing parents itself).
 func TestCheckBackupCopyTargetReportsUnwritableAncestor(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root ignores directory permissions")
-	}
+	noModeBits(t)
 	s := newCopyTestService(t)
 	parent := t.TempDir()
 	if err := os.Chmod(parent, 0o500); err != nil {

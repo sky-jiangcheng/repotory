@@ -16,7 +16,7 @@ import (
 func fakeHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	imptest.SetHome(t, dir)
 	return dir
 }
 

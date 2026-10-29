@@ -72,6 +72,9 @@ func TestGroupRepositories_DifferentParents(t *testing.T) {
 	}
 }
 
+// Fixtures are written with forward slashes and converted, because the rules
+// under test are separator-native (filepath.Dir/Base): a POSIX literal fed to
+// them on Windows comes back with backslashes.
 func TestIsDirectChild(t *testing.T) {
 	tests := []struct {
 		parent, child string
@@ -83,9 +86,10 @@ func TestIsDirectChild(t *testing.T) {
 		{"/home", "/etc", false},
 	}
 	for _, tc := range tests {
-		result := isDirectChild(tc.parent, tc.child)
+		parent, child := filepath.FromSlash(tc.parent), filepath.FromSlash(tc.child)
+		result := isDirectChild(parent, child)
 		if result != tc.expected {
-			t.Errorf("isDirectChild(%s, %s) = %v, want %v", tc.parent, tc.child, result, tc.expected)
+			t.Errorf("isDirectChild(%s, %s) = %v, want %v", parent, child, result, tc.expected)
 		}
 	}
 }
@@ -100,8 +104,8 @@ func TestGroupRepositories_OverlappingRootsParentAndChild(t *testing.T) {
 		// /outer walks discover the parent repo at depth 1; its own walk
 		// stops at the repo boundary, so the nested child repo is only
 		// discovered by scanning /outer/parent/child as a root (depth 0).
-		{Path: "/w/outer/parent", Depth: 1},
-		{Path: "/w/outer/parent/child", Depth: 0},
+		{Path: filepath.FromSlash("/w/outer/parent"), Depth: 1},
+		{Path: filepath.FromSlash("/w/outer/parent/child"), Depth: 0},
 	}
 	groups := GroupRepositories(repos)
 	if len(groups) != 2 {
@@ -111,10 +115,11 @@ func TestGroupRepositories_OverlappingRootsParentAndChild(t *testing.T) {
 	// and the sibling group under it. This is the documented quirk: the DB
 	// layer upserts projects by root_path, so the effective outcome is one
 	// project rooted at /w/outer/parent holding both repos.
+	wantRoot := filepath.FromSlash("/w/outer/parent")
 	seen := map[string]bool{}
 	reposSeen := map[string]bool{}
 	for _, g := range groups {
-		if g.RootPath != "/w/outer/parent" {
+		if g.RootPath != wantRoot {
 			t.Fatalf("expected every group to root at the parent repo, got %+v", g)
 		}
 		seen[g.RootPath] = true
@@ -122,12 +127,12 @@ func TestGroupRepositories_OverlappingRootsParentAndChild(t *testing.T) {
 			reposSeen[r.Path] = true
 			// The synthesized parent RepoInfo carries its real discovered
 			// depth, not a hardcoded 0.
-			if r.Path == "/w/outer/parent" && r.Depth != 1 {
+			if r.Path == wantRoot && r.Depth != 1 {
 				t.Fatalf("parent repo depth should be the discovered value 1, got %d", r.Depth)
 			}
 		}
 	}
-	if !reposSeen["/w/outer/parent"] || !reposSeen["/w/outer/parent/child"] {
+	if !reposSeen[wantRoot] || !reposSeen[filepath.FromSlash("/w/outer/parent/child")] {
 		t.Fatalf("both repos must survive grouping, got %v", reposSeen)
 	}
 	if len(seen) != 1 {

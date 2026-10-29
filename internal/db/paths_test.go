@@ -1,10 +1,15 @@
 package db
 
 import (
+	"path/filepath"
 	"testing"
 )
 
 // Path matcher tests (internal/db is where the rules live; see paths.go).
+//
+// Fixtures are written with forward slashes and converted, because the rules
+// themselves are separator-native (filepath.Clean/Separator): a POSIX literal
+// fed to them on Windows comes back with backslashes.
 
 func TestIsPathAncestorIsSegmentAware(t *testing.T) {
 	cases := []struct {
@@ -21,8 +26,9 @@ func TestIsPathAncestorIsSegmentAware(t *testing.T) {
 		{"/", "/a", false, "root is normalised away by NormalizeMatchPath, so it must not adopt everything"},
 	}
 	for _, tc := range cases {
-		if got := isPathAncestor(tc.parent, tc.child); got != tc.want {
-			t.Errorf("isPathAncestor(%q, %q) = %v, want %v (%s)", tc.parent, tc.child, got, tc.want, tc.why)
+		parent, child := filepath.FromSlash(tc.parent), filepath.FromSlash(tc.child)
+		if got := isPathAncestor(parent, child); got != tc.want {
+			t.Errorf("isPathAncestor(%q, %q) = %v, want %v (%s)", parent, child, got, tc.want, tc.why)
 		}
 	}
 }
@@ -38,8 +44,8 @@ func TestNormalizeMatchPath(t *testing.T) {
 		"/":               "/",
 		"relative/subdir": "relative/subdir",
 	} {
-		if got := NormalizeMatchPath(in); got != want {
-			t.Errorf("NormalizeMatchPath(%q) = %q, want %q", in, got, want)
+		if got := NormalizeMatchPath(filepath.FromSlash(in)); got != filepath.FromSlash(want) {
+			t.Errorf("NormalizeMatchPath(%q) = %q, want %q", in, got, filepath.FromSlash(want))
 		}
 	}
 }

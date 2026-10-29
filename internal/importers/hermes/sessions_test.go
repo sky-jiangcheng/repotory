@@ -34,7 +34,7 @@ func writeStateDB(t *testing.T, path string) {
 func TestImportSessionsFromStateDB(t *testing.T) {
 	hermesHome := t.TempDir()
 	t.Setenv("HERMES_HOME", hermesHome)
-	t.Setenv("HOME", t.TempDir()) // bogus HOME proves $HERMES_HOME wins
+	imptest.SetHome(t, t.TempDir()) // bogus HOME proves $HERMES_HOME wins
 	writeStateDB(t, filepath.Join(hermesHome, "state.db"))
 
 	database, _ := sql.Open("sqlite", ":memory:")
@@ -78,7 +78,7 @@ func TestImportSessionsFromStateDB(t *testing.T) {
 func TestImportSessionsNoStateDBIsNoop(t *testing.T) {
 	hermesHome := t.TempDir() // has memories/ but no state.db
 	t.Setenv("HERMES_HOME", hermesHome)
-	t.Setenv("HOME", t.TempDir())
+	imptest.SetHome(t, t.TempDir())
 	if err := os.MkdirAll(filepath.Join(hermesHome, "memories"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestImportSessionsNoStateDBIsNoop(t *testing.T) {
 func TestImportSessionsDriftFailsLoudly(t *testing.T) {
 	hermesHome := t.TempDir()
 	t.Setenv("HERMES_HOME", hermesHome)
-	t.Setenv("HOME", t.TempDir())
+	imptest.SetHome(t, t.TempDir())
 
 	// A state.db with a messages table missing the columns we read: this must
 	// NOT look like "no sessions".
@@ -123,7 +123,7 @@ func TestImportSessionsDriftFailsLoudly(t *testing.T) {
 func TestImportSessionsAttachesToConfiguredProject(t *testing.T) {
 	hermesHome := t.TempDir()
 	t.Setenv("HERMES_HOME", hermesHome)
-	t.Setenv("HOME", t.TempDir())
+	imptest.SetHome(t, t.TempDir())
 	writeStateDB(t, filepath.Join(hermesHome, "state.db"))
 
 	database, _ := sql.Open("sqlite", ":memory:")

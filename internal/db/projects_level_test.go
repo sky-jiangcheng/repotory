@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"repotory/internal/domain"
@@ -115,14 +116,20 @@ func TestSplitProjectDownSingleRepo(t *testing.T) {
 func TestMergeProjectUp(t *testing.T) {
 	database := setupTestDB(t)
 
-	// A at /tmp/workspace; B is a true sibling (direct child of /tmp); C is
-	// nested deeper and must NOT be merged.
-	pidA := mustExecProject(t, database, "workspace", "/tmp/workspace")
-	pidB := mustExecProject(t, database, "sibling-b", "/tmp/sibling-b")
-	pidC := mustExecProject(t, database, "elsewhere", "/tmp/other/repo-c")
-	mustExecRepo(t, database, "/tmp/workspace/repo-a", pidA)
-	mustExecRepo(t, database, "/tmp/sibling-b/repo", pidB)
-	mustExecRepo(t, database, "/tmp/other/repo-c", pidC)
+	// A sits one level under the temp root; B is a true sibling (direct child
+	// of the same root); C is nested deeper and must NOT be merged. The root
+	// comes from TempDir rather than a /tmp literal: merging goes through
+	// filepath.Dir, so a POSIX literal lands on a different path on Windows.
+	base := t.TempDir()
+	dirA := filepath.Join(base, "workspace")
+	dirB := filepath.Join(base, "sibling-b")
+	dirC := filepath.Join(base, "other", "repo-c")
+	pidA := mustExecProject(t, database, "workspace", dirA)
+	pidB := mustExecProject(t, database, "sibling-b", dirB)
+	pidC := mustExecProject(t, database, "elsewhere", dirC)
+	mustExecRepo(t, database, filepath.Join(dirA, "repo-a"), pidA)
+	mustExecRepo(t, database, filepath.Join(dirB, "repo"), pidB)
+	mustExecRepo(t, database, dirC, pidC)
 
 	newLevel, err := MergeProjectUp(database, pidA)
 	if err != nil {
@@ -148,8 +155,8 @@ func TestMergeProjectUp(t *testing.T) {
 		t.Errorf("unrelated project should be untouched, got %d repos", len(reposC))
 	}
 	p, _ := GetProjectByID(database, pidA)
-	if p.RootPath != "/tmp" || p.Name != "tmp" {
-		t.Errorf("merged project should take the parent dir identity (/tmp), got %s/%s", p.RootPath, p.Name)
+	if p.RootPath != base || p.Name != filepath.Base(base) {
+		t.Errorf("merged project should take the parent dir identity (%s), got %s/%s", base, p.RootPath, p.Name)
 	}
 	if p.IsAutoGrouped {
 		t.Error("merged project should not be auto-grouped")

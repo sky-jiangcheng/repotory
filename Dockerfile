@@ -8,6 +8,10 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+# build:server ends in ../scripts/prune-web-dist.mjs, which resolves its dist
+# path from its own location — so it has to sit at /src/scripts/ exactly, or the
+# build dies after the Vite output is already written.
+COPY scripts/prune-web-dist.mjs /src/scripts/prune-web-dist.mjs
 RUN npm run build:server
 
 # --- server binary (zero CGO, matches the repo's pure-Go SQLite) -------------

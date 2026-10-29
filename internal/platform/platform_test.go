@@ -21,6 +21,9 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(home)
 	os.Setenv("HOME", home)
+	// Windows ignores HOME: os.UserHomeDir reads %USERPROFILE%, so isolating
+	// only HOME would let these tests touch the runner's real profile there.
+	os.Setenv("USERPROFILE", home)
 	os.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	os.Setenv("XDG_STATE_HOME", filepath.Join(home, ".state"))
 	if runtime.GOOS == "windows" {

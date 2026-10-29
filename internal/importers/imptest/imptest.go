@@ -19,6 +19,18 @@ import (
 	"testing"
 )
 
+// SetHome points os.UserHomeDir at dir for the duration of the test.
+//
+// HOME alone is not enough. Go reads %USERPROFILE% on Windows, so a test that
+// sets only HOME looks isolated on Unix and reads the runner's real home on
+// Windows — which is exactly how the importers' tests imported the CI runner's
+// own agent state and found nothing.
+func SetHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 // CopySample copies a sample from testdata/ into dest. The sample may be a
 // single file or a whole directory tree.
 //

@@ -30,7 +30,9 @@ func setupAgentService(t *testing.T) (*Service, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("REPOTORY_MCP_BIN", bin)
-	t.Setenv("HOME", t.TempDir())
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome) // os.UserHomeDir reads this on Windows
 	return s, bin
 }
 

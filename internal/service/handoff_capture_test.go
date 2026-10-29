@@ -93,6 +93,9 @@ func TestCaptureClaudeSessionByCwd(t *testing.T) {
 	svc, _ := setupService(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Windows reads %USERPROFILE%, not HOME, so both must point at the fake home
+	// or the capture reads the developer's real ~/.claude.
+	t.Setenv("USERPROFILE", home)
 	root := "/Users/tester/ProjX"
 	pid := seedProject(t, svc.db, "ProjX", root)
 	if pid == 0 {

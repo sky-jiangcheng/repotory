@@ -14,7 +14,7 @@ func TestImportUsesHermesHomeAndAllowlist(t *testing.T) {
 	hermesHome := t.TempDir()
 	t.Setenv("HERMES_HOME", hermesHome)
 	// A bogus HOME proves $HERMES_HOME wins.
-	t.Setenv("HOME", t.TempDir())
+	imptest.SetHome(t, t.TempDir())
 
 	// The sample tree holds the cases at once: two imported files
 	// (memories/*.md) and three that must be ignored — a non-md file inside
@@ -45,7 +45,7 @@ func TestImportUsesHermesHomeAndAllowlist(t *testing.T) {
 
 func TestImportDefaultsToHomeWhenNoHermesHome(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	imptest.SetHome(t, home)
 	t.Setenv("HERMES_HOME", "") // unset override -> use ~/.hermes
 	imptest.CopySample(t, "testdata/memories/MEMORY.md", filepath.Join(home, ".hermes", "memories", "MEMORY.md"))
 
