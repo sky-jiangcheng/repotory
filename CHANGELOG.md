@@ -6,6 +6,34 @@
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-10-30
+
+### 新增
+
+- **桌面外壳换成左中右三栏，macOS 上交通灯归左栏（ADR-0034，2026-10-29）**：用户点出的第一条——「大部分桌面App一级布局都是左中右，最左边可以窄一点并包住关闭放大缩小等按钮」——此前的外壳是一条横贯顶部的**网页导航栏**（品牌标记 + 七个顶级入口 + 主题/语言 + 更新徽标）加一条居中内容列：它在 860px 高的窗口里整条吃掉约 60px，换来的信息量只是七个链接；品牌标记占着导航栏左侧一大块，入口却压在右侧，视线要横跨整条栏；右侧 300px 以上的屏幕始终空着，没有一个常驻表面回答「现在有什么在等我」。现在改 **72px 左栏 / 中栏内容 / 288px 右栏上下文**：左栏是图标态（名称在 `aria-label` 与悬停标签里——72px 放不下文字入口），中栏自滚且 `max-width: 1280px` 居中，右栏摆全局搜索入口 + 待审核 + 最近更新，可折叠成 30px 把手，折叠态记 `localStorage` 且**不自动弹回**——记住的是这台机器上人上一次的选择。**右栏不新增后端面**：待审核取 ADR-0015 的 `listPendingWikiPages(0)`、最近更新取 ADR-0032 放开后已按 `updated_at DESC` 排好的 `browseWikiPages(0, 6)`；刻意不用 `listAllNotes()` / `listApprovedWikiPages()`——那两个会把全部笔记与全部已批准页的正文一次性搬进浏览器，右栏每次挂载都付这个代价不值得。**macOS 隐藏标题栏**（`mac.TitleBarHidden()`）：Wails 即便隐藏标题栏也保留 `NSWindowStyleMaskTitled`，交通灯由系统画在 webview 内容区左上角，而旧导航栏最左端恰好是品牌标记——**被压在三个圆点底下**；Windows/Linux 保留原生标题框所以完全正常，**这个缺陷只在 macOS 上肉眼可见**，一路活到用户亲手打开 app 才发现。**拖拽带放中栏顶部不放左栏**：左栏只有 72px，交通灯占掉横向 9..68px，拖拽带压在它上面只剩一条 9px 窄缝，拖不动。带子高度照抄原生标题栏的 28px，是**为了不赌命中测试**：隐藏标题栏后窗口顶部那条归 AppKit 还是 webview，本机没法用实验回答（合成鼠标事件能送达 webview，但 AppKit 不认合成事件带来的拖拽；终端又没有辅助功能权限，真实拖拽无法脚本化）——于是不赌，把两种未验证的可能**收敛到同一个可观察行为**：从顶部那条带子拖窗口，带子归谁管都行。**三栏内容整体让开 28px**（`--window-controls-inset`）：那 28px 里的 webview 收不到点击，把内容排进去就是排进一块点不到的地方。实现修正两处：`transport.call()` 不是 async、缺绑定时**同步**抛，`await` 拦不住，整个 effect 会把外壳带崩——右栏用本地 `load()` 包住，失败即降级成空列表，**右栏是装饰面，不值得为它崩掉整个 shell**；i18n 门禁的白名单从 `App.tsx` 搬到 `components/SideRail.tsx`（**搬家不是新增**——白名单每多一个文件就多一个漏检的口子）。另有一条差点回潮的：品牌标记的圆角（圆角是裁切不是样式，DOM 断言看不见它）被 `BrandMark.test.tsx` 的 CSS 读取断言当场拦下。**真机核验**：浏览器端到端目视通过 + macOS 真机窗口（隔离 HOME）复核，截图见 `outputs/screenshots/2026-10-29-gui-smoke/`。
+
+- **桌面产物在 macOS 上不再全程小写（2026-10-29）**：用户点出的第五条——「应用名还是全小写的，不符合惯例」。根因在 `wails.json`：`name` 是 `repotory`（决定 bundle 目录名 `repotory.app` 与 DMG 卷名），`outputfilename` 也是 `repotory`（决定 bundle 里的可执行文件名），而 `productName` 是 `Repotory` 但**管不到这两处**——于是产物在 Finder、Launchpad、`/Applications` 里全程以小写出现，用户看到的小写一直是 bundle 的目录名、不是显示名。改 `name` 为 `Repotory`，`outputfilename` 不动：**二进制名 `repotory` 是 ADR-0006 的冻结标识**（绑定数据目录与 MCP 前缀 `repotory_*` 的迁移史），只改 bundle 目录这一层。**这一层改名不动用户的数据**：数据目录是硬编码常量 `dirName = "repotory"`，与 bundle 名无关，改名前后装的是同一个库、同一份插件、同一个日志路径；bundle 标识也没变（Wails 的 `CFBundleIdentifier` 是 `com.wails.{{safeBundleID .Name}}`，`safeBundleID` 会转小写，仍是 `com.wails.repotory`，LaunchServices 不会把它当成另一个应用）。Homebrew Cask 的 `app` stanza 与 tap 的 `tests.yml` 断言同步改成 `Repotory.app`，DMG 卷名改为 `Repotory`（tap 的 runner 大小写敏感，不同步会红）。
+
+### 修复
+
+- **插件说「连不上服务」，背后其实是三件不同的事（2026-10-29）**：① **超时定得太短**——启动后等 `/health` 的窗口此前只有 5 秒，而冷启动要开库、要重述 schema、要抢写锁，5 秒是**超时设定而不是现实**，进程其实还在路上，插件却已经报「启动完成」，紧接着的检索自然连不上——放宽到 30 秒并每 250ms 探一次。② **不健康也报「已启动」**——进程活着但 `/health` 从未应答时，旧代码仍然返回 `Started`，把一个「还没起来」的服务说成「起来了」，下一个动作立刻违约；现在 `Started` 带 `healthy` 标志，插件如实说「进程在跑但服务还没应答」。③ **端口被占报得毫无信息**——`address already in use` 是这里最常见的失败（用户自己起了个服务、旧二进制、别的网卡），旧代码只给一句退出码；现在从服务日志尾部读出那几行并直说「端口被别的进程占了，服务从未启动，停掉它或换个端口」。**服务端也补了一格**：桌面端与 headless server 共用同一个 SQLite 文件，而**开库本身就要写**（WAL pragma、schema 重述、迁移都要写锁），`busy_timeout=5000` 之下，桌面端正在导入或做每日快照时 server 会在启动处以 `database is locked` 死掉——插件读到的就是「连不上服务」，而服务**根本没起来，也没人说为什么**；`cmd/server` 现在对锁竞争做退避重试（6 次，每次多等 1 秒，并把重试写进日志），**其他失败仍首次即致命**——文件缺失或 schema 坏了不该被重试成超时。
+
+- **插件把 `<mark>` 匹配标记原样显示给了用户（2026-10-29）**：服务端 `makeSnippet` 会把命中窗口 HTML 转义后再把命中词包进字面量 `<mark>…</mark>`，JetBrains 侧此前直接把这段当文本渲染，于是列表行里赫然写着「…在 <mark>repotory</mark> 插件里…」。新增 `Snippet.kt` 做一个**分段解码器**（先剥标记、再解实体、命中段加粗，其余转义后输出；实体解 `&amp; &lt; &gt; &quot; &apos; &nbsp; &#NN; &#xNN;`），列表行用纯文本 + 完整 tooltip，详情页用加粗版。**途中踩了一个坑**：第一版用控制字符当哨兵分隔标记，写盘时那些字节**被写成了空串**（`od -c` 才看出来），`"abc".replace("", "<b>")` 会在每个字符之间插标签——改成按段落切分的解码器，哨兵这条路整个不走了。
+
+- **插件的摘录被裁掉一截，且没有省略号（2026-10-29）**：一行摘录长到超出面板宽度时不是被省略，而是**在面板边缘被硬切**。根因在 Swing 的排版：一个 `JList` 按**列表自身**的宽度排版单元格，而列表宽度又跟着渲染器的首选宽度走——`JLabel` 的最小尺寸回落到首选尺寸，于是长摘录把列表撑得比视口还宽。修法是给渲染器覆写 `getPreferredSize()`：视口可见宽度已知时按它返回，宽度就由视口决定、不再由内容决定。实测几何 `list.w=299 list.pref=width=299 viewport.extent=299x734`，长摘录现在正常省略。
+
+- **VS Code 侧栏的 T 字形被边框挤变形（2026-10-29）**：用户点出的第一条在 VS Code 侧同样成立——侧栏是窄而高的形状，左右分栏在那个形状里把详情挤成几列不可读的字，而分隔位置随面板宽度漂移。改成**上下堆叠**（结果在上、详情在下，各占满整宽），侧栏不再需要横向拖拽才能读。目视核验：把 webview 页面取出来在 360px 与 520px 两个真实视口下渲染（headless Chrome 有 500px 最小视口，窄档用 iframe 造），两档都无横向溢出、无裁切。
+
+- **版本恢复后，笔记卡片还显示着被替换掉的旧正文（2026-10-29）**：版本面板把旧内容写回笔记，列表却还端着自己那份副本——**恢复读起来像没生效**。`useNoteVersionHistory` 现在在恢复真正落地后回调列表重取。
+
+- **AI 端点返回 200 却带着错误信封时，界面只说「没有返回任何选项」（2026-10-29）**：某些网关（OpenRouter 即如此）在上游 provider 饱和时**用 HTTP 200 回一个 `{"error":{…}}` 且没有 choices**，此前这个信封被整个丢弃，用户看到的是一句毫无信息量的「AI endpoint returned no choices」。现在解析出 provider 自己的话（`error_type` + `message`，消息按原样透传并截断——它写的是真实原因，例如「Worker local total request limit reached (16/16)」），并把 `error_type` 一起给出，好让人知道**等一等有没有用**。
+
+### 变更
+
+- **JetBrains 工具窗视觉重做：奶油品牌带 → 原生细条 + 可拖分隔 + 图标工具栏 + 状态胶囊（2026-10-29）**：旧面板把一条固定高度的奶油品牌带叠在固定宽度的结果列与一排文字按钮之上——每一块都自带自己的宽度，于是窄工具窗把品牌带拉长、把按钮裁掉、状态消息再把按钮挤出面板，**那个 T 是被撑变形的，不是被重排的**。新的壳给每块区域一个可伸缩的宽度：顶部是原生细条（品牌标记 + 字标 + 连接状态胶囊），两列是**可拖分隔的分栏**，每个动作是平台工具栏上的图标（而不是一排文字按钮）。检索仍是薄客户端纪律的底线——插件不复制排序、不复制片段提取。**顺带修掉的审美问题**：状态胶囊点一下就重连（此前第一次跑失败后要点一个才出现的按钮），面板打开即**主动探活**并把答案画在胶囊上；传输失败不再弹模态对话框，而是发一条 balloon 通知。
+
+- **JetBrains 工具窗图标从奶油卡改成 16px 单色字母（推翻 2.20.0 的那条结论，2026-10-29）**：2.20.0 记的是「按 IDEA 2025.2 的渲染链路核实，工具窗继续沿用品牌域方边卡，不遮罩」——**渲染链路那半是对的，结论那半被真机核验推翻了**：SVG 确实由 `SVGLoader` 交给 jsvg 光栅化、`StripeButton` 也确实不遮罩，但**不遮罩不等于小尺寸下能读**——40px 深的侧栏里，13px 的奶油卡是一块发亮的方块，hairline 框在该尺寸不足一个像素，读作变形的光斑而不是字母 R。改用**字形域**：16px 单色字母 + 透明底，浅色主题用品牌墨色、深色主题用品牌纸色，并按平台自己的 `icons/statisticsEventLog.svg` + `_dark.svg` 约定生成深色变体。生成器与 CONTRIBUTING 的三域表同步更新，AGENTS.md 里那条「图标三域」也改成了新的槽位归属。
+
 ## [2.20.0] - 2026-10-29
 
 ### 新增
@@ -570,7 +598,8 @@
 
 > v1.15.1 及更早版本（v1.0.0 – v1.15.1，2026-03 – 2026-10）的变更历史见 [outputs/archive/CHANGELOG-v1.0-v1.15.md](outputs/archive/CHANGELOG-v1.0-v1.15.md)。
 
-[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.20.0...HEAD
+[Unreleased]: https://github.com/sky-jiangcheng/repotory/compare/v2.21.0...HEAD
+[2.21.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.20.0...v2.21.0
 [2.20.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.19.0...v2.20.0
 [2.19.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/sky-jiangcheng/repotory/compare/v2.17.0...v2.18.0
