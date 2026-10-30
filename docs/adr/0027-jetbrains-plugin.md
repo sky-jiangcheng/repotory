@@ -18,7 +18,7 @@
 
 ## 决策
 
-1. **立项，承接薄客户端纪律**：插件是薄壳——经 headless HTTP（`/api/rpc` 为主）调共享服务层，零逻辑复制；不新增执行接口（MCP 保持唯一执行接口，ADR-0007）；插件只随对外 API 演进，不随内部实现演进。违反此纪律的子方案一律不入 MVP。
+1. **立项，承接薄客户端纪律**：插件是薄壳——经 headless HTTP（`/api/rpc` 为主）调共享服务层，零逻辑复制；**人侧界面调的是绑定面，不是执行接口**（MCP 保持唯一 **AI** 执行接口，ADR-0007；限定词由 [ADR-0035](0035-jetbrains-mcp-primary-channel.md) 决策 1 钉死）；插件只随对外 API 演进，不随内部实现演进。违反此纪律的子方案一律不入 MVP。（**通道形态已由 ADR-0035 决策 2 改为「MCP 主通道 + HTTP 补缺」**——本条描述的是 MVP 落码当时的形态。）
 2. **MVP 范围（平移 VS Code 扩展范式）**：
    - ① 知识库检索工具窗：笔记 + 待办的 FTS/hybrid 搜索（走既有检索绑定 `SearchAll`；语义与图感知随 `semantic_search` / `wiki_graph_search` 门控自然生效，插件不自带门控逻辑、不重复实现排序）；
    - ② 结果跳转：在系统浏览器打开 Repotory SPA 定位到该结果（同源 server 地址；深链路由以前端现状为准，不足处随 MVP 补最小路由参数，不在插件内嵌完整 UI）；
@@ -127,3 +127,11 @@ VS Code 扩展（第一个 IDE 分发面，ADR-0027 要求「平移」其范式�
 **仍属人工的两步**（不在代码库内）：① 所有者用 vendor 账号完成**首次**上传——Marketplace 会创建插件页并分配数值型公开 URL，此后版本可由 CI 自动发布；② 首版审核。插件 ID `dev.repotory.jetbrains` 一经首次上传不可更改，故在首次上传前定稿。
 
 **包内核验**：`buildPlugin` 成功后从 zip 解出 jar 内的 `plugin.xml`，确认 `<idea-version since-build="242" />`（无 `until-build`）、`<change-notes>` 与两个 `pluginIcon*.svg` 都在；`gradle verifyPlugin` 仍为 Compatible。
+
+## 修订记录（2026-10-30，[ADR-0035](0035-jetbrains-mcp-primary-channel.md)）
+
+本 ADR 的三条决策被后续 ADR 修订，原文保留：
+
+- **决策 1 的「唯一执行接口」补上「AI」限定词**——人侧界面调的是**绑定面**，不是执行接口。ADR-0035 决策 1 把这层含义钉死：否则本条「插件走 HTTP」与「不新增执行接口」落在同一句里，自相矛盾。
+- **决策 1 的「经 headless HTTP 为主」不再是终态**——ADR-0035 决策 2 把插件改为「MCP 主通道 + HTTP 补缺」，与 VS Code 扩展同构：八项数据能力走 MCP，`MoveNote`（human-only，不进 MCP）与服务存在性探测、深链两项保留 HTTP。
+- **决策 4 的「一键启动」定位降级**——ADR-0035 决策 6 把深链与一键启动定为**尽力而为的增强**，`repotory-server` 保持「用户自行获取的可选增强」，**不为此新建 install.sh / Homebrew / Scoop 渠道**。资产本身照发（决策 4 的「发布侧新增 `repotory-server-<platform>` 资产」已兑现），只是不再声称「唯一分发路径 = 插件一键启动」。设置页与工具窗的 **Start local service** 按钮保留，但它的用途从「使用前提」变成「补缺与深链的增强入口」。

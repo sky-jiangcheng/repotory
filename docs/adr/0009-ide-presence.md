@@ -17,7 +17,7 @@ Repotory 现有的分发资产——MCP server、dsh Harness 插件、llms.txt�
 
 ## 决策
 
-1. **薄客户端纪律**：MCP 保持唯一执行接口（ADR-0007），`internal/service` 保持单一事实源。一切新 IDE 资产（init 脚本、扩展、插件）都是薄壳——经 headless HTTP 或 MCP stdio 调共享服务层，零逻辑复制（与 `dsh-plugin-repotory` 同一范式）。违反此纪律的方案默认不进入路线图。
+1. **薄客户端纪律**：MCP 保持唯一 **AI** 执行接口（ADR-0007；限定词「AI」由 [ADR-0035](0035-jetbrains-mcp-primary-channel.md) 决策 1 钉死——人侧界面调的是**绑定面**，不是执行接口），`internal/service` 保持单一事实源。一切新 IDE 资产（init 脚本、扩展、插件）都是薄壳——经 headless HTTP 或 MCP stdio 调共享服务层，零逻辑复制（与 `dsh-plugin-repotory` 同一范式）。违反此纪律的方案默认不进入路线图。
 2. **第一步：M4 `repotory-init`**：一条命令完成 MCP 注册——写 `.mcp.json` / 客户端配置、探测 repotory-mcp 二进制、提示可选的 SessionEnd hook 配置——覆盖 VS Code 与 JetBrains 两大 IDE 家族的全部 MCP 客户端。纯脚本 + 文档，不新增基础设施，不与 ADR-0006 冲突。
 3. **第二步：VS Code 扩展（唯一的 IDE 扩展）**：命令面板三条命令（context / handoff / search）、状态栏显示上次交接时间、侧边栏笔记检索并跳转文件、首次使用引导一键注册 MCP。一个 VSIX 同时覆盖 VS Code / Cursor / Windsurf 整个 fork 家族——这是「一次投入、全家族见面」的唯一形态。
 4. **JetBrains 插件缓议**：独立 Kotlin/Gradle 代码库，双倍维护面；在收到真实需求信号（issue/star）并补写 ADR 论证前不立项、不写代码。
