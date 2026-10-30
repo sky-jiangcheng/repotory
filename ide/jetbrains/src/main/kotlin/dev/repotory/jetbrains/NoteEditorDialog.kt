@@ -138,7 +138,7 @@ class NoteEditorDialog(
         })
         val previewBox = JPanel(BorderLayout(0, JBUI.scale(4)))
         val previewLabel = JLabel("Preview")
-        previewLabel.font = previewLabel.font.deriveFont(Font.BOLD, JBUI.scale(11f))
+        previewLabel.font = previewLabel.font.deriveFont(Font.BOLD, JBUI.scaleFontSize(11f).toFloat())
         previewBox.add(previewLabel, BorderLayout.NORTH)
         previewBox.add(preview, BorderLayout.CENTER)
         root.add(previewBox, BorderLayout.SOUTH)
@@ -157,11 +157,11 @@ class NoteEditorDialog(
             JBUI.Borders.empty(6, 8),
         )
         val head = JBLabel("AI tidied draft — review, then save.")
-        head.font = head.font.deriveFont(Font.BOLD, JBUI.scale(12f))
+        head.font = head.font.deriveFont(Font.BOLD, JBUI.scaleFontSize(12f).toFloat())
         banner.add(head, BorderLayout.NORTH)
         if (warning.isNotBlank()) {
             val warn = JBLabel(warning)
-            warn.font = warn.font.deriveFont(JBUI.scale(11f))
+            warn.font = warn.font.deriveFont(JBUI.scaleFontSize(11f).toFloat())
             banner.add(warn, BorderLayout.SOUTH)
         }
         return banner

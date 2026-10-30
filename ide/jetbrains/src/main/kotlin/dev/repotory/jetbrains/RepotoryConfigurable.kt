@@ -106,7 +106,10 @@ class RepotoryConfigurable : Configurable {
 
     private fun describeStart(outcome: StartOutcome, target: String): String = when (outcome) {
         is StartOutcome.Started ->
-            if (outcome.webUi) {
+            if (!outcome.healthy) {
+                "Started ${outcome.binary.file.name} on port ${outcome.port}, but the service is not " +
+                    "answering yet. Wait a moment and press Test connection again."
+            } else if (outcome.webUi) {
                 "Started ${outcome.binary.file.name} on port ${outcome.port} — API and web UI reachable."
             } else {
                 "Started ${outcome.binary.file.name} on port ${outcome.port}, API-only " +

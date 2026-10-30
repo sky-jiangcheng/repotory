@@ -8,28 +8,42 @@
 // browser, deep-linked to that result. The plugin does not embed the SPA:
 // one rendering of the knowledge UI, the desktop app's.
 //
-// Layout (2026-10-23 revision) — a T-shape, same reader the VS Code
-// extension ships:
+// Layout (2026-10-29 revision) — a native IDE reader, no T-shape:
 //
-//   ┌───────────────────────────────────────────────────┐
-//   │ brand header: mark · wordmark · tagline · local-only│  ← identity & promo
-//   ├────────────────────────┬──────────────────────────┤
-//   │ search box             │ detail pane (HTML)       │
-//   │ thumbnail list         │ first hit selected by    │
-//   │ (kind · title · excerpt)│ default, full body      │
-//   ├────────────────────────┴──────────────────────────┤
-//   │ status line (wraps, full width — its own row)     │
-//   │ Edit · New · AI Tidy · Copy · Open … (own row)     │
-//   └───────────────────────────────────────────────────┘
+//   ┌──────────────────────────────────────────────────────────┐
+//   │ ▪ Repotory                          [● online] [↻] [▶]     │  identity + service
+//   ├──────────────────────────────────────────────────────────┤
+//   │ 🔍 [search…………………………]                [Notes][Pages]    │  query + space
+//   ├──────────────────────┬───────────────────────────────────┤
+//   │ results               │ [✎][+][⚡][⧉][↗]                │  per-item actions
+//   │ (kind · title ·       │ the selected knowledge, in full   │
+//   │  matched excerpt)     │                                   │
+//   ├──────────────────────┴───────────────────────────────────┤
+//   │ status line                                                │
+//   └──────────────────────────────────────────────────────────┘
+//
+// Why it changed: the previous panel stacked a fixed cream brand band over
+// a fixed-width column and a row of text buttons. Every one of those had a
+// width of its own, so a narrow tool window stretched the band, clipped the
+// buttons and let the status message push the buttons off the panel — the
+// "T" deformed instead of reflowing. The new shell gives every region a
+// flexible width: the header is a slim native strip, the two columns are a
+// draggable split pane, and every action is an icon in a platform toolbar.
+//
+// Connection (2026-10-29 revision): the panel PROBES the service on open and
+// shows the answer as a status pill. When nothing answers, it starts the
+// local service ONCE, by itself, and retries the query — the commonest
+// first-run state (the plugin is installed, no server is running) used to
+// need a click on a button that only appeared after a failed search.
 //
 // The full body of a note is fetched on selection (GetNote over the same
 // RPC bridge); todos carry their whole content in the excerpt, and a note
 // whose read fails falls back to the excerpt with a label that says so.
 //
-// The action row is the maintenance surface (2026-10-23): Edit and New open
-// the shared NoteEditorDialog, AI Tidy asks the service for a reorganization
-// PROPOSAL that opens the SAME dialog — machine-generated wording is never
-// saved silently; the user's save is the gate.
+// The action toolbar is the maintenance surface (2026-10-23): Edit and New
+// open the shared NoteEditorDialog, AI Tidy asks the service for a
+// reorganization PROPOSAL that opens the SAME dialog — machine-generated
+// wording is never saved silently; the user's save is the gate.
 //
 // Three runtime properties this file is responsible for:
 //   · typing debounces (300 ms) and every search carries a sequence number, so
@@ -40,47 +54,65 @@
 //     pooled threads, the pane is repainted from invokeLater.
 package dev.repotory.jetbrains
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.ActionGroup
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
-import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBScrollPane
-import com.intellij.util.ui.JBUI
 import com.intellij.openapi.wm.ex.ToolWindowManagerEx
+import com.intellij.ui.JBColor
+import com.intellij.ui.SearchTextField
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBList
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
+import com.intellij.util.ui.JBUI
+import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.Font
-import java.awt.GridLayout
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
 import javax.swing.BorderFactory
 import javax.swing.DefaultListModel
+import javax.swing.Icon
 import javax.swing.ImageIcon
-import javax.swing.JButton
 import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JSplitPane
 import javax.swing.JTextArea
-import javax.swing.JTextField
-import javax.swing.JToggleButton
 import javax.swing.ListSelectionModel
 import javax.swing.Timer
+import javax.swing.JViewport
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import kotlin.math.ceil
@@ -88,14 +120,29 @@ import kotlin.math.ceil
 /** Trailing-edge debounce: the query runs 300 ms after the last keystroke. */
 private const val DEBOUNCE_MS = 300
 
-/** Fixed width of the thumbnail column; the detail pane takes the rest. */
-private val LIST_WIDTH = JBUI.scale(280)
+/** Narrower than this the list becomes unusable, so the split refuses to go below it. */
+private val LIST_MIN_WIDTH = JBUI.scale(200)
 
-/** The brand surfaces are FIXED, not themed: the cream card and ink type are the mark. */
-private val BRAND_FIELD = Color(0xF5, 0xF0, 0xE4)
-private val BRAND_INK = Color(0x1B, 0x1B, 0x1B)
-private val BRAND_INK_SOFT = Color(0x55, 0x55, 0x55)
-private val BRAND_INK_FAINT = Color(0x6A, 0x6A, 0x6A)
+/** Where the split puts the divider the first time the panel opens. */
+private val LIST_DEFAULT_WIDTH = JBUI.scale(300)
+
+/** The notification group the plugin posts its service problems to. */
+private const val NOTIFICATION_GROUP = "Repotory"
+
+/**
+ * The state of the connection to the Repotory service.
+ *
+ * It is a closed set because the panel shows it as a pill and every state
+ * needs its own wording: "offline" and "starting" mean different things to
+ * the user, and collapsing them into "not connected" is how a reader ends up
+ * waiting for a service that was never coming.
+ */
+private enum class LinkState {
+    ONLINE,
+    OFFLINE,
+    STARTING,
+    CHECKING,
+}
 
 /** Kind badge colours, paired light/dark so they follow the IDE theme. */
 private val BADGE_NOTE = JBColor(Color(0x1D, 0x4E, 0xD8), Color(0x60, 0xA5, 0xFA))
@@ -110,8 +157,8 @@ private val BADGE_WIKI = JBColor(Color(0x6F, 0x42, 0xC1), Color(0xD2, 0xA8, 0xFF
  * the deep link would open the wrong thing. One space on screen at a time.
  */
 private enum class Source(val label: String, val hint: String) {
-    NOTES("Notes & todos", "Search notes and todos"),
-    WIKI("Wiki pages", "Search the approved knowledge pages"),
+    NOTES("Notes", "Search notes and todos"),
+    WIKI("Pages", "Search the approved knowledge pages"),
 }
 
 class RepotoryToolWindowFactory : ToolWindowFactory, DumbAware {
@@ -125,18 +172,16 @@ class RepotoryToolWindowFactory : ToolWindowFactory, DumbAware {
 
 class RepotoryPanel : JPanel(), Disposable {
     private val model = DefaultListModel<RepotoryHit>()
-    private val input = JTextField()
-    private val list = JList(model)
+    private val list = JBList(model)
     private val detail = JEditorPane()
     private val status = StatusField()
-    private val editButton = JButton("Edit")
-    private val newButton = JButton("New note")
-    private val organizeButton = JButton("AI Tidy")
-    private val openButton = JButton("Open in Repotory")
-    private val copyButton = JButton("Copy")
-    private val startButton = JButton("Start service")
-    private val sourceNotes = JToggleButton(Source.NOTES.label)
-    private val sourceWiki = JToggleButton(Source.WIKI.label)
+    private val search = SearchTextField()
+    private val pill = ConnectionPill()
+
+    private val serviceToolbar: ActionToolbar
+    private val sourceToolbar: ActionToolbar
+    private val detailToolbar: ActionToolbar
+
     private var source = Source.NOTES
     private var disposed = false
 
@@ -151,6 +196,19 @@ class RepotoryPanel : JPanel(), Disposable {
     /** Same guard for the detail pane: a slow note read must not overwrite a newer selection. */
     private var detailSeq = 0
 
+    /**
+     * True once the panel has tried to bring the local service up by itself.
+     *
+     * The automatic start happens at most once per outage: without this guard
+     * a service that cannot start (no binary, port taken) would be spawned
+     * again on every keystroke, each attempt waiting 30 seconds for a
+     * health check that never comes.
+     */
+    private var autoStartAttempted = false
+
+    /** True while a start is in flight, so a second click cannot double-spawn. */
+    private var starting = false
+
     /** Keystrokes restart this timer; only the last one survives to fire. */
     private val debounce = Timer(DEBOUNCE_MS) { runSearch() }
 
@@ -159,50 +217,56 @@ class RepotoryPanel : JPanel(), Disposable {
         // before the regions are added, and removeAll() clears the
         // default layout manager's single placeholder component.
         removeAll()
-        layout = java.awt.BorderLayout(0, 0)
+        layout = BorderLayout(0, 0)
         debounce.isRepeats = false
 
-        add(brandHeader(), java.awt.BorderLayout.NORTH)
-        add(readerBody(), java.awt.BorderLayout.CENTER)
-        add(statusBar(), java.awt.BorderLayout.SOUTH)
+        serviceToolbar = buildToolbar("RepotoryService", serviceActions())
+        sourceToolbar = buildToolbar("RepotorySource", sourceActions())
+        detailToolbar = buildToolbar("RepotoryDetail", detailActions())
+
+        add(headerStrip(), BorderLayout.NORTH)
+        add(readerBody(), BorderLayout.CENTER)
+        add(statusBar(), BorderLayout.SOUTH)
+
+        pill.onClick = { reconnect() }
+        search.toolTipText = Source.NOTES.hint
+        // The pill must be honest before the first search: an open panel that
+        // says "checking…" forever is worse than one that says "offline".
+        probeConnection()
     }
 
-    // ------------------------------------------------------------- brand header
+    // ------------------------------------------------------------- header strip
 
     /**
-     * The top band: the mark, the wordmark, the one-line pitch and the
-     * local-only chip. Fixed cream field in both themes — it is a printed
-     * card, not a themed surface, which is what makes the window feel like
-     * a product rather than a panel.
+     * The top band: the mark, the wordmark, the connection pill and the two
+     * service actions.
+     *
+     * A slim native strip, not a printed card. The old cream band was the
+     * brand's own colour, which meant it ignored the IDE theme AND had a
+     * fixed height that a narrow window stretched; a strip with flexible
+     * regions reflows instead.
      */
-    private fun brandHeader(): JPanel {
-        val header = JPanel(java.awt.BorderLayout(JBUI.scale(12), 0))
-        header.background = BRAND_FIELD
-        header.border = JBUI.Borders.empty(10, 12)
-
-        val mark = markLabel(JBUI.scale(44))
-        val text = JPanel(GridLayout(0, 1))
-        text.isOpaque = false
-        val name = JLabel("Repotory")
-        name.font = name.font.deriveFont(Font.BOLD, JBUI.scale(15f))
-        name.foreground = BRAND_INK
-        val tagline = ElidingLabel("The local-first memory layer for AI coding agents")
-        tagline.font = tagline.font.deriveFont(JBUI.scale(11f))
-        tagline.foreground = BRAND_INK_SOFT
-        text.add(name)
-        text.add(tagline)
-
-        val chip = JLabel("local-only")
-        chip.font = chip.font.deriveFont(JBUI.scale(10f))
-        chip.foreground = BRAND_INK_FAINT
-        chip.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(BRAND_INK, 1),
-            JBUI.Borders.empty(2, 6),
+    private fun headerStrip(): JPanel {
+        val header = JPanel(BorderLayout(JBUI.scale(8), 0))
+        header.border = JBUI.Borders.compound(
+            JBUI.Borders.customLineBottom(JBColor.border()),
+            JBUI.Borders.empty(5, 8),
         )
 
-        if (mark != null) header.add(mark, java.awt.BorderLayout.WEST)
-        header.add(text, java.awt.BorderLayout.CENTER)
-        header.add(chip, java.awt.BorderLayout.EAST)
+        val brand = JPanel(BorderLayout(JBUI.scale(6), 0))
+        brand.isOpaque = false
+        markLabel(JBUI.scale(18))?.let { brand.add(it, BorderLayout.WEST) }
+        val wordmark = JLabel("Repotory")
+        wordmark.font = wordmark.font.deriveFont(Font.BOLD)
+        brand.add(wordmark, BorderLayout.CENTER)
+
+        val service = JPanel(BorderLayout(JBUI.scale(6), 0))
+        service.isOpaque = false
+        service.add(serviceToolbar.component, BorderLayout.WEST)
+        service.add(pill, BorderLayout.EAST)
+
+        header.add(brand, BorderLayout.WEST)
+        header.add(service, BorderLayout.EAST)
         return header
     }
 
@@ -214,47 +278,152 @@ class RepotoryPanel : JPanel(), Disposable {
         return JLabel(ImageIcon(scaled))
     }
 
+    // ------------------------------------------------------------- toolbars
+
+    /**
+     * A platform toolbar for [group].
+     *
+     * The platform draws the buttons (hover, disabled, keyboard), so the
+     * panel does not have to keep its own copies of that behaviour.
+     */
+    private fun buildToolbar(place: String, group: ActionGroup): ActionToolbar {
+        val toolbar = ActionManager.getInstance().createActionToolbar(place, group, true)
+        toolbar.targetComponent = this
+        val component = toolbar.component
+        component.isOpaque = false
+        component.border = JBUI.Borders.empty()
+        return toolbar
+    }
+
+    /** Refresh (re-probe and re-search) and Start (bring the local service up). */
+    private fun serviceActions(): ActionGroup = DefaultActionGroup(
+        object : AnAction("Refresh", "Re-check the service and search again", AllIcons.Actions.Refresh), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun actionPerformed(e: AnActionEvent) = reconnect()
+        },
+        object : AnAction("Start local service", "Start the local Repotory service", AllIcons.Actions.Execute), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = !starting && pill.state != LinkState.ONLINE
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = startLocalService(auto = false)
+        },
+    )
+
+    /**
+     * The space switch: notes on one side, approved wiki pages on the other.
+     *
+     * Two toggles rather than one combined list, because the two spaces have
+     * independent id sequences — a merged list would make "page 12" ambiguous.
+     * ToggleAction is used instead of a pair of JToggleButtons because the
+     * platform keeps exactly one of them lit: a plain toggle button switches
+     * itself OFF when it is clicked again, which would leave the reader with
+     * no source at all.
+     */
+    private fun sourceActions(): ActionGroup = DefaultActionGroup(
+        object : ToggleAction(Source.NOTES.label, Source.NOTES.hint, null), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun isSelected(e: AnActionEvent): Boolean = source == Source.NOTES
+
+            override fun setSelected(e: AnActionEvent, state: Boolean) {
+                if (state) switchSource(Source.NOTES)
+            }
+        },
+        object : ToggleAction(Source.WIKI.label, Source.WIKI.hint, null), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun isSelected(e: AnActionEvent): Boolean = source == Source.WIKI
+
+            override fun setSelected(e: AnActionEvent, state: Boolean) {
+                if (state) switchSource(Source.WIKI)
+            }
+        },
+    )
+
+    /**
+     * The per-item actions: edit, new, AI tidy, copy, open in Repotory.
+     *
+     * They live above the detail pane because they act on the SELECTED item,
+     * and the selected item is what the detail pane shows.
+     */
+    private fun detailActions(): ActionGroup = DefaultActionGroup(
+        object : AnAction("Edit", "Edit the selected note", AllIcons.Actions.Edit), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = selectedNote() != null
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = editSelected()
+        },
+        object : AnAction("New note", "Add a note under the same project", AllIcons.General.Add), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = selectedNote() != null
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = newNoteUnderSelectedProject()
+        },
+        object : AnAction("AI Tidy", "Let the AI restructure this note — review the proposal, then save", AllIcons.Actions.Lightning), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = selectedNote() != null
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = organizeSelected()
+        },
+        object : AnAction("Copy", "Copy the full text to the clipboard", AllIcons.Actions.Copy), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = list.selectedValue != null
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = copySelected()
+        },
+        object : AnAction("Open in Repotory", "Open this item in the Repotory app", AllIcons.General.Web), DumbAware {
+            override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = list.selectedValue != null
+            }
+
+            override fun actionPerformed(e: AnActionEvent) = openSelected()
+        },
+    )
+
     // ------------------------------------------------------------- reader body
 
-    /** Left: source switch + search box + thumbnails. Right: the expanded knowledge. */
+    /** The query row and the two-column split: results on the left, the item on the right. */
     private fun readerBody(): JPanel {
-        val body = JPanel(java.awt.BorderLayout())
-
-        val left = JPanel(java.awt.BorderLayout(0, 0))
-        input.toolTipText = Source.NOTES.hint
-        input.document.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(e: DocumentEvent) = scheduleSearch()
-            override fun removeUpdate(e: DocumentEvent) = scheduleSearch()
-            override fun changedUpdate(e: DocumentEvent) = scheduleSearch()
-        })
-        val top = JPanel(java.awt.BorderLayout(0, JBUI.scale(4)))
-        top.isOpaque = false
-        top.add(sourceRow(), java.awt.BorderLayout.NORTH)
-        top.add(input, java.awt.BorderLayout.SOUTH)
-        left.add(top, java.awt.BorderLayout.NORTH)
+        val body = JPanel(BorderLayout(0, 0))
+        body.add(searchRow(), BorderLayout.NORTH)
 
         list.selectionMode = ListSelectionModel.SINGLE_SELECTION
         list.cellRenderer = ThumbRenderer()
-        list.fixedCellHeight = JBUI.scale(64)
-        list.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        list.setFixedCellHeight(JBUI.scale(58))
+        list.emptyText.text = "Search your Repotory knowledge base"
+        list.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount == 2) openSelected()
             }
         })
         list.addListSelectionListener { event ->
             if (event.valueIsAdjusting) return@addListSelectionListener
-            val has = list.selectedValue != null
-            val isNote = list.selectedValue?.type == "note"
-            openButton.isEnabled = has
-            copyButton.isEnabled = has
-            editButton.isEnabled = isNote
-            newButton.isEnabled = isNote
-            organizeButton.isEnabled = isNote
+            // The toolbar's enabled state follows the selection, so it has to
+            // be told the selection changed.
+            detailToolbar.updateActionsAsync()
             showDetail(list.selectedValue)
         }
-        left.add(JBScrollPane(list), java.awt.BorderLayout.CENTER)
-        left.preferredSize = Dimension(LIST_WIDTH, 0)
-        left.minimumSize = Dimension(JBUI.scale(200), 0)
+        val listPane = JBScrollPane(list)
+        listPane.border = JBUI.Borders.customLineRight(JBColor.border())
+        listPane.minimumSize = Dimension(LIST_MIN_WIDTH, 0)
 
         detail.contentType = "text/html"
         detail.isEditable = false
@@ -262,37 +431,37 @@ class RepotoryPanel : JPanel(), Disposable {
         detail.text = promoHtml()
         detail.border = JBUI.Borders.empty(10, 14)
 
-        body.add(left, java.awt.BorderLayout.WEST)
-        body.add(JBScrollPane(detail), java.awt.BorderLayout.CENTER)
+        val detailArea = JPanel(BorderLayout(0, 0))
+        detailArea.add(detailToolbar.component, BorderLayout.NORTH)
+        detailArea.add(JBScrollPane(detail), BorderLayout.CENTER)
+        detailArea.minimumSize = Dimension(JBUI.scale(220), 0)
+
+        // A split pane, not a fixed-width column: the divider follows the
+        // window when it is resized and can be dragged by the user, so the
+        // two halves never squeeze each other into illegibility.
+        val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listPane, detailArea)
+        split.border = JBUI.Borders.empty()
+        split.isOneTouchExpandable = true
+        split.resizeWeight = 0.38
+        split.dividerLocation = LIST_DEFAULT_WIDTH
+        body.add(split, BorderLayout.CENTER)
         return body
     }
 
-    /**
-     * The source switch: notes & todos on one side, approved wiki pages on the
-     * other.
-     *
-     * Two toggles rather than one combined list, because the two spaces have
-     * independent id sequences — a merged list would make "page 12" ambiguous.
-     * The selection is set here rather than through a ButtonGroup so that
-     * exactly one of them is lit even when the user clicks the lit one (a
-     * toggle would otherwise switch itself off and leave the reader with no
-     * source at all).
-     */
-    private fun sourceRow(): JPanel {
-        val row = JPanel(java.awt.GridLayout(1, 2, JBUI.scale(4), 0))
-        row.isOpaque = false
-        for (button in listOf(sourceNotes, sourceWiki)) {
-            button.isOpaque = false
-            button.font = button.font.deriveFont(JBUI.scaleFontSize(11f))
-        }
-        sourceNotes.toolTipText = Source.NOTES.hint
-        sourceWiki.toolTipText = Source.WIKI.hint
-        sourceNotes.isSelected = true
-        sourceWiki.isSelected = false
-        sourceNotes.addActionListener { switchSource(Source.NOTES) }
-        sourceWiki.addActionListener { switchSource(Source.WIKI) }
-        row.add(sourceNotes)
-        row.add(sourceWiki)
+    /** The query field and the space switch, on one row. */
+    private fun searchRow(): JPanel {
+        val row = JPanel(BorderLayout(JBUI.scale(6), 0))
+        row.border = JBUI.Borders.compound(
+            JBUI.Borders.customLineBottom(JBColor.border()),
+            JBUI.Borders.empty(4, 8),
+        )
+        search.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent) = scheduleSearch()
+            override fun removeUpdate(e: DocumentEvent) = scheduleSearch()
+            override fun changedUpdate(e: DocumentEvent) = scheduleSearch()
+        })
+        row.add(search, BorderLayout.CENTER)
+        row.add(sourceToolbar.component, BorderLayout.EAST)
         return row
     }
 
@@ -305,116 +474,41 @@ class RepotoryPanel : JPanel(), Disposable {
      * ambiguous.
      */
     private fun switchSource(next: Source) {
-        sourceNotes.isSelected = next == Source.NOTES
-        sourceWiki.isSelected = next == Source.WIKI
         if (source == next) return
         source = next
         model.clear()
+        // The toggle button that is lit has to follow the switch.
+        sourceToolbar.updateActionsAsync()
         // Both in-flight answers answer the OTHER space: they must not land.
         searchSeq++
         detailSeq++
         detail.text = promoHtml()
         detail.caretPosition = 0
         status.text = " "
-        startButton.isVisible = false
-        input.toolTipText = next.hint
-        val query = input.text?.trim().orEmpty()
+        search.toolTipText = next.hint
+        val query = search.text.trim()
         if (query.isNotEmpty()) runSearch()
     }
 
     // ------------------------------------------------------------- status bar
 
     private fun statusBar(): JPanel {
-        // Stacked, NOT side by side. The message used to sit in the WEST of a
-        // BorderLayout and the action buttons in the EAST: a long message
-        // ("Cannot reach http://127.0.0.1:18765 — Connection refused — or
-        // start the local service.") asked for more width than the whole
-        // tool window, so BorderLayout pushed the buttons into negative
-        // space and painted them straight over the text. One row for the
-        // message, one row for the buttons: they cannot overlap any more.
-        val bar = JPanel(java.awt.BorderLayout(0, JBUI.scale(4)))
-        bar.border = JBUI.Borders.empty(6, 10)
-
-        openButton.isEnabled = false
-        openButton.addActionListener { openSelected() }
-        copyButton.isEnabled = false
-        copyButton.addActionListener { copySelected() }
-
-        // Maintenance: only meaningful for a note (a todo has no note row to
-        // edit), so they stay disabled until one is selected.
-        editButton.isEnabled = false
-        editButton.addActionListener { editSelected() }
-        newButton.isEnabled = false
-        newButton.addActionListener { newNoteUnderSelectedProject() }
-        organizeButton.isEnabled = false
-        organizeButton.toolTipText = "Let the AI restructure this note — review the proposal, then save"
-        organizeButton.addActionListener { organizeSelected() }
-
-        // Only offered when a search failed because nothing answered at the
-        // configured address. Starting a local server cannot fix a 4xx from a
-        // live server, so the button stays out of the way otherwise.
-        startButton.isVisible = false
-        startButton.toolTipText = "Start the local Repotory service"
-        startButton.addActionListener { startLocalService() }
-
-        val buttons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(6), 0))
-        buttons.add(startButton)
-        buttons.add(editButton)
-        buttons.add(newButton)
-        buttons.add(organizeButton)
-        buttons.add(copyButton)
-        buttons.add(openButton)
-
-        bar.add(status, java.awt.BorderLayout.NORTH)
-        bar.add(buttons, java.awt.BorderLayout.SOUTH)
+        val bar = JPanel(BorderLayout(0, 0))
+        bar.border = JBUI.Borders.compound(
+            JBUI.Borders.customLineTop(JBColor.border()),
+            JBUI.Borders.empty(4, 8),
+        )
+        bar.add(status, BorderLayout.CENTER)
         return bar
-    }
-
-    /**
-     * A label that shortens its text with an ellipsis instead of cutting it.
-     *
-     * The brand header puts the wordmark and the tagline in the middle of a
-     * BorderLayout, so the tagline gets whatever width is left after the
-     * mark and the "local-only" chip. In a narrow tool window that is not
-     * enough for the full sentence, and a plain JLabel simply draws past its
-     * own bounds — the words are chopped mid-word with no sign that
-     * something was cut. An ellipsis says "there is more" instead.
-     */
-    private class ElidingLabel(full: String) : JLabel() {
-        private var fullText: String = full
-
-        init {
-            text = full
-        }
-
-        override fun setSize(w: Int, h: Int) {
-            super.setSize(w, h)
-            elide()
-        }
-
-        private fun elide() {
-            if (width <= 0) return
-            val metrics = getFontMetrics(font)
-            if (metrics.stringWidth(fullText) <= width) {
-                if (text != fullText) text = fullText
-                return
-            }
-            var cut = fullText
-            while (cut.isNotEmpty() && metrics.stringWidth(cut + "…") > width) {
-                cut = cut.dropLast(1)
-            }
-            val elided = if (cut.isEmpty()) "…" else "$cut…"
-            if (text != elided) text = elided
-        }
     }
 
     /**
      * The status line's text field.
      *
      * It was a JLabel: a label cannot wrap, so a long message was either
-     * clipped or — worse — claimed the whole width of a BorderLayout row
-     * and pushed the buttons off the panel. This field wraps instead, and
-     * it grows to fit the text it holds.
+     * clipped or — worse — claimed the whole width of a BorderLayout row and
+     * pushed the buttons off the panel. This field wraps instead, and it
+     * grows to fit the text it holds.
      *
      * JTextArea does not size itself to its content, so the row count is
      * derived from the text and the current width, and recomputed whenever
@@ -456,7 +550,7 @@ class RepotoryPanel : JPanel(), Disposable {
             // the width is still zero, so a scaled guess stands in.
             val usable = if (width > 0) width else JBUI.scale(280)
             val perLine = maxOf(16, usable / 6)
-            return ceil(value.length.toDouble() / perLine).toInt().coerceIn(1, 8)
+            return ceil(value.length.toDouble() / perLine).toInt().coerceIn(1, 3)
         }
     }
 
@@ -464,7 +558,7 @@ class RepotoryPanel : JPanel(), Disposable {
 
     private fun scheduleSearch() {
         if (disposed) return
-        val query = input.text?.trim().orEmpty()
+        val query = search.text.trim()
         if (query.isEmpty()) {
             debounce.stop()
             // Invalidate any in-flight response: it answers a query the user
@@ -472,17 +566,16 @@ class RepotoryPanel : JPanel(), Disposable {
             // like a bug.
             searchSeq++
             model.clear()
-            startButton.isVisible = false
             status.text = " "
             return
         }
-        status.text = "Typing…"
+        status.text = "Searching…"
         debounce.restart()
     }
 
     private fun runSearch() {
         if (disposed) return
-        val query = input.text?.trim().orEmpty()
+        val query = search.text.trim()
         if (query.isEmpty()) return
         val seq = ++searchSeq
         val serverUrl = RepotorySettings.serverUrl()
@@ -507,7 +600,7 @@ class RepotoryPanel : JPanel(), Disposable {
                         // Default selection: the first hit, so the detail pane
                         // is never empty while results are on screen.
                         if (outcome.hits.isNotEmpty()) list.selectedIndex = 0
-                        startButton.isVisible = false
+                        pill.state = LinkState.ONLINE
                         status.text = if (outcome.hits.isEmpty()) {
                             "No matches for \"$query\""
                         } else {
@@ -516,13 +609,20 @@ class RepotoryPanel : JPanel(), Disposable {
                     }
                     is SearchOutcome.Failure -> {
                         model.clear()
-                        // One click to fix the most common first-run state:
-                        // the plugin is installed but no service is running.
-                        startButton.isVisible = outcome.offline
-                        status.text = if (outcome.offline) {
-                            "${outcome.message} — or start the local service."
+                        if (outcome.offline) {
+                            // Nothing answered at the address. This is the
+                            // commonest state by far (the plugin is installed,
+                            // no service is running), so the panel brings the
+                            // local one up by itself — once.
+                            pill.state = LinkState.OFFLINE
+                            if (!autoStartAttempted) {
+                                autoStartAttempted = true
+                                startLocalService(auto = true)
+                            } else {
+                                status.text = "${outcome.message} — press the status pill to try again."
+                            }
                         } else {
-                            outcome.message
+                            status.text = outcome.message
                         }
                     }
                 }
@@ -580,7 +680,166 @@ class RepotoryPanel : JPanel(), Disposable {
         }
     }
 
+    // ------------------------------------------------------------- connection
+
+    /**
+     * Asks the service whether it is there, and paints the answer on the pill.
+     *
+     * The probe is asked on its own thread and answered on the EDT: the panel
+     * must never wait on a socket.
+     */
+    private fun probeConnection() {
+        if (disposed) return
+        pill.state = LinkState.CHECKING
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val up = repotoryClient.ping(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                if (up) {
+                    pill.state = LinkState.ONLINE
+                    autoStartAttempted = false
+                } else {
+                    pill.state = LinkState.OFFLINE
+                    status.text = "No Repotory service at $serverUrl."
+                }
+            }
+        }
+    }
+
+    /**
+     * The pill was clicked (or Refresh was pressed): check the service and,
+     * if it is up, run the current query again.
+     */
+    private fun reconnect() {
+        if (disposed) return
+        pill.state = LinkState.CHECKING
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val up = repotoryClient.ping(serverUrl)
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                if (up) {
+                    pill.state = LinkState.ONLINE
+                    autoStartAttempted = false
+                    val query = search.text.trim()
+                    if (query.isNotEmpty()) runSearch() else status.text = "Connected to $serverUrl"
+                } else {
+                    pill.state = LinkState.OFFLINE
+                    status.text = "No Repotory service at $serverUrl."
+                    if (!autoStartAttempted) {
+                        autoStartAttempted = true
+                        startLocalService(auto = true)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Starts the local Repotory service and retries the query.
+     *
+     * The spawn waits on the binary and on /health, so it runs on a pooled
+     * thread; the EDT only gets the outcome. Nothing is downloaded: when no
+     * binary exists, the user is offered the file picker or the release page.
+     *
+     * [auto] marks the attempt the panel made by itself: it never opens a
+     * modal dialog on its own, because a dialog nobody asked for interrupts
+     * the work; it posts a notification instead.
+     */
+    private fun startLocalService(auto: Boolean) {
+        if (disposed || starting) return
+        starting = true
+        pill.state = LinkState.STARTING
+        status.text = "Starting the local Repotory service…"
+        val serverUrl = RepotorySettings.serverUrl()
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val outcome = repotoryServer.start(serverUrl) { message ->
+                app.invokeLater {
+                    if (!disposed) status.text = message
+                }
+            }
+            app.invokeLater {
+                if (disposed) return@invokeLater
+                starting = false
+                when (outcome) {
+                    is StartOutcome.Started -> {
+                        if (!outcome.healthy) {
+                            // The process is up but /health never answered:
+                            // say so instead of promising a service that is
+                            // not there yet.
+                            pill.state = LinkState.STARTING
+                            status.text = "The server process is running but is not answering yet — " +
+                                "click the status pill to retry."
+                        } else {
+                            pill.state = LinkState.ONLINE
+                            autoStartAttempted = false
+                            status.text = if (outcome.webUi) {
+                                "Service on port ${outcome.port}. Searching again…"
+                            } else {
+                                "Service on port ${outcome.port} (API-only — “Open in Repotory” would 404). " +
+                                    "Searching again…"
+                            }
+                            runSearch()
+                        }
+                    }
+                    StartOutcome.AlreadyRunning -> {
+                        pill.state = LinkState.ONLINE
+                        autoStartAttempted = false
+                        status.text = "The service is already running. Searching again…"
+                        runSearch()
+                    }
+                    is StartOutcome.BinaryMissing -> {
+                        pill.state = LinkState.OFFLINE
+                        if (auto) {
+                            status.text = "No repotory-server binary found — set its path in " +
+                                "Settings | Tools | Repotory."
+                            notifyMissingBinary(outcome.searched)
+                        } else if (offerServerBinaryHelp(outcome.searched)) {
+                            startLocalService(auto = false)
+                        }
+                    }
+                    is StartOutcome.Failed -> {
+                        pill.state = LinkState.OFFLINE
+                        status.text = outcome.message
+                    }
+                }
+            }
+        }
+    }
+
+    /** Posts the "there is no server binary" balloon, with the two ways out. */
+    private fun notifyMissingBinary(searched: String) {
+        val manager = NotificationGroupManager.getInstance()
+        if (!manager.isGroupRegistered(NOTIFICATION_GROUP)) return
+        val notification = manager.getNotificationGroup(NOTIFICATION_GROUP).createNotification(
+            "Repotory: no local service binary",
+            "The plugin could not find a repotory-server executable.\n$searched",
+            NotificationType.WARNING,
+        )
+        notification.addAction(
+            NotificationAction.createSimple("Locate…") {
+                chooseServerBinary()?.let {
+                    RepotorySettings.setServerBinaryPath(it.absolutePath)
+                    reconnect()
+                }
+            },
+        )
+        notification.addAction(
+            NotificationAction.createSimple("Open settings") {
+                ShowSettingsUtil.getInstance().showSettingsDialog(null, "dev.repotory.jetbrains.settings")
+            },
+        )
+        notification.notify(null)
+    }
+
     // ------------------------------------------------------------- actions
+
+    /** The selected hit, when it is a note (a todo has no note row to edit). */
+    private fun selectedNote(): RepotoryHit? = list.selectedValue?.takeIf { it.type == "note" }
 
     private fun copySelected() {
         val hit = list.selectedValue ?: return
@@ -597,7 +856,7 @@ class RepotoryPanel : JPanel(), Disposable {
             val text = buildString {
                 appendLine(hit.title.ifBlank { "(untitled)" })
                 appendLine()
-                append(body ?: hit.snippet)
+                append(body ?: snippetPlain(hit.snippet, 2000))
             }
             app.invokeLater {
                 if (disposed) return@invokeLater
@@ -616,7 +875,7 @@ class RepotoryPanel : JPanel(), Disposable {
      * edit the user just made.
      */
     private fun editSelected() {
-        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val hit = selectedNote() ?: return
         val serverUrl = RepotorySettings.serverUrl()
         status.text = "Loading note #${hit.id}…"
         val app = ApplicationManager.getApplication()
@@ -647,7 +906,7 @@ class RepotoryPanel : JPanel(), Disposable {
 
     /** New note under the SAME project as the selected note. */
     private fun newNoteUnderSelectedProject() {
-        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val hit = selectedNote() ?: return
         val serverUrl = RepotorySettings.serverUrl()
         val app = ApplicationManager.getApplication()
         app.executeOnPooledThread {
@@ -669,15 +928,13 @@ class RepotoryPanel : JPanel(), Disposable {
      * the draft (the proposal covers title/tags/content only).
      */
     private fun organizeSelected() {
-        val hit = list.selectedValue?.takeIf { it.type == "note" } ?: return
+        val hit = selectedNote() ?: return
         val serverUrl = RepotorySettings.serverUrl()
-        organizeButton.isEnabled = false
         status.text = "AI tidying note #${hit.id}… (this can take a while)"
         val app = ApplicationManager.getApplication()
         val reportFailure = { message: String ->
             app.invokeLater {
                 if (disposed) return@invokeLater
-                organizeButton.isEnabled = true
                 status.text = message
             }
         }
@@ -695,7 +952,6 @@ class RepotoryPanel : JPanel(), Disposable {
             val projects = repotoryClient.projects(serverUrl)
             app.invokeLater {
                 if (disposed) return@invokeLater
-                organizeButton.isEnabled = true
                 openEditor(
                     NoteDraft(
                         id = if (proposal.noteId > 0) proposal.noteId else hit.id,
@@ -789,54 +1045,6 @@ class RepotoryPanel : JPanel(), Disposable {
         }
     }
 
-    /**
-     * Starts the local Repotory service and retries the query.
-     *
-     * The spawn waits on the binary and on /health, so it runs on a pooled
-     * thread; the EDT only gets the outcome. Nothing is downloaded: when no
-     * binary exists, the user is offered the file picker or the release page.
-     */
-    private fun startLocalService() {
-        if (disposed) return
-        startButton.isVisible = false
-        startButton.isEnabled = false
-        status.text = "Starting local service…"
-        val serverUrl = RepotorySettings.serverUrl()
-        val app = ApplicationManager.getApplication()
-        app.executeOnPooledThread {
-            val outcome = repotoryServer.start(serverUrl)
-            app.invokeLater {
-                if (disposed) return@invokeLater
-                startButton.isEnabled = true
-                when (outcome) {
-                    is StartOutcome.Started -> {
-                        status.text = if (outcome.webUi) {
-                            "Started ${outcome.binary.file.name} on port ${outcome.port}. Searching again…"
-                        } else {
-                            "Started on port ${outcome.port} (API-only). Searching again…"
-                        }
-                        runSearch()
-                    }
-                    StartOutcome.AlreadyRunning -> {
-                        status.text = "Service already running. Searching again…"
-                        runSearch()
-                    }
-                    is StartOutcome.BinaryMissing -> {
-                        if (offerServerBinaryHelp(outcome.searched)) {
-                            startLocalService()
-                        } else {
-                            startButton.isVisible = true
-                        }
-                    }
-                    is StartOutcome.Failed -> {
-                        status.text = outcome.message
-                        startButton.isVisible = true
-                    }
-                }
-            }
-        }
-    }
-
     private fun openSelected() {
         val hit = list.selectedValue ?: return
         val serverUrl = RepotorySettings.serverUrl()
@@ -873,7 +1081,7 @@ class RepotoryPanel : JPanel(), Disposable {
             "Repotory answered, but it is not serving its web UI, so this link lands on a 404 page.\n\n" +
                 "Either restart the running server with:\n" +
                 "  repotory-server --port 18765 --web-dist <release bundle>/web\n" +
-                "or stop it and press \"Start local service\", which launches the release bundle " +
+                "or stop it and press the start button, which launches the release bundle " +
                 "together with its web/ directory.\n\n" +
                 "URL: $url",
             "Repotory: web UI not available",
@@ -898,6 +1106,128 @@ class RepotoryPanel : JPanel(), Disposable {
 }
 
 /**
+ * The connection pill: a coloured dot, the state, and a click that reconnects.
+ *
+ * It replaces the old "start the service" button, which only appeared after
+ * a search had already failed. The pill is always visible, so the reader
+ * always knows whether the service is there — and clicking it is the way to
+ * try again.
+ */
+private class ConnectionPill : JPanel(BorderLayout(JBUI.scale(5), 0)) {
+    private val dotIcon = ColorDotIcon(JBUI.scale(8), JBColor.foreground())
+    private val dot = JLabel(dotIcon)
+    private val label = JLabel("checking…")
+
+    /** Called when the user clicks the pill. */
+    var onClick: (() -> Unit)? = null
+
+    var state: LinkState = LinkState.CHECKING
+        set(value) {
+            field = value
+            render()
+        }
+
+    init {
+        isOpaque = false
+        add(dot, BorderLayout.WEST)
+        add(label, BorderLayout.CENTER)
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                onClick?.invoke()
+            }
+        })
+        render()
+    }
+
+    private fun render() {
+        val (color, text, tip) = when (state) {
+            LinkState.ONLINE -> Triple(
+                JBColor(Color(0x3F, 0x8F, 0x4E), Color(0x73, 0xBD, 0x79)),
+                "online",
+                "The Repotory service is reachable. Click to re-check.",
+            )
+            LinkState.OFFLINE -> Triple(
+                JBColor(Color(0xC0, 0x3A, 0x2B), Color(0xE8, 0x6C, 0x5A)),
+                "offline",
+                "No Repotory service answered. Click to try again (the local one is started for you).",
+            )
+            LinkState.STARTING -> Triple(
+                JBColor(Color(0xB4, 0x8A, 0x2F), Color(0xE2, 0xC0, 0x6A)),
+                "starting…",
+                "The local Repotory service is starting. Click to re-check.",
+            )
+            LinkState.CHECKING -> Triple(
+                JBColor.foreground(),
+                "checking…",
+                "Asking the Repotory service whether it is there.",
+            )
+        }
+        dotIcon.color = color
+        label.text = text
+        label.foreground = color
+        toolTipText = tip
+        border = JBUI.Borders.compound(
+            BorderFactory.createLineBorder(color),
+            JBUI.Borders.empty(2, 6),
+        )
+    }
+}
+
+/** A filled dot; the colour is set by the pill when the state changes. */
+private class ColorDotIcon(private val size: Int, var color: Color) : Icon {
+    override fun getIconWidth(): Int = size
+
+    override fun getIconHeight(): Int = size
+
+    override fun paintIcon(c: Component, g: Graphics, x: Int, y: Int) {
+        val g2 = g.create() as Graphics2D
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = color
+            g2.fillOval(x, y, size, size)
+        } finally {
+            g2.dispose()
+        }
+    }
+}
+
+/**
+ * A label that shortens its text with an ellipsis instead of cutting it.
+ *
+ * A plain JLabel simply draws past its own bounds — the words are chopped
+ * mid-word with no sign that something was cut. An ellipsis says "there is
+ * more" instead.
+ */
+private class ElidingLabel(full: String) : JLabel() {
+    private var fullText: String = full
+
+    init {
+        text = full
+    }
+
+    override fun setSize(w: Int, h: Int) {
+        super.setSize(w, h)
+        elide()
+    }
+
+    private fun elide() {
+        if (width <= 0) return
+        val metrics = getFontMetrics(font)
+        if (metrics.stringWidth(fullText) <= width) {
+            if (text != fullText) text = fullText
+            return
+        }
+        var cut = fullText
+        while (cut.isNotEmpty() && metrics.stringWidth(cut + "…") > width) {
+            cut = cut.dropLast(1)
+        }
+        val elided = if (cut.isEmpty()) "…" else "$cut…"
+        if (text != elided) text = elided
+    }
+}
+
+/**
  * One thumbnail: kind badge, title, matched excerpt.
  *
  * A JPanel (not a JLabel) so the badge and the title sit on one row with
@@ -905,28 +1235,31 @@ class RepotoryPanel : JPanel(), Disposable {
  * list's own stripes through the card. Selection colours come from the
  * JList, so the row follows the IDE theme.
  */
-private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), javax.swing.ListCellRenderer<RepotoryHit> {
+private class ThumbRenderer : JPanel(BorderLayout(JBUI.scale(6), 0)), javax.swing.ListCellRenderer<RepotoryHit> {
     private val badge = JLabel()
-    private val title = JLabel()
-    private val snippet = JLabel()
+    private val title = ElidingLabel("")
+    private val snippet = ElidingLabel("")
+
+    /** The list this row belongs to; its viewport says how wide the row may be. */
+    private var owner: JList<out RepotoryHit>? = null
 
     init {
         isOpaque = true
-        border = JBUI.Borders.empty(8, 10)
-        val row = JPanel(java.awt.BorderLayout(JBUI.scale(6), 0))
+        border = JBUI.Borders.empty(6, 10)
+        val row = JPanel(BorderLayout(JBUI.scale(6), 0))
         row.isOpaque = false
-        badge.font = badge.font.deriveFont(JBUI.scale(9f))
+        badge.font = badge.font.deriveFont(JBUI.scaleFontSize(9f).toFloat())
         badge.border = JBUI.Borders.empty(1, 4)
-        row.add(badge, java.awt.BorderLayout.WEST)
-        title.font = title.font.deriveFont(Font.BOLD, JBUI.scale(12f))
-        row.add(title, java.awt.BorderLayout.CENTER)
-        add(row, java.awt.BorderLayout.NORTH)
-        snippet.font = snippet.font.deriveFont(JBUI.scale(11f))
-        add(snippet, java.awt.BorderLayout.CENTER)
+        row.add(badge, BorderLayout.WEST)
+        title.font = title.font.deriveFont(Font.BOLD, JBUI.scaleFontSize(12f).toFloat())
+        row.add(title, BorderLayout.CENTER)
+        add(row, BorderLayout.NORTH)
+        snippet.font = snippet.font.deriveFont(JBUI.scaleFontSize(11f).toFloat())
+        add(snippet, BorderLayout.CENTER)
     }
 
     override fun getListCellRendererComponent(
-        list: javax.swing.JList<out RepotoryHit>?,
+        list: JList<out RepotoryHit>?,
         value: RepotoryHit?,
         index: Int,
         isSelected: Boolean,
@@ -935,8 +1268,11 @@ private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), j
         val hit = value
         if (hit == null) {
             title.text = ""
+            snippet.text = ""
+            badge.text = ""
             return this
         }
+        owner = list
         badge.text = badgeLabel(hit).uppercase()
         badge.foreground = when (hit.type) {
             "todo" -> BADGE_TODO
@@ -949,8 +1285,8 @@ private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), j
         )
         title.text = hit.title.ifBlank { "(untitled)" }
         title.toolTipText = hit.title
-        snippet.text = if (hit.snippet.isBlank()) " " else excerptOf(hit.snippet, 110)
-        snippet.toolTipText = hit.snippet
+        snippet.text = if (hit.snippet.isBlank()) " " else snippetPlain(hit.snippet)
+        snippet.toolTipText = snippetPlain(hit.snippet, 600)
 
         if (isSelected) {
             background = list?.selectionBackground
@@ -966,10 +1302,21 @@ private class ThumbRenderer : JPanel(java.awt.BorderLayout(JBUI.scale(6), 0)), j
         return this
     }
 
-    /** Two lines' worth of excerpt at the column's width; the tooltip carries the rest. */
-    private fun excerptOf(text: String, max: Int): String {
-        val flat = text.replace(Regex("\\s+"), " ").trim()
-        return if (flat.length <= max) flat else flat.take(max - 1) + "…"
+    /**
+     * The row is as wide as the pane shows it, not as wide as its text.
+     *
+     * A JList lays its cells out at the LIST's width, and the list's width
+     * is its preferred width — which, for a row renderer, is the width of
+     * the longest label. A long excerpt therefore made the list wider than
+     * the pane, and the text ran under the split divider and was chopped in
+     * half instead of ending in an ellipsis. Reporting the viewport's width
+     * instead lays the row out exactly as wide as it is seen, so the
+     * eliding labels do their job.
+     */
+    override fun getPreferredSize(): Dimension {
+        val preferred = super.getPreferredSize()
+        val visible = (owner?.parent as? JViewport)?.extentSize?.width ?: 0
+        return if (visible > 0) Dimension(visible, preferred.height) else preferred
     }
 }
 

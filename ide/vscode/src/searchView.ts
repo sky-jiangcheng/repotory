@@ -1,13 +1,18 @@
-// Repotory knowledge search — a webview view with a T-shaped layout:
+// Repotory knowledge search — a webview view with a top-over-bottom stacked
+// layout:
 //
 //   ┌───────────────────────────────────────────────┐
 //   │ brand header: mark + wordmark + tagline + scope│  ← identity & promo
-//   ├──────────────────────┬────────────────────────┤
-//   │ search box           │ detail (defaults to    │
-//   │ [notes | wiki pages] │ knowledge thumbnails   │
-//   │                      │ (the first hit)        │
-//   └──────────────────────┴────────────────────────┘
+//   ├───────────────────────────────────────────┤
+//   │ search box + [notes | wiki pages]            │
+//   │ knowledge thumbnails (the first hit)        │
+//   ├───────────────────────────────────────────┤
+//   │ detail: the selected knowledge, in full     │
+//   └───────────────────────────────────────────┘
 //
+// The results column sits on top, the expanded detail sits below it — one
+// stacked reader instead of a side-by-side split, so the panel never has to
+// be resized horizontally to stay sane.
 // The thin-client discipline is unchanged: this file renders, it never
 // searches. Queries go to the extension host (repotory-mcp over stdio,
 // the same path the commands use) and answers come back as messages;
@@ -192,12 +197,16 @@ function html(nonce: string): string {
     font-size: 10px; text-align: right; color: var(--r-muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  /* ---------- body: left list, right detail ---------- */
-  main { flex: 1; display: flex; min-height: 0; }
+  /* ---------- body: results on top, detail below ---------- */
+  /* The panel lives in a narrow, tall sidebar. A side-by-side split in that
+     shape squeezes the detail pane to a few unreadable columns and lets the
+     divider drift as the panel is resized — the T-shape deforms exactly
+     where it is read. Stacked, each half keeps the full width. */
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .list {
-    width: 46%; min-width: 170px; max-width: 330px; flex: none;
+    flex: 0 1 auto; max-height: 50%; min-height: 132px;
     display: flex; flex-direction: column;
-    border-right: 1px solid var(--r-border);
+    border-bottom: 1px solid var(--r-border);
   }
   .search { padding: 8px; flex: none; }
   /* The source switch: notes and knowledge pages live in separate id spaces,
@@ -224,7 +233,7 @@ function html(nonce: string): string {
     border-radius: 4px; outline: none;
   }
   .search input:focus { border-color: var(--vscode-focusBorder, #06c); }
-  .thumbs { flex: 1; overflow-y: auto; }
+  .thumbs { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .thumb {
     padding: 8px 10px; cursor: pointer;
     border-bottom: 1px solid var(--r-border);
@@ -254,7 +263,7 @@ function html(nonce: string): string {
   .badge.wiki { color: var(--vscode-charts-purple, #8250df); }
   .empty { padding: 18px 14px; font-size: 12px; line-height: 1.5; color: var(--r-muted); }
   /* ---------- detail pane ---------- */
-  .detail { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 18px; }
+  .detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 18px; }
   .detail h2 {
     margin: 0 0 6px; font-size: 16px; font-weight: 700; line-height: 1.3;
     overflow-wrap: anywhere;

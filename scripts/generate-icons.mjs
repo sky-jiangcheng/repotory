@@ -18,10 +18,11 @@
 //
 // THREE SHAPE DOMAINS (see CONTRIBUTING "Brand icon domains"):
 //   brand domain — the SSOT verbatim: the square-edged printed card.
-//     Favicons, marketplace icons, the JetBrains tool-window icon (13).
-//     These sit in square or tiny containers (browser tab, store list,
-//     13px tool window) where the card edge IS the brand; a squircle here
-//     would read as a broken rectangle, not a rounded one.
+//     Favicons, marketplace icons, the JetBrains plugin's in-panel brand
+//     mark. These sit in square or promotional containers (browser tab,
+//     store list, a 96px mark in the tool-window header) where the card edge
+//     IS the brand; a squircle here would read as a broken rectangle, not a
+//     rounded one.
 //   app domain — the same mark inside a macOS squircle container:
 //     build/appicon.png (the Wails default icon source), the size ladder,
 //     the Windows .ico. macOS has never auto-masked app icons: since Big
@@ -33,13 +34,24 @@
 //     (Apple's concentricity rule: nested curves must relate to their
 //     container, never a random radius).
 //   glyph domain — the same mark cut to ONE colour on a TRANSPARENT
-//     background, for slots the host renders as a MASK. The VS Code
-//     activity bar is such a slot: VS Code takes the SVG's alpha channel
-//     and paints it in the theme's icon foreground, so the opaque cream
-//     field of the card turned the whole 24×24 into one flat slab — the
-//     activity bar showed a white square with the R gone (verified by
-//     rendering the shipped file through a CSS mask). The alpha shape has
-//     to BE the mark: the frame and the letter, nothing else.
+//     background, for slots the host renders as a MASK or as a monochrome
+//     stripe icon. Two slots live here:
+//     · the VS Code activity bar: VS Code takes the SVG's alpha channel
+//       and paints it in the theme's icon foreground, so the opaque cream
+//       field of the card turned the whole 24×24 into one flat slab — the
+//       activity bar showed a white square with the R gone (verified by
+//       rendering the shipped file through a CSS mask). The alpha shape has
+//       to BE the mark: the frame and the letter, nothing else.
+//     · the JetBrains tool-window stripe: IntelliJ rasterizes plugin SVG
+//       icons as plain images (no mask) and picks the `_dark` sibling when
+//       the IDE runs a dark theme — the same convention JetBrains' own
+//       stripe icons use (icons/statisticsEventLog.svg + _dark.svg in the
+//       bundled dev plugin). So the stripe gets a 16px monochrome LETTER on
+//       a transparent background, in two theme colours. The card was wrong
+//       there: a cream slab in a 40px dark strip, whose hairline frame is
+//       sub-pixel at that size, so it read as a deformed bright blob.
+//       The brand card still ships — in the tool-window header (96px) and
+//       in the store listing.
 //
 // Two surfaces stay outside the generated set, both deliberately: the
 // JetBrains Marketplace pair (pluginIcon.svg / pluginIcon_dark.svg, 40×40)
@@ -157,6 +169,49 @@ async function inkCoverage(svgText) {
     if (data[p + 3] > 8) opaque++
   }
   return opaque / (info.width * info.height)
+}
+
+/**
+ * The ink bounding box of an SVG, in its own user space.
+ *
+ * Used to frame the JetBrains stripe glyph: the letterform's position inside
+ * the 512 grid is a design decision (the R sits 6 units right and 2 up of
+ * dead centre), so the glyph's viewBox has to be derived from where the
+ * letter actually IS — not hardcoded, or a rebrand of the letterform would
+ * silently break the framing.
+ */
+async function alphaBBox(svgText, size = 512) {
+  const png = await renderPng(svgText, size)
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true })
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const p = (y * info.width + x) * info.channels
+      if (data[p + 3] > 8) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) throw new Error('generate-icons: the letterform rendered empty — cannot frame the glyph')
+  const scale = 512 / size
+  return {
+    x: minX * scale,
+    y: minY * scale,
+    width: (maxX - minX + 1) * scale,
+    height: (maxY - minY + 1) * scale,
+  }
+}
+
+/** The letterform alone on a transparent field — the shape a stripe icon shows. */
+function letterOnlySvg(parts, fill) {
+  const letter = parts.letterform.replace(/fill="[^"]+"/, `fill="${fill}"`)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">${letter}</svg>`
 }
 
 // The app-domain mark: SSOT letterform and colours inside the squircle
@@ -357,11 +412,6 @@ async function main() {
     console.log('  ✓ ide/vscode/media/icon.png (128x128 from build/icon.svg, brand domain)')
   }
 
-  // The mark's inner geometry, reused by the JetBrains tool-window icon below.
-  const markInner = svgText
-    .replace(/^[\s\S]*?<svg[^>]*>/, '')
-    .replace(/<\/svg>\s*$/, '')
-
   // 4. VS Code activity-bar icon (media/repotory.svg)
   //    GLYPH domain, not the card. VS Code renders an extension's
   //    activity-bar icon as a MASK: it takes the SVG's alpha channel and
@@ -392,33 +442,74 @@ async function main() {
     console.log(`  ✓ ide/vscode/media/repotory.svg (activity bar, 24px glyph domain, ink ${(coverage * 100).toFixed(0)}% of the box)`)
   }
 
-  // 5. JetBrains tool-window icon (icons/repotory.svg)
-  //    BRAND domain — the card, verbatim, at the IntelliJ tool-window
-  //    idiom's 13×13. IntelliJ rasterizes plugin SVG icons as images (no
-  //    mask), and the card is what makes the mark recognisable at 13px on
-  //    the dark tool-window strip. This was the JetBrains twin of the
-  //    missed activity-bar icon: a hand-drawn grey R with no card, so the
-  //    tool window kept the pre-rebrand mark while the Marketplace listing
-  //    showed the card.
-  const TOOL_WINDOW_SIZE = 13
-  const toolWindowSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TOOL_WINDOW_SIZE}" height="${TOOL_WINDOW_SIZE}" viewBox="0 0 ${TOOL_WINDOW_SIZE} ${TOOL_WINDOW_SIZE}">
-  <!-- Tool-window icon: build/icon.svg (brand SSOT) verbatim, inside a 13
-       viewBox — the same printed card as the Marketplace icon.
+  // 5. JetBrains tool-window stripe icon (icons/repotory.svg + _dark.svg)
+  //    GLYPH domain — a 16px monochrome LETTER on transparent, in the two
+  //    theme colours IntelliJ's own stripe icons use.
+  //
+  //    The card was the wrong shape for this slot and was replaced on
+  //    2026-10-29: IntelliJ rasterizes plugin SVG icons as plain images (no
+  //    mask) and picks the `_dark` sibling under a dark theme, so the mark
+  //    has to carry its own colour — and a cream card at stripe size is a
+  //    bright slab whose hairline frame is sub-pixel, which reads as a
+  //    deformed blob rather than a letter.
+  //
+  //    16px, not 13: the bundled dev plugin ships its Statistics stripe
+  //    icon at 16×16, and a 13px icon is scaled up by the stripe button.
+  //    The viewBox is framed from where the letter actually sits in the
+  //    512 grid, so the letter fills the slot without being cropped.
+  const TOOL_WINDOW_SIZE = 16
+  const STRIPE_INK_LIGHT = parts.ink // #1B1B1B — brand ink, light theme
+  const STRIPE_INK_DARK = parts.field // #F5F0E4 — brand paper, dark theme
+  const letterBox = await alphaBBox(letterOnlySvg(parts, STRIPE_INK_LIGHT))
+  // Square frame around the letter's bbox, with a little air on each side.
+  const frameSide = Math.max(letterBox.width, letterBox.height) * 1.1
+  const frameX = letterBox.x + letterBox.width / 2 - frameSide / 2
+  const frameY = letterBox.y + letterBox.height / 2 - frameSide / 2
+  const stripeSvg = (ink) => {
+    const letter = parts.letterform.replace(/fill="[^"]+"/, `fill="${ink}"`)
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${TOOL_WINDOW_SIZE}" height="${TOOL_WINDOW_SIZE}" viewBox="${frameX.toFixed(2)} ${frameY.toFixed(2)} ${frameSide.toFixed(2)} ${frameSide.toFixed(2)}" fill="none">
+  <!-- Tool-window stripe icon: the letterform of build/icon.svg (brand
+       SSOT), cut to one colour on a transparent field — the glyph domain.
+       IntelliJ picks the _dark sibling under a dark theme, the same
+       convention as the platform's own stripe icons.
        Generated by scripts/generate-icons.mjs; do not edit by hand. -->
-  <g transform="scale(${TOOL_WINDOW_SIZE / 512})">
-${markInner}
-  </g>
+  ${letter}
 </svg>
 `
-  const toolWindowIcon = path.join(root, 'ide/jetbrains/src/main/resources/icons/repotory.svg')
-  if (check) {
-    if (!fs.existsSync(toolWindowIcon)) stale.push(`${toolWindowIcon} (missing)`)
-    else if (sha(Buffer.from(toolWindowSvg)) !== sha(fs.readFileSync(toolWindowIcon))) {
-      stale.push(`${toolWindowIcon} (stale)`)
+  }
+  const stripeTargets = [
+    { rel: 'ide/jetbrains/src/main/resources/icons/repotory.svg', svg: stripeSvg(STRIPE_INK_LIGHT) },
+    { rel: 'ide/jetbrains/src/main/resources/icons/repotory_dark.svg', svg: stripeSvg(STRIPE_INK_DARK) },
+  ]
+  for (const target of stripeTargets) {
+    const file = path.join(root, target.rel)
+    if (check) {
+      if (!fs.existsSync(file)) stale.push(`${file} (missing)`)
+      else if (sha(Buffer.from(target.svg)) !== sha(fs.readFileSync(file))) stale.push(`${file} (stale)`)
+    } else {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, target.svg)
+      console.log(`  ✓ ${target.rel} (tool window stripe, ${TOOL_WINDOW_SIZE}px letter-only glyph)`)
     }
+  }
+
+  // 6. JetBrains in-panel brand mark (icons/repotory-mark.png)
+  //    BRAND domain — the card itself, at 96px (rendered at 44px in the
+  //    panel, so the 2× source stays crisp on a Retina display).
+  //
+  //    This file used to be a hand-made copy, which is exactly what this
+  //    pipeline exists to prevent: it drifted from the SSOT silently. It is
+  //    generated now, so the CI sync gate covers it too.
+  const MARK_PNG_SIZE = 96
+  const markPng = await renderPng(svg, MARK_PNG_SIZE)
+  const markFile = path.join(root, 'ide/jetbrains/src/main/resources/icons/repotory-mark.png')
+  if (check) {
+    if (!fs.existsSync(markFile)) stale.push(`${markFile} (missing)`)
+    else if ((await pixelDiff(markPng, fs.readFileSync(markFile))) > 0.005) stale.push(`${markFile} (pixel drift)`)
   } else {
-    fs.writeFileSync(toolWindowIcon, toolWindowSvg)
-    console.log('  ✓ ide/jetbrains/src/main/resources/icons/repotory.svg (tool window, 13px from build/icon.svg, brand domain)')
+    fs.mkdirSync(path.dirname(markFile), { recursive: true })
+    fs.writeFileSync(markFile, markPng)
+    console.log(`  ✓ ide/jetbrains/src/main/resources/icons/repotory-mark.png (${MARK_PNG_SIZE}px brand card)`)
   }
 
   if (check) {

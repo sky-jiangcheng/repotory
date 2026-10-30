@@ -54,9 +54,9 @@ node scripts/check-i18n-keys.mjs    # locale 词条覆盖守卫（key 缺失 / �
 
 | 域 | 产物 | 形状 | 理由 |
 |---|---|---|---|
-| 品牌域 | favicon（docs/web）、Marketplace 商店图标、JetBrains 工具窗（13） | 方边原卡 | 容器本身是方形或极小尺寸，卡边即识别；squircle 在小尺寸下只会读作「破掉的矩形」。JetBrains 把插件 SVG 当**位图**光栅化（不遮罩，2026-10-29 按 IDEA 2025.2 的 `SVGLoader` → `StripeButton.setIcon` 链路核实），13px 下奶油卡 + 深色 R 仍可辨 |
+| 品牌域 | favicon（docs/web）、Marketplace 商店图标、JetBrains 工具窗内的品牌标记 PNG（96，渲染为 44） | 方边原卡 | 容器本身是方形或展示位，卡边即识别；squircle 在小尺寸下只会读作「破掉的矩形」 |
 | OS 应用域 | `build/appicon.png`（Wails 默认图标源）、`build/icons/` 阶梯、`build/icons/icon.ico` | squircle 容器 | macOS 规范：源图必须自带 squircle（≈22.37%，超椭圆 n≈5.2 近似），系统不裁 |
-| 字形域 | VS Code 活动栏（24） | 单色字形，**透明底** | 该槽位由宿主**遮罩渲染**：VS Code 取 SVG 的 alpha 通道，用主题图标前景色重绘。母图的奶油底是不透明的 → mask 出来是一整块实心方块，活动栏只显示一个白方块，R 消失（把已发布的文件丢进 CSS mask 即可复现） |
+| 字形域 | VS Code 活动栏（24，框+字母）、JetBrains 工具窗侧栏图标（16，仅字母） | 单色字形，**透明底** | 这两类槽位都不接受一张卡：VS Code 活动栏**遮罩渲染**（取 alpha 通道用主题前景色重绘，母图的奶油底不透明 → mask 出来是一整块实心方块，R 消失，把已发布的文件丢进 CSS mask 即可复现）；JetBrains 侧栏把插件 SVG 当**位图**光栅化（不遮罩，2026-10-29 按 IDEA 2025.2 的 `SVGLoader` → `StripeButton.setIcon` 链路核实），并在深色主题下自动取 `_dark` 同名兄弟文件（平台自己的 `icons/statisticsEventLog.svg` + `_dark.svg` 就是这个约定）。所以侧栏图标是 **16px 单色字母 + 透明底**，浅色主题用品牌墨色、深色主题用品牌纸色——13px 的奶油卡在 40px 深的侧栏里是一块发亮的方块，hairline 框在该尺寸不足一个像素，读作变形的光斑 |
 
 规则条目：
 

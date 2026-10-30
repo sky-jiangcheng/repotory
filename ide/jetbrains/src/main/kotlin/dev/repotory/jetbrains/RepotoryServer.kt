@@ -31,7 +31,20 @@ import java.util.concurrent.TimeUnit
 
 private const val LOG = "dev.repotory.jetbrains"
 private const val SERVER_ENV = "REPOTORY_SERVER_BIN"
-private const val START_TIMEOUT_MS = 5_000L
+
+// How long to wait for /health after spawning the server.
+//
+// It used to be five seconds, which is short for a cold start: opening the
+// knowledge base runs the schema re-assertions and, when the desktop app
+// happens to hold the write lock, the server retries for a few seconds
+// before it can answer at all. Five seconds was the timeout, not the
+// reality — the panel then reported "started" for a server that was not up
+// yet, and the search that followed failed with "cannot reach".
+private const val START_TIMEOUT_MS = 30_000L
+
+/** How often the health probe is repeated while waiting for the server. */
+private const val HEALTH_POLL_MS = 250L
+
 private const val RELEASES_URL = "https://github.com/sky-jiangcheng/repotory/releases"
 
 /** Where a resolved server binary came from, for the settings/diagnostics text. */
@@ -39,8 +52,15 @@ data class ServerBinary(val file: File, val source: String)
 
 /** Result of [RepotoryServerManager.start]; never a bare Boolean. */
 sealed interface StartOutcome {
-    /** A server owned by this plugin is now answering (or is about to). */
-    data class Started(val port: Int, val webUi: Boolean, val binary: ServerBinary) : StartOutcome
+    /**
+     * A server owned by this plugin is now answering (or is about to).
+     *
+     * [healthy] says whether /health answered within the wait. A process that
+     * is up but silent is NOT the same as a working service, and the caller
+     * has to be able to tell the two apart — otherwise "started" is a promise
+     * the next search breaks.
+     */
+    data class Started(val port: Int, val webUi: Boolean, val binary: ServerBinary, val healthy: Boolean = true) : StartOutcome
 
     /** Something already answered /health; the plugin did not spawn anything. */
     data object AlreadyRunning : StartOutcome
@@ -125,8 +145,15 @@ class RepotoryServerManager {
      * Starts a loopback server for [serverUrl], or reports why it could not.
      *
      * Blocking: waits up to [START_TIMEOUT_MS] for `/health` after spawning.
+     * [onProgress] receives short human-readable lines ("Launching …", "Waiting
+     * for the service …") so the panel can narrate a start that takes seconds
+     * instead of looking frozen.
      */
-    fun start(serverUrl: String, binaryOverride: File? = null): StartOutcome {
+    fun start(
+        serverUrl: String,
+        binaryOverride: File? = null,
+        onProgress: ((String) -> Unit)? = null,
+    ): StartOutcome {
         if (repotoryClient.ping(serverUrl)) return StartOutcome.AlreadyRunning
 
         val uri = try {
@@ -164,25 +191,68 @@ class RepotoryServerManager {
             process = child
             ownedByPlugin = true
 
+            onProgress?.invoke("Launched ${binary.file.name} — waiting for the service…")
             val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
             while (System.currentTimeMillis() < deadline) {
                 if (repotoryClient.ping(serverUrl)) {
-                    return StartOutcome.Started(port, webUi, binary)
+                    onProgress?.invoke("Service is up.")
+                    return StartOutcome.Started(port, webUi, binary, healthy = true)
                 }
                 if (!child.isAlive) {
+                    val tail = logTail(logFile)
+                    // "address already in use" is the single most common
+                    // failure here: the user has a server on that port that
+                    // the plugin cannot reach (a stale binary, a different
+                    // interface, a firewall). Saying so is worth more than
+                    // the exit code.
+                    if (tail.contains("address already in use", ignoreCase = true)) {
+                        return StartOutcome.Failed(
+                            "Port $port is already taken by another process, so the service " +
+                                "never started. Stop that process (or pick another port) and try again.",
+                        )
+                    }
                     return StartOutcome.Failed(
                         "repotory-server exited during startup (code ${child.exitValue()}). " +
-                            "See ${logFile.absolutePath}.",
+                            (if (tail.isBlank()) "" else "Last output: $tail") +
+                            " Log: ${logFile.absolutePath}.",
                     )
                 }
-                Thread.sleep(200)
+                Thread.sleep(HEALTH_POLL_MS)
             }
-            // Still alive but slow: report it as started so the next search can
-            // retry, rather than killing a process that is merely cold-starting.
-            StartOutcome.Started(port, webUi, binary)
+            // The process is alive but /health never answered. That is not a
+            // working service: say so instead of handing back a promise the
+            // next search would break.
+            onProgress?.invoke("The process is running but the service is not answering yet.")
+            StartOutcome.Started(port, webUi, binary, healthy = false)
         } catch (e: Exception) {
             Logger.getInstance(LOG).warn("repotory-server start failed", e)
             StartOutcome.Failed("Could not start ${binary.file.absolutePath}: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * The last few meaningful lines of the server log.
+     *
+     * The log is appended to across starts and can grow without bound, so
+     * only its tail is read — the last few kilobytes are enough to see the
+     * line that killed the process.
+     */
+    private fun logTail(logFile: File, maxLines: Int = 4): String {
+        if (!logFile.isFile) return ""
+        return try {
+            val bytes = logFile.length()
+            val window = minOf(bytes, 4096L).toInt()
+            val text = java.io.RandomAccessFile(logFile, "r").use { raf ->
+                raf.seek(bytes - window)
+                String(ByteArray(window).also { raf.readFully(it) }, Charsets.UTF_8)
+            }
+            text.lines()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .takeLast(maxLines)
+                .joinToString(" / ")
+        } catch (e: Exception) {
+            ""
         }
     }
 

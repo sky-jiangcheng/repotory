@@ -63,7 +63,7 @@ internal fun loadingHtml(hit: RepotoryHit): String = """
     <html><body style="padding:6px">
     <h2>${esc(hit.title.ifBlank { "(untitled)" })}</h2>
     <p style="color:${metaColorHex()}">${esc(badgeLabel(hit))} · #${hit.id} · loading…</p>
-    ${if (hit.snippet.isBlank()) "" else "<p>${esc(hit.snippet)}</p>"}
+    ${if (hit.snippet.isBlank()) "" else "<p>${snippetHtml(hit.snippet)}</p>"}
     </body></html>
 """.trimIndent()
 
@@ -149,7 +149,7 @@ internal fun excerptHtml(hit: RepotoryHit, full: Boolean = false): String {
         <html><body style="padding:6px">
         <h2>${esc(hit.title.ifBlank { "(untitled)" })}</h2>
         <p style="color:${metaColorHex()}">${esc(badgeLabel(hit))} · #${hit.id} · $label</p>
-        ${if (hit.snippet.isBlank()) "<p><i>No snippet returned.</i></p>" else MarkdownLite.toHtml(hit.snippet)}
+        ${if (hit.snippet.isBlank()) "<p><i>No snippet returned.</i></p>" else snippetHtml(hit.snippet)}
         </body></html>
     """.trimIndent()
 }

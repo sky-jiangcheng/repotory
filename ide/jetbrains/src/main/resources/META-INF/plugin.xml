@@ -33,11 +33,13 @@
         made, what gotcha you hit, what to do next — in a local, searchable
         store. This plugin is the reader for it:
 
-        • A T-shaped knowledge reader: brand header on top, your results as
-          thumbnails on the left (kind, title, matched excerpt), and the
-          selected knowledge expanded on the right — the first result is
-          selected by default, and notes open in full with their markdown
-          rendered. Todos show their excerpt, labelled as such.
+        • A knowledge reader that looks and behaves like the rest of your IDE:
+          a native search field with a space switch (notes or approved wiki
+          pages), your results as thumbnails on the left (kind, title, matched
+          excerpt), and the selected knowledge expanded on the right — the
+          first result is selected by default, and notes open in full with
+          their markdown rendered. Todos show their excerpt, labelled as
+          such. The divider between the two sides is yours to drag.
         • Full-text search (FTS5) over every note and todo you ever
           captured, ranked exactly as the Repotory desktop app ranks it —
           the plugin reimplements no ranking, no snippet extraction, no
@@ -50,9 +52,11 @@
           and a mermaid flowchart when the content is really a process.
           The proposal opens in the editor for your review; nothing is
           saved until you save it.
-        • Works out of the box: if no service is running, the tool window
-          offers "Start local service" and launches a repotory-server you
-          already have (nothing is downloaded or built).
+        • Works out of the box: the tool window checks the service when it
+          opens and shows the result as a status pill. If nothing answers,
+          it starts the local repotory-server you already have and retries
+          the query — nothing is downloaded or built, and a service you
+          started yourself is never touched.
 
         The plugin is a thin client: it talks to the loopback-only
         Repotory service over its local HTTP API. Everything stays on your
@@ -76,6 +80,10 @@
                                  instance="dev.repotory.jetbrains.RepotoryConfigurable"
                                  id="dev.repotory.jetbrains.settings"
                                  displayName="Repotory"/>
+        <!-- The tool window posts its service problems here (no local server
+             binary, the port is taken) instead of opening a modal dialog the
+             user did not ask for. -->
+        <notificationGroup id="Repotory" displayType="BALLOON"/>
     </extensions>
 
     <actions>
