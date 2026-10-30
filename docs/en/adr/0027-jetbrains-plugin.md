@@ -18,7 +18,7 @@ Capability-side facts (each verified):
 
 ## Decision
 
-1. **Kick off, inheriting the thin-client discipline**: the plugin is a thin shell — it calls the shared service layer over headless HTTP (primarily `/api/rpc`) with zero logic duplication; it adds no execution interface (MCP stays the single execution interface, ADR-0007); the plugin evolves only with the external API, never with internal implementation. Any sub-proposal violating this discipline is out of the MVP.
+1. **Kick off, inheriting the thin-client discipline**: the plugin is a thin shell — it calls the shared service layer over headless HTTP (primarily `/api/rpc`) with zero logic duplication; **a human-facing UI calls the binding surface, not the execution interface** (MCP stays the single **AI** execution interface, ADR-0007; the qualifier is pinned down by [ADR-0035](0035-jetbrains-mcp-primary-channel.md) decision 1); the plugin evolves only with the external API, never with internal implementation. Any sub-proposal violating this discipline is out of the MVP. (**The channel shape was changed by ADR-0035 decision 2 to "MCP primary with HTTP filling the gaps"** — this decision describes the shape as it stood when the MVP was coded.)
 2. **MVP scope (porting the VS Code extension pattern)**:
    - ① Knowledge-base search tool window: FTS/hybrid search over notes + todos (via the existing `SearchAll` binding; semantic and graph-aware retrieval follow the `semantic_search` / `wiki_graph_search` gates naturally — the plugin carries no gate logic and re-implements no ranking);
    - ② Result jump: open the Repotory SPA in the system browser, located at that result (same-origin server address; deep-link routes follow the frontend as-is, supplemented during the MVP with minimal route parameters where missing; no full UI embedding inside the plugin);
@@ -127,3 +127,11 @@ The owner explicitly required the IDEA plugin to be published to the plugin stor
 **Two steps remain manual** (outside the codebase): ① the owner performs the **first** upload from a vendor account — Marketplace then creates the plugin page and assigns the numeric public URL, after which CI can publish every later version; ② Marketplace review of the first version. The plugin ID `dev.repotory.jetbrains` is immutable after the first upload, hence finalized before it.
 
 **Artifact check**: after `buildPlugin`, the jar's `plugin.xml` inside the zip was inspected — `<idea-version since-build="242" />` (no `until-build`), `<change-notes>` and both `pluginIcon*.svg` present; `gradle verifyPlugin` remains Compatible.
+
+## Amendment record (2026-10-30, [ADR-0035](0035-jetbrains-mcp-primary-channel.md))
+
+Three decisions in this ADR are amended by a later ADR; the original text is kept:
+
+- **Decision 1's "only execution interface" gains the qualifier "AI"** — a human-facing UI calls the **binding surface**, not the execution interface. ADR-0035 decision 1 pins that meaning down: otherwise "the plugin goes through HTTP" and "no new execution interface is added" land in the same sentence, contradicting each other.
+- **Decision 1's "primarily over headless HTTP" is no longer the end state** — ADR-0035 decision 2 changes the plugin to "MCP primary with HTTP filling the gaps", isomorphic with the VS Code extension: eight data capabilities go over MCP, while `MoveNote` (human-only, never in MCP) plus the service presence probe and deep links stay on HTTP.
+- **Decision 4's "one-click start" is demoted in standing** — ADR-0035 decision 6 makes deep links and one-click start **best-effort enhancements**; `repotory-server` stays "an optional enhancement the user obtains themselves", and **no install.sh / Homebrew / Scoop channel is created for it**. The asset still ships as decided (decision 4's "publish a `repotory-server-<platform>` asset" is satisfied); what is no longer claimed is that "the only distribution path = the plugin's one-click start". The settings page and tool window keep their **Start local service** button, but its role changes from "a precondition for using the plugin" to "the entry point for the gap-filling and deep-link enhancements".
