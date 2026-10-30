@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **JetBrains 插件的 Marketplace 上架一直由 CI 负责，TODO 里那条「待人工上传」是过期描述（2026-10-30 核实并订正）**：ADR-0027 定的「Marketplace 公开上架 + GitHub Release zip 双轨」里，前一轨从落地那天起就**没等过人**——`JETBRAINS_MARKETPLACE_TOKEN` 在 2026-10-22 配好当天，发布链路的 `Publish to JetBrains Marketplace` job 就接管了上传，**自 v2.11.0 起连续 16 个版本**（Marketplace 更新通道 2.11.0→2.21.0 全部在列，均 `since=242.0`）。现状核实：插件 id `35396` / xmlId `dev.repotory.jetbrains` / vendor 组织 `repotory`（指向本仓），已 160 次下载，上架版本 2.21.0；**唯一未过的是 JetBrains 官方的首版审核**（API 字段 `approve: false`）——那是平台自己的审核队列，既不可控也不该等，插件本身可安装。**因此订正 TODO 两处过期描述**：原「下一批只剩用户动作」里的「Marketplace 首次上架」与「配 `JETBRAINS_MARKETPLACE_TOKEN`」两条早已闭环（原写「需要所有者账号、无法代做」，实际早就是 CI 在做），那条清单因此从三条缩到两条——剩下的只有 **桌面 GUI 真机冒烟**（隔离环境真窗口已走完一轮，21 张截图，剩用户本机按交互清单日常点击）与 **Hermes 设置页点源 + curated memories 半边**。本次核实同时确认 `gh secret list` 里 `JETBRAINS_MARKETPLACE_TOKEN`（2026-10-22）与 `VSCE_PAT`（2026-10-27）都在，VS Code 侧 `sky-jiangcheng.repotory-vscode` 同样由 CI 发布。
+
 ## [2.21.0] - 2026-10-30
 
 ### 新增
