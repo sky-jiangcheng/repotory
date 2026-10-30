@@ -120,6 +120,46 @@ type chatResponse struct {
 		// once you only have the text — and they call for opposite user actions.
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	// Error is the OpenAI-compatible error envelope. Gateways such as
+	// OpenRouter answer HTTP 200 with {"error":{...}} and NO choices when the
+	// upstream provider is saturated, so without this field the real cause
+	// ("provider_unavailable — retry later") is discarded and the user is left
+	// with a bare "no choices".
+	Error *chatErrorEnvelope `json:"error"`
+}
+
+// chatErrorEnvelope is the error object some providers return in a 200 body.
+type chatErrorEnvelope struct {
+	Message  string `json:"message"`
+	Metadata struct {
+		// ErrorType classifies the failure ("provider_unavailable",
+		// "rate_limit_exceeded", …) and is the part worth acting on.
+		ErrorType string `json:"error_type"`
+	} `json:"metadata"`
+}
+
+// providerError renders the provider's own error envelope as a Go error, or
+// nil when the body carried no error object.
+//
+// The message is passed through verbatim (clipped) because it names the actual
+// cause — "Worker local total request limit reached (16/16)" — while the
+// surrounding error_type says whether waiting helps.
+func (cr chatResponse) providerError() error {
+	if cr.Error == nil {
+		return nil
+	}
+	msg := strings.TrimSpace(cr.Error.Message)
+	kind := strings.TrimSpace(cr.Error.Metadata.ErrorType)
+	switch {
+	case msg != "" && kind != "":
+		return fmt.Errorf("AI endpoint error (%s): %s", kind, truncateBytes(msg, 300))
+	case msg != "":
+		return fmt.Errorf("AI endpoint error: %s", truncateBytes(msg, 300))
+	case kind != "":
+		return fmt.Errorf("AI endpoint error (%s)", kind)
+	default:
+		return fmt.Errorf("AI endpoint returned an error")
+	}
 }
 
 // chatStreamRequest is chatRequest plus stream:true. The body is identical to
@@ -683,6 +723,13 @@ func testAIChatWithTimeout(baseURL, model, apiKey string, messages []chatMessage
 			return nil, fmt.Errorf("AI endpoint returned malformed JSON: %w", err)
 		}
 		if len(cr.Choices) == 0 {
+			// A 200 body can still carry an error envelope instead of a
+			// completion (OpenRouter does this when the upstream provider is
+			// saturated). Report the provider's own words — "no choices" alone
+			// tells the user nothing about what to do next.
+			if perr := cr.providerError(); perr != nil {
+				return nil, perr
+			}
 			return nil, fmt.Errorf("AI endpoint returned no choices")
 		}
 		return &AITestResult{
