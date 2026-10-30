@@ -63,7 +63,6 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
   const topicState = useTopics(projectId)
 
   const { run, retryLast } = useNoteMutations(setError)
-  const vh = useNoteVersionHistory(run)
 
   // Sequence guard: when the project switches (or a refetch races a refetch),
   // a late response for an older query must not overwrite the current list —
@@ -79,6 +78,11 @@ function NoteSection({ projectId, autoNew = false, focusNoteId }: Props) {
       })
       .finally(() => { if (fetchSeqRef.current === seq) setLoading(false) })
   }, [projectId, t])
+
+  // The version panel restores the note's content behind the list's back, so
+  // the list has to be refetched afterwards — otherwise the card keeps showing
+  // the content that was just replaced and the restore reads as a no-op.
+  const vh = useNoteVersionHistory(run, fetchNotes)
 
   useEffect(() => { fetchNotes() }, [fetchNotes])
 

@@ -19,9 +19,15 @@ interface VersionHistoryHandle extends VersionHistoryState {
  * useNoteVersionHistory manages the version history panel state and its
  * async operations (list / restore / diff). Callers must pass in their own
  * `run` wrapper to integrate with the ErrorBanner retry mechanism.
+ *
+ * `onRestored` is called after a restore actually landed. The restore writes
+ * the old content back into the note, so the list the panel sits on now holds
+ * a stale copy of that note — without a refetch the card keeps showing the
+ * content the user just replaced, and the restore looks like a no-op.
  */
 export function useNoteVersionHistory(
-  run: (op: () => Promise<void>, errMsg: string) => Promise<boolean>
+  run: (op: () => Promise<void>, errMsg: string) => Promise<boolean>,
+  onRestored?: () => void,
 ): VersionHistoryHandle {
   const [versionHistory, setVersionHistory] = useState<NoteVersion[] | null>(null)
   const [currentNoteId, setCurrentNoteId] = useState<number | null>(null)
@@ -58,6 +64,7 @@ export function useNoteVersionHistory(
       setVersionHistory(null)
       setCurrentNoteId(null)
       diffCacheKeyRef.current = null
+      onRestored?.()
     }, 'Failed to restore version')
     setRestoringId(null)
   }
