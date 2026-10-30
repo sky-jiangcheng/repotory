@@ -18,6 +18,18 @@
       "system": "Follow system"
     }
   },
+  "shell": {
+    "contextTitle": "Context",
+    "contextHide": "Collapse the context rail",
+    "contextShow": "Expand the context rail",
+    "contextSearchPlaceholder": "Search notes, todos, projects…",
+    "contextSearchAria": "Global search",
+    "pendingTitle": "Pending review",
+    "pendingEmpty": "No knowledge pages waiting for review.",
+    "pendingMore": "{{count}} more waiting for review",
+    "recentTitle": "Recently updated",
+    "recentEmpty": "No approved knowledge pages yet."
+  },
   "home": {
     "title": "Home",
     "ringTitle": "Memory Ring",

@@ -1,0 +1,204 @@
+/* ContextRail — the right column of the desktop shell.
+   Exclusive to components/ContextRail.tsx. */
+
+.rail {
+  width: var(--context-rail-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* The header row must clear the native title bar strip on macOS, or half
+     of the collapse button sits in a region the webview never sees. */
+  padding: calc(18px + var(--window-controls-inset, 0px)) 16px 18px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+
+/* Collapsed: a slim strip on the right edge that brings the rail back. */
+.handle {
+  flex-shrink: 0;
+  width: var(--context-rail-collapsed-width);
+  align-self: stretch;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: calc(18px + var(--window-controls-inset, 0px));
+  border: none;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.handle:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* The title bar is hidden on macOS, so this row doubles as the window's
+     drag handle. */
+  --wails-draggable: drag;
+}
+
+.headTitle {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  --wails-draggable: none;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.collapseBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.blockTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.empty {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.item:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.itemTitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.45;
+}
+
+.itemMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.more {
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.more:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+  /* Too narrow for three columns: the centre page keeps the space. The search
+     entry is still reachable from the left rail's search icon. */
+  .rail,
+  .handle {
+    display: none;
+  }
+}

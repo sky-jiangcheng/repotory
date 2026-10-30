@@ -5,7 +5,7 @@ order: 3
 
 # Global Search
 
-Global search is a top-level page: one input that searches **notes, todos, and project names across all projects**, with results grouped into Projects / Notes / Todos. Both the "Search" item in the navigation bar and the entry on the right of the home memory-ring strip lead here; the ⌘K / Ctrl+K command palette remains the keyboard-first quick switcher (its first action is still "new handoff") — the two coexist.
+Global search is a top-level page: one input that searches **notes, todos, and project names across all projects**, with results grouped into Projects / Notes / Todos. Both the "Search" icon in the left rail and the entry on the right of the home memory-ring strip lead here; the ⌘K / Ctrl+K command palette remains the keyboard-first quick switcher (its first action is still "new handoff") — the two coexist.
 
 ## Page structure
 

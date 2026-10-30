@@ -24,13 +24,15 @@ cask "repotory" do
     sha256 "bc98bf6f35a60926c60bf8b73f3914dd6a9292ac8dfba96fd494bc38c22f7042"
   end
 
-  # The bundle inside the DMG is named after wails.json's `outputfilename`
-  # ("repotory"), NOT after the productName ("Repotory"): the build produces
-  # build/bin/repotory.app and create-dmg ships that bundle as-is. macOS
-  # volumes are case-insensitive by default so the old spelling resolved
-  # anyway, but a case-sensitive volume would not find it — and the tap's
-  # tests.yml asserts the installed path, so the two must agree exactly.
-  app "repotory.app"
+  # The bundle inside the DMG is named after wails.json's `name`
+  # ("Repotory"), NOT after the `outputfilename` ("repotory"): the build
+  # produces build/bin/Repotory.app and create-dmg ships that bundle as-is.
+  # macOS volumes are case-insensitive by default, so an earlier spelling
+  # resolved anyway — but a case-sensitive volume would not find it, and the
+  # tap's tests.yml asserts the installed path, so the two must agree
+  # exactly. The BINARY inside the bundle stays "repotory" (a frozen
+  # identifier); only the bundle directory carries the display name.
+  app "Repotory.app"
 
   # Application Support and Logs paths come from internal/platform; they are
   # where GetDbPath() and GetLogPath() point on macOS. A bundle-identifier

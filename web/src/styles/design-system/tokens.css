@@ -57,6 +57,13 @@
   --radius-lg: 14px;
   --radius-xl: 18px;
 
+  /* Shell columns. The right rail's width is published here because the
+     floating action button anchors itself to the edge of the CENTRE column:
+     with the rail open, a button pinned to the window edge would sit on top
+     of the rail's last item. */
+  --context-rail-width: 288px;
+  --context-rail-collapsed-width: 30px;
+
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;

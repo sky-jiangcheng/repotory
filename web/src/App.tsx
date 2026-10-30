@@ -1,19 +1,17 @@
-import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react'
-import { BrowserRouter, HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
+import { lazy, Suspense, type CSSProperties, type ReactNode, useEffect, useState } from 'react'
+import { BrowserRouter, HashRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import CommandPalette from './components/CommandPalette'
 import ToastHost, { type ToastItem } from './components/Toast'
 import { listenImportCompleted } from './api/transport'
 import { applyTheme, getStoredTheme, listenSystemTheme, storeTheme, type ThemeMode } from './utils/theme'
 import ErrorBoundary from './components/ErrorBoundary'
-import { setLanguage, getCurrentLanguage } from './i18n'
-import { getConnectionKind, subscribeConnection, startHealthPoll } from './api/transport'
-import { getUpdateState, subscribeUpdateState, startUpdateCheck } from './api/updateStatus'
-import Icon from './components/Icon'
-import type { IconName } from './components/Icon'
+import { getConnectionKind, subscribeConnection, startHealthPoll, isDesktopRuntime } from './api/transport'
+import { startUpdateCheck } from './api/updateStatus'
 import QuickCaptureFab from './components/QuickCaptureFab'
 import UpdateDownloadUI from './components/UpdateDownloadUI'
-import BrandMark from './components/BrandMark'
+import SideRail from './components/SideRail'
+import ContextRail from './components/ContextRail'
 import { ToastContext } from './hooks/useToast'
 import s from './App.module.css'
 
@@ -32,13 +30,6 @@ const WikiDetail = lazy(() => import('./pages/wiki/WikiDetail'))
 const Review = lazy(() => import('./pages/Review'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
-type LanguageOption = 'zh-CN' | 'en'
-
-const LANG_OPTIONS: { code: LanguageOption; label: string }[] = [
-  { code: 'zh-CN', label: '中文' },
-  { code: 'en', label: 'English' },
-]
-
 // Minimal page loader shown while a lazy chunk is being fetched.
 function PageLoader() {
   return (
@@ -50,176 +41,25 @@ function PageLoader() {
   )
 }
 
-// ErrorBoundary prevents a render crash in any routed page from black-screening
-// the whole app with no way back. Uses the standalone ErrorBoundary component
-// with resetKey-based auto-recovery on route changes.
+// The macOS build hides the window's title bar (see main.go), so the traffic
+// lights are drawn over the top-left of the webview and the left rail has to
+// leave room for them. Everywhere else the native frame keeps them out of
+// the content entirely.
+const MAC_DESKTOP =
+  isDesktopRuntime() && typeof navigator !== 'undefined' && /Macintosh|Mac OS X/i.test(navigator.userAgent)
 
-function NavBar() {
-  const { pathname } = useLocation()
-  const { t } = useTranslation()
-  const [langOpen, setLangOpen] = useState(false)
-  const [themeOpen, setThemeOpen] = useState(false)
-  const [themeMode, setThemeMode] = useState<ThemeMode>(getStoredTheme())
-  const langRef = useRef<HTMLDivElement>(null)
-  const themeRef = useRef<HTMLDivElement>(null)
-  const currentLang = getCurrentLanguage()
-  // A newer release exists -> a dot on the Settings link. The dot is a
-  // pointer, not a nag: the Settings → Updates tab carries the detail.
-  const [updateState, setUpdateState] = useState(getUpdateState())
+// The right rail remembers whether it was folded away. The state lives here
+// rather than inside the rail because the floating action button anchors
+// itself to the edge of the centre column, and that depends on the rail's
+// width.
+const CONTEXT_RAIL_KEY = 'repotory:context-rail-collapsed'
 
-  // Close the language dropdown on outside clicks.
-  useEffect(() => {
-    if (!langOpen) return
-    const handler = (e: MouseEvent) => {
-      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [langOpen])
-
-  // Close the theme dropdown on outside clicks.
-  useEffect(() => {
-    if (!themeOpen) return
-    const handler = (e: MouseEvent) => {
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) setThemeOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [themeOpen])
-
-  // Track the app-wide update verdict (see api/updateStatus.ts).
-  useEffect(() => subscribeUpdateState(setUpdateState), [])
-
-  const getThemeIcon = (mode: ThemeMode) => {
-    if (mode === 'light') return 'sun'
-    if (mode === 'dark') return 'moon'
-    return 'monitor'
+function readContextRailCollapsed(): boolean {
+  try {
+    return localStorage.getItem(CONTEXT_RAIL_KEY) === '1'
+  } catch {
+    return false
   }
-
-  return (
-    <header>
-      <nav className={`${s.navbar}`} aria-label={t('nav.main')}>
-        <div className={`${s.navLeft}`}>
-          <Link to="/" className={`${s.navBrand}`}>
-            {/* The real brand mark, not a text glyph — see BrandMark. 26px:
-                the mark is a compact nest-and-card silhouette, and below
-                ~24px the bowl's inner arc closes up and it reads as a blob. */}
-            <BrandMark size={26} className={`${s.navBrandMark}`} />
-            <span className={`${s.navBrandName}`}>Repotory</span>
-          </Link>
-          <div className={`${s.navLinks}`}>
-            <Link to="/" className={navClass(pathname === '/')}>
-              {t('nav.home', { defaultValue: '首页' })}
-            </Link>
-            <Link to="/dashboard" className={navClass(pathname === '/dashboard')}>
-              {t('nav.dashboard', { defaultValue: '仪表盘' })}
-            </Link>
-            <Link to="/search" className={navClass(pathname === '/search')}>
-              {t('nav.search')}
-            </Link>
-            <Link to="/knowledge" className={navClass(pathname === '/knowledge')}>
-              {t('nav.knowledge')}
-            </Link>
-            {/* ADR-0032 decision 7: the approved pages enter the main
-                navigation. Knowledge that cannot be found is not knowledge. */}
-            <Link to="/wiki" className={navClass(pathname.startsWith('/wiki'))}>
-              {t('nav.wiki')}
-            </Link>
-            <Link to="/review" className={navClass(pathname === '/review')}>
-              {t('nav.review')}
-            </Link>
-            <Link to="/settings" className={navClass(pathname === '/settings')}>
-              {t('nav.settings')}
-              {updateState.phase === 'available' && (
-                <span
-                  className={s.updateDot}
-                  title={t('nav.updateAvailable', { version: updateState.info?.latest ?? '' })}
-                  aria-label={t('nav.updateAvailable', { version: updateState.info?.latest ?? '' })}
-                />
-              )}
-            </Link>
-          </div>
-        </div>
-        <div className={`${s.navRight}`}>
-          <div className={`${s.langSwitcher}`} ref={langRef}>
-            <button
-              className={`${s.navLangBtn}`}
-              onClick={() => setLangOpen(v => !v)}
-              aria-label={t('nav.language')}
-              aria-expanded={langOpen}
-              title={t('nav.language')}
-            >
-              <Icon name="globe" size={14} />
-              <span className={`${s.langLabel}`}>{currentLang === 'zh-CN' ? '中文' : 'EN'}</span>
-            </button>
-            {langOpen && (
-              <div className={`${s.langDropdown}`}>
-                {LANG_OPTIONS.map(opt => (
-                  <button
-                    key={opt.code}
-                    className={`${s.langOption} ${opt.code === currentLang ? 'active' : ''}`}
-                    onClick={() => { setLanguage(opt.code); setLangOpen(false) }}
-                  >
-                    <span>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className={`${s.themeSwitcher}`} ref={themeRef}>
-            <button
-              className={`${s.navThemeBtn}`}
-              onClick={() => setThemeOpen(v => !v)}
-              aria-label={t('nav.theme')}
-              title={t('nav.theme')}
-            >
-              <Icon name={getThemeIcon(themeMode) as IconName} size={14} />
-            </button>
-            {themeOpen && (
-              <div className={`${s.themeDropdown}`}>
-                {[ 
-                  { value: 'light' as const, labelKey: 'nav.themes.light', icon: 'sun' },
-                  { value: 'dark' as const, labelKey: 'nav.themes.dark', icon: 'moon' },
-                  { value: 'system' as const, labelKey: 'nav.themes.system', icon: 'monitor' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    className={`${s.themeOption} ${themeMode === opt.value ? s.themeOptionActive : ''}`}
-                    onClick={() => {
-                      setThemeMode(opt.value)
-                      storeTheme(opt.value)
-                      applyTheme(opt.value)
-                      setThemeOpen(false)
-                    }}
-                  >
-                    <Icon name={opt.icon as IconName} size={14} />
-                    <span>{t(opt.labelKey)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {/* Global search is now a top-level page (ADR-0024); the palette
-              stays reachable via ⌘K for keyboard-first quick switching. */}
-          <div role="search">
-            <Link
-              to="/search"
-              className={`${s.navPaletteBtn}`}
-              aria-label={t('search:navLabel', { defaultValue: '打开全局搜索' })}
-              title={t('search:navLabel', { defaultValue: '打开全局搜索' })}
-            >
-              <Icon name="search" size={14} />
-              <span>{t('nav.search')}</span>
-            </Link>
-          </div>
-        </div>
-      </nav>
-    </header>
-  )
-}
-
-function navClass(active: boolean) {
-  return active ? 'active' : ''
 }
 
 function AppRouter({ children }: { children: ReactNode }) {
@@ -237,6 +77,8 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [connKind, setConnKind] = useState(getConnectionKind())
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getStoredTheme())
+  const [contextCollapsed, setContextCollapsed] = useState(readContextRailCollapsed)
 
   // Start periodic health polling on mount.
   useEffect(() => {
@@ -277,6 +119,21 @@ function App() {
       if (getStoredTheme() === 'system') applyTheme('system')
     })
   }, [])
+
+  const changeTheme = (mode: ThemeMode) => {
+    setThemeMode(mode)
+    storeTheme(mode)
+    applyTheme(mode)
+  }
+
+  const toggleContextRail = (collapsed: boolean) => {
+    setContextCollapsed(collapsed)
+    try {
+      localStorage.setItem(CONTEXT_RAIL_KEY, collapsed ? '1' : '0')
+    } catch {
+      // A rail that forgets its state is not worth an error.
+    }
+  }
 
   useEffect(() => {
     // Surface knowledge import results as toasts (issue #36). The listener
@@ -320,15 +177,27 @@ function App() {
       {/* Lets any descendant confirm a side effect (copy path, save AI answer)
           without App having to thread a callback down to it. */}
       <ToastContext.Provider value={pushToast}>
-        <div className="app">
+        <div
+          className="app"
+          style={{ '--context-rail-offset': contextCollapsed ? 'var(--context-rail-collapsed-width)' : 'var(--context-rail-width)' } as CSSProperties}
+        >
           {connBanner && (
             <div className="conn-banner" role="alert" aria-live="polite">{connBanner}</div>
           )}
           <a className={s.skipLink} href="#main-content" onClick={skipToContent}>{t('common.show', { defaultValue: 'Skip to main content' })}</a>
-          <NavBar />
-          <main id="main-content" className={s.mainContent} tabIndex={-1}>
-            <RoutedApp />
-          </main>
+          <div className={`${s.shell} ${MAC_DESKTOP ? s.shellWithControls : ''}`}>
+            <SideRail
+              themeMode={themeMode}
+              onThemeChange={changeTheme}
+            />
+            <div className={s.mainColumn}>
+              <div className={s.titleStrip} aria-hidden="true" />
+              <main id="main-content" className={s.mainContent} tabIndex={-1}>
+                <RoutedApp />
+              </main>
+            </div>
+            <ContextRail collapsed={contextCollapsed} onToggle={toggleContextRail} />
+          </div>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
           <ToastHost toasts={toasts} onDismiss={(id) => setToasts(prev => prev.filter(x => x.id !== id))} />
           <QuickCaptureFab onToast={pushToast} />

@@ -46,12 +46,12 @@ interface NodeProcess {
   cwd(): string
 }
 
-async function readAppCss(): Promise<string> {
+async function readRailCss(): Promise<string> {
   const fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs
   const path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath
   const proc = (await import(/* @vite-ignore */ procName)) as unknown as NodeProcess
   return fs.readFileSync(
-    path.resolve(proc.cwd(), 'src/App.module.css'),
+    path.resolve(proc.cwd(), 'src/components/SideRail.module.css'),
     'utf8',
   )
 }
@@ -119,23 +119,23 @@ describe('BrandMark', () => {
     expect(named.getAttribute('aria-hidden')).toBeNull()
   })
 
-  it('is not cropped in the navbar — the card keeps its square edge', async () => {
+  it('is not cropped in the rail — the card keeps its square edge', async () => {
     // The load-bearing CSS rule. A border-radius on the mark is a crop, not a
     // style: the brand master is a square card whose hairline frame sits
-    // ~1.3px from the edge at the navbar's 26px, so any visible radius
+    // ~1.3px from the edge at the rail's 26px, so any visible radius
     // swallows the frame's four corners and the mark reads as torn.
-    const css = await readAppCss()
-    const rule = /\.navBrandMark\s*\{([^}]*)\}/.exec(css)
-    expect(rule, '.navBrandMark rule not found in App.module.css').not.toBeNull()
+    const css = await readRailCss()
+    const rule = /\.brandMark\s*\{([^}]*)\}/.exec(css)
+    expect(rule, '.brandMark rule not found in SideRail.module.css').not.toBeNull()
     expect(rule![1]).not.toMatch(/border-radius/)
     // The navy-tile era also added a drop shadow; the paper card has none.
     expect(rule![1]).not.toMatch(/box-shadow/)
   })
 
   it('the mark is the app identity, not a per-section ornament', async () => {
-    // The navbar is the ONE place the brand mark belongs. The assistant
+    // The left rail is the ONE place the brand mark belongs. The assistant
     // header used to render it too, so a single home page carried the logo
-    // three times (navbar, section header, AI message avatar). The assistant
+    // three times (rail, section header, AI message avatar). The assistant
     // header and the message avatar now use text instead.
     const fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs
     const path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath

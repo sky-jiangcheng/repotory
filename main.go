@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:web/dist
@@ -55,10 +56,18 @@ func main() {
 	// Launch Wails
 	err = wails.Run(&options.App{
 		Title:     "Repotory: Local Git Knowledge Base",
-		Width:     1280,
-		Height:    800,
-		MinWidth:  800,
+		Width:     1360,
+		Height:    860,
+		MinWidth:  900,
 		MinHeight: 600,
+		Mac: &mac.Options{
+			// The macOS title bar is hidden but the standard window controls
+			// stay, so the shell's narrow left rail can sit underneath them
+			// and own the traffic lights. Windows and Linux keep their native
+			// frame (no per-platform options there), and the same rail reads
+			// as a rail there too.
+			TitleBar: mac.TitleBarHidden(),
+		},
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: spaFallback{},

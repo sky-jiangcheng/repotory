@@ -46,6 +46,10 @@ function installWailsBindings() {
     GetHeatmapData: () => Promise.resolve([]),
     GetStatusBar: () => Promise.resolve(null),
     GetScanStatus: () => Promise.resolve({ running: false, backfilling: false, message: '', progress: 0, total: 0 }),
+    // The right context rail asks for the review queue and the recently
+    // updated knowledge pages on mount.
+    ListPendingWikiPages: () => Promise.resolve([]),
+    BrowseWikiPages: () => Promise.resolve([]),
     // The startup update check reads the config first. Opting out here keeps
     // the smoke test off the network — and keeps its verdict from flipping
     // the nav badge mid-assertion, which is a state update outside act().
@@ -92,12 +96,10 @@ async function mountApp() {
 describe('App desktop shell', () => {
   it('renders translated nav labels instead of raw i18n keys', async () => {
     await mountApp()
-    // Nav renders synchronously — it must never show "nav.knowledge".
-    // getAllBy + "at least one" rather than findByText: pages now render a
-    // visible <h1> that repeats the section name ("知识库" in both the nav and
-    // the page title), and findByText throws when a query matches more than one.
+    // The left rail is icon-only, so the item's name lives in its accessible
+    // name (aria-label), not in a text node. It must never read "nav.knowledge".
     await waitFor(
-      () => expect(screen.getAllByText(/^(Knowledge|知识库)$/).length).toBeGreaterThan(0),
+      () => expect(screen.getAllByRole('link', { name: /^(Knowledge|知识库)$/ }).length).toBeGreaterThan(0),
       { timeout: LAZY_CHUNK_TIMEOUT },
     )
     // The lazy Home page resolves next; the memory ring heading comes from

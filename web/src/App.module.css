@@ -1,7 +1,8 @@
-/* App 外壳（导航栏容器、主内容区、跳转链接）— 组件独占样式。
-   边界判据：skip-link / main-content 全站只被 App.tsx 引用（main-content 另有一个
-   id 同名，那是 #main-content 锚点，不属样式）。main-content 的 768px 媒体查询一并
-   随之下沉。navbar.css 里的 nav-* / lang-* 仍留全局，下一轮再处理。
+/* App 外壳（三栏：左导航轨 / 中内容 / 右上下文轨）— 组件独占样式。
+   边界判据：skip-link / main-content / shell 全站只被 App.tsx 引用
+   （main-content 另有一个 id 同名，那是 #main-content 锚点，不属样式）。
+   导航轨本身的样式在 components/SideRail.module.css，右栏在
+   components/ContextRail.module.css。
 */
 .skipLink {
   position: absolute;
@@ -22,349 +23,57 @@
   outline-offset: 2px;
 }
 
+/* 左 / 中 / 右三栏。min-height:0 是必需的：.app 是 100vh 的固定框架，
+   没有它，中栏的滚动容器会被内容撑高，整页跟着长。 */
+.shell {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  min-width: 0;
+  /* macOS 隐藏标题栏后，窗口顶部 28px 是原生标题栏的地带：那里点不到
+     webview。整壳共用一个内缩量，把三栏的内容都让到这条带子下面，
+     只有中栏那条空带子保留为 CSS 拖拽面。 */
+  --window-controls-inset: 0px;
+}
+
+.shellWithControls {
+  --window-controls-inset: 28px;
+}
+
+/* 中栏：顶部一条拖拽带 + 下面滚动的内容。 */
+.mainColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 窗口的拖拽面。macOS 隐藏标题栏后，窗口顶部 28px 要么由系统原生标题栏
+   接管拖拽、要么由这里的 CSS 拖拽带接管——两种情况下用户都从同一条带子
+   拖动窗口，而这条带子不与左栏的交通灯重叠。带子高度与原生标题栏一致，
+   所以两种情形下观感相同；没有窗口按钮的平台这条带子高度为 0。 */
+.titleStrip {
+  flex: none;
+  height: var(--window-controls-inset, 0px);
+  --wails-draggable: drag;
+}
+
 .mainContent {
   flex: 1;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px;
+  padding: 24px 28px;
   width: 100%;
   overflow-y: auto; /* pages without an internal scroller (Settings/Knowledge) must scroll */
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
-  .navbar {
-    padding: 0 20px;
-  }
   .mainContent {
-    padding: 20px;
+    padding: 16px;
   }
-}
-
-/* ==== 从 layouts/navbar.css 整文件并入（P35 第七轮）====
-   导航栏 markup 全在 App.tsx 内，14 个类均为其独占；`.active` 是全站共享状态类
-   （十余个组件在用），故按 :global(.active) 引用；原文件里零引用的 .lang-flag 规则已删。 */
-/* ============================================
-   Navbar
-   ============================================ */
-
-.navbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-  height: 60px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-  /* Without this the flex children refuse to shrink below their content
-     width and the bar overflows on narrow viewports. */
-  min-width: 0;
-  gap: 16px;
-}
-
-.navLeft {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  min-width: 0;
-}
-
-.navBrand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-decoration: none;
-  letter-spacing: -0.02em;
-  /* The wordmark is the first thing to go when space runs short; the mark
-     carries the identity on its own. */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.navBrandMark {
-  display: block;
-  /* The brand master (build/icon.svg) is a SQUARE paper card: cream field,
-     hairline ink frame, no rounded corners and no shadow — "the square edge
-     and the hairline are the style". A radius here is not a style choice, it
-     is a crop: at 26px the frame sits ~1.3px from the edge, so any radius
-     wide enough to see swallows the frame's four corners and the mark reads
-     as a torn sticker. Keep this element square and let the card's own
-     hairline draw the edge. */
-  flex-shrink: 0;
-}
-
-.navLinks {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-}
-
-.navLinks a {
-  color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  transition: color var(--transition-fast);
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  /* Chinese section labels have no spaces, so without this the browser breaks
-     between any two characters and the nav renders as a vertical strip. */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.navLinks a:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-}
-
-.navLinks a:global(.active) {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  font-weight: 600;
-}
-
-/* A newer release exists: a small dot next to the Settings link.
-   The nav link is `display: inline` by default (block-level flex children
-   would break the baseline), so the dot is positioned against the link's
-   inline box rather than floated. */
-.updateDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: middle;
-}
-
-.navPaletteBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  /* Matches .navLangBtn's 30px so the two right-hand controls share one
-     horizontal band — they were 32px and 29px, a 3px step that read as a
-     misalignment rather than a choice. */
-  height: 30px;
-  padding: 0 12px;
-  /* ADR-0024: the trigger is now a Link to /search, not a button — kill the
-     default anchor text decoration so the pill look is preserved. */
-  text-decoration: none;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-family: inherit;
-}
-
-.navPaletteBtn:hover {
-  border-color: var(--text-muted);
-  color: var(--text-primary);
-}
-
-@media (max-width: 640px) {
-  .navPaletteBtn span { display: none; }
-
-  /* Tighten every horizontal step so brand + 3 links + 2 controls fit a 390px
-     viewport without scrolling: wordmark drops its label, link padding halves,
-     and the language button shows its globe only. */
-  .navbar {
-    padding: 0 16px;
-    gap: 8px;
-  }
-
-  .navLeft {
-    gap: 12px;
-  }
-
-  /* Drop only the "Repotory" word. font-size:0 collapses the gap too, so the
-     mark's own margin has to be re-added — .navBrand keeps its flex gap. */
-  .navBrandName {
-    display: none;
-  }
-
-  .navBrandMark {
-    /* Slightly larger once the wordmark is gone: it is now the only thing
-       identifying the app in the bar. */
-    width: 28px;
-    height: 28px;
-  }
-
-  .navLinks a {
-    padding: 6px 9px;
-    font-size: 13px;
-  }
-
-  .langLabel {
-    display: none;
-  }
-
-  .navLangBtn {
-    padding: 0 8px;
-  }
-
-  .navPaletteBtn {
-    padding: 0 9px;
-  }
-}
-
-@media (max-width: 400px) {
-  .navLinks a {
-    padding: 6px 7px;
-    font-size: 12px;
-  }
-}
-
-/* Language switcher */
-.navRight {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* Controls keep their intrinsic size; the links absorb the pressure. */
-  flex-shrink: 0;
-}
-
-.langSwitcher {
-  position: relative;
-}
-
-.navLangBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  /* Same 30px band as .navPaletteBtn — see note there. */
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-family: inherit;
-}
-
-.navLangBtn:hover {
-  border-color: var(--text-muted);
-  color: var(--text-primary);
-}
-
-.langLabel {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.langDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  z-index: 1000;
-  min-width: 120px;
-  overflow: hidden;
-}
-
-.langOption {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
-  font-family: inherit;
-}
-
-.langOption:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.langOption:global(.active) {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  font-weight: 500;
-}
-
-
-.themeSwitcher {
-  position: relative;
-}
-
-.navThemeBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-family: inherit;
-}
-
-.navThemeBtn:hover {
-  border-color: var(--text-muted);
-  color: var(--text-primary);
-}
-
-.themeDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  z-index: 1000;
-  min-width: 120px;
-  overflow: hidden;
-}
-
-.themeOption {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--transition-fast);
-  font-family: inherit;
-}
-
-.themeOption:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.themeOption:global(.active) {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  font-weight: 500;
 }

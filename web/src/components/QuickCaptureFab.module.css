@@ -8,7 +8,10 @@
 
 .fabBall {
   position: fixed;
-  right: 22px;
+  /* Anchored to the edge of the CENTRE column, not of the window: with the
+     context rail open, a window-edge button would float on top of the rail's
+     last item. The rail publishes its width as a variable (see tokens.css). */
+  right: calc(var(--context-rail-offset, 0px) + 22px);
   /* Sit above the status bar band, which is fixed-height app chrome. */
   bottom: 52px;
   width: 48px;
@@ -145,4 +148,12 @@
   color: var(--text-primary);
   font-weight: 500;
   box-shadow: var(--shadow-sm);
+}
+
+/* Below the three-column breakpoint the context rail is not rendered at all,
+   so the button returns to the window edge. */
+@media (max-width: 1024px) {
+  .fabBall {
+    right: 22px;
+  }
 }

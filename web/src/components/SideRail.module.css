@@ -1,0 +1,179 @@
+/* SideRail — the narrow left rail of the desktop shell.
+   Exclusive to components/SideRail.tsx. */
+
+/* macOS draws the traffic lights over the webview's top-left corner when the
+   title bar is hidden, so the rail starts below them. The rail owns no drag
+   handle: the strip at the top of the centre column is the window's drag
+   surface, which keeps the native buttons' corner clear. */
+.rail {
+  width: 72px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(12px + var(--window-controls-inset, 0px)) 0 12px;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  /* The tooltip and the two menus live outside the rail's box, so the rail
+     itself must not clip them. */
+  overflow: visible;
+  position: relative;
+  z-index: 30;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 4px 0 10px;
+  /* The brand mark is a link, so it must not act as a drag handle. */
+  --wails-draggable: none;
+}
+
+.brandMark {
+  display: block;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  font-family: inherit;
+  --wails-draggable: none;
+}
+
+.item:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.itemActive,
+.itemActive:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* The active item carries a left edge marker, the way a vertical tab strip
+   does: a filled pill reads as "selected" but loses the position in the
+   column once the rail is scrolled or the items shift. */
+.itemActive::before {
+  content: '';
+  position: absolute;
+  /* 4px inside the rail's edge: the item is centred in a 72px rail, so its
+     own left edge sits 14px in. */
+  left: -10px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+/* Hover label. The rail is icon-only, so the name of an item has to live
+   somewhere — a native title tooltip appears too late to feel designed. */
+.item::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  z-index: 60;
+}
+
+.item:hover::after,
+.item:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.updateDot {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.railFoot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.switcher {
+  position: relative;
+}
+
+/* The menus open to the right of the rail, so they are not clipped by it. */
+.menu {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 8px);
+  min-width: 148px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 60;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.menuItem:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.menuItemActive {
+  color: var(--text-primary);
+  font-weight: 600;
+}

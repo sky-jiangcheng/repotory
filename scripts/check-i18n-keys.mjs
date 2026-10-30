@@ -68,7 +68,7 @@ const ALLOW_CJK_IN_EN = [
 // 有意留在源码里的中文（不是界面文案）。逐条登记理由，不要整体关掉这条检查。
 const ALLOW_CJK_IN_SRC = [
   {
-    file: 'App.tsx',
+    file: 'components/SideRail.tsx',
     pattern: /中文/,
     reason: '语言选项自身的名字——zh-CN 这个语言就叫「中文」，两种界面都该显示它',
   },
